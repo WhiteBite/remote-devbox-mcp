@@ -16,6 +16,7 @@ cd C:\Users\<ты>\remote-devbox-mcp\home
 home\
 ├── docker-compose.yml
 ├── .env.example
+├── cloudflared-config.example.yml
 ├── SECURITY.md
 └── docker\
     └── toolbox.Dockerfile
@@ -41,8 +42,11 @@ MCP_BEARER_TOKEN=<64 hex>
 -join ((1..64) | % { '{0:x}' -f (Get-Random -Max 16) })
 ```
 
-Если проект только Java и Flutter не нужен — поставь `WITH_FLUTTER=0`,
-образ соберётся заметно быстрее и меньше.
+Тулчейны опциональны: `WITH_JAVA=1` — JDK 21 (Temurin из Adoptium apt) для
+Java/Spring и jdtls; `WITH_FLUTTER=1` — Flutter/Dart SDK (~4 ГБ, сборка
+заметно дольше). По умолчанию оба 0 — получается стеково-нейтральный
+toolbox: всё, чего не хватит, агент доустановит рантайм в `/opt/tools`
+(volume, переживает пересоздание контейнера).
 
 ## 3. Собрать и поднять
 
@@ -52,9 +56,10 @@ docker compose up -d
 docker compose ps
 ```
 
-Первая сборка долгая: ставится Flutter SDK (~4 ГБ). Если сборка упадёт на
-базовом образе (`eclipse-temurin:21-jdk-noble`) — это единственное место, где
-тег не проверялся в песочнице; замени на актуальный тег Temurin 21.
+Первая сборка при `WITH_FLUTTER=1` долгая: ставится Flutter SDK (~4 ГБ).
+Базовый образ — `node:22-bookworm-slim`, JDK ставится из apt-репозитория
+Adoptium; если сборка падает на этих внешних источниках — проверь их
+доступность, из песочницы агента они не проверялись.
 
 ## 4. Проверить
 
@@ -78,14 +83,23 @@ notepad .env                 # PROJECT_DIR=C:/Users/<ты>/dev/app
 docker compose up -d
 ```
 
-Контейнер один и тот же: Java и Flutter обслуживаются им обоими, языковой
-сервер выбирается по расширению файла (`jdtls` для `.java`, `dart` для `.dart`).
+Контейнер один и тот же: языковой сервер выбирается по расширению файла
+(`jdtls` для `.java`, `dart` для `.dart`) — при условии, что стек испечён
+в образ (`WITH_JAVA` / `WITH_FLUTTER`).
 
 ## 6. Остановить
 
 ```powershell
 docker compose down          # туннель закроется, доступ извне пропадёт
 ```
+
+## 7. Preview для агента (опционально)
+
+Чтобы агент видел запущенное приложение (flutter web-server, bootRun) и
+снимал его скриншоты своим playwright, порт приложения должен быть виден
+наружу второй hostname именованного туннеля (`preview.* → toolbox:8080`).
+Настройка — `cloudflared-config.example.yml`. Быстрый trycloudflare-туннель
+умеет один hostname, preview через него не работает.
 
 ## Если что-то не так
 

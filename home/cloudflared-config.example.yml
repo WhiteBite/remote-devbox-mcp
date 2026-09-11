@@ -1,0 +1,30 @@
+# Именованный Cloudflare-туннель: два hostname — MCP-эндпоинт и preview.
+#
+# Quick-туннель (trycloudflare) умеет только ОДИН hostname → только MCP.
+# Preview нужен, чтобы агент из своей песочницы снимал скриншоты запущенного
+# на devbox приложения (flutter run -d web-server --web-port 8080, bootRun).
+#
+# Локально-управляемый туннель:
+#   1. cloudflared tunnel create remote-devbox
+#   2. этот файл → home/cloudflared-config.yml, подставить tunnel ID и домен
+#   3. cloudflared tunnel route dns remote-devbox mcp.<твой-домен>
+#      cloudflared tunnel route dns remote-devbox preview.<твой-домен>
+#   4. в docker-compose.yml: command → `tunnel --no-autoupdate run`,
+#      примонтировать файл и креды:
+#        ./cloudflared-config.yml:/etc/cloudflared/config.yml:ro
+#        ./<TUNNEL_ID>.json:/etc/cloudflared/creds.json:ro
+#
+# Туннель из Zero Trust-панели (TUNNEL_TOKEN в .env): ingress задаётся
+# в панели Cloudflare, этот файл не используется.
+
+tunnel: <TUNNEL_ID>
+credentials-file: /etc/cloudflared/creds.json
+
+ingress:
+  # эндпоинт моста — сюда подключается агент (URL + токен из .env)
+  - hostname: mcp.<твой-домен>
+    service: http://toolbox:8787
+  # запущенное на devbox приложение — агент открывает его своим playwright
+  - hostname: preview.<твой-домен>
+    service: http://toolbox:8080
+  - service: http_status:404

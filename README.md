@@ -10,22 +10,36 @@ Cloudflare-туннель и правит код, собирает и тести
 
 ```
 ┌─ home/  → ставится на ТВОЙ комп (Windows + Docker Desktop)
-│   docker-compose.yml        один сервис toolbox + туннель cloudflared
-│   docker/toolbox.Dockerfile образ: мост к тулам OpenCode + JDK 21 + Flutter
-│   .env.example              → скопировать в .env, заполнить PROJECT_DIR и токен
-│   SECURITY.md               что запрещено монтировать, про изоляцию честно
+│   docker-compose.yml             один сервис toolbox + туннель cloudflared
+│   docker/toolbox.Dockerfile      образ: мост к тулам OpenCode (стеково-нейтральный;
+│                                  JDK 21 / Flutter — опциональные build-args)
+│   .env.example                   → скопировать в .env, заполнить PROJECT_DIR и токен
+│   cloudflared-config.example.yml именованный туннель: MCP + preview приложения
+│   SECURITY.md                    что запрещено монтировать, про изоляцию честно
 │
 └─ arena/ → сторона агента (скачивает сам, ничего ставить не нужно)
     mcp_client.py             MCP-клиент на чистом Python (stdlib, 3.10+)
     mcp                       обёртка: ./mcp run --auto edit '{...}'
     mcp.conf.example          → ~/.remote-devbox-mcp.conf (URL + токен)
     AGENT_INSTRUCTIONS.md     правила, по которым агент работает с твоим компом
+    SANDBOX_FACTS.md          замеренные факты о песочнице агента
 ```
+
+## Разделение труда
+
+- **Devbox (твой комп):** код проекта, компиляция, тесты, LSP, запуск
+  приложения. Тяжёлые тулчейны (JDK 21, Flutter) пекутся в образ build-args
+  по необходимости (`WITH_JAVA` / `WITH_FLUTTER` в `.env`); прочее агент
+  доустанавливает рантайм в `/opt/tools` (персистентный volume).
+- **Песочница агента:** вспомогательные тулы — playwright + chromium,
+  codegraph, конвертеры — агент ставит у себя через bash и дёргает локально,
+  в devbox-образ они не попадают (`arena/SANDBOX_FACTS.md`).
 
 ## Порядок действий
 
 1. **Ты:** клонируй репозиторий, перейди в `home/`, сделай `.env` из
-   `.env.example` (папка проекта + токен) и выполни
+   `.env.example` (папка проекта + токен; `WITH_JAVA=1` / `WITH_FLUTTER=1`,
+   если проект этих стеков) и выполни
    `docker compose build ; docker compose up -d`.
 2. **Ты:** возьми публичный URL —
    `docker compose logs cloudflared | Select-String trycloudflare`.
