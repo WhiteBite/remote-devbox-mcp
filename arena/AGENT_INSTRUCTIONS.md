@@ -111,7 +111,7 @@ cancelling | completed | failed | cancelled`. `opencode_job_result` приним
 flutter analyze                                  # статический анализ
 flutter test                                     # виджет- и юнит-тесты
 flutter test --update-goldens                    # обновить эталонные снимки
-flutter run -d web-server --web-hostname 0.0.0.0 --web-port 8080   # headless-сервер
+flutter run -d web-server --web-hostname 0.0.0.0 --web-port 8788   # headless-сервер
 ```
 
 ## 6. Кастомные тулы и «посмотреть, где экраны кривят»
@@ -133,11 +133,11 @@ flutter run -d web-server --web-hostname 0.0.0.0 --web-port 8080   # headless-с
    джоб моста живёт до таймаута, сервер так не держат; stdin у bash закрыт,
    поэтому hot reload недоступен, после правок перезапускаю процесс:
    ```bash
-   nohup flutter run -d web-server --web-hostname 0.0.0.0 --web-port 8080 \
+   nohup flutter run -d web-server --web-hostname 0.0.0.0 --web-port 8788 \
        > /tmp/widgetbook.log 2>&1 &
    ```
    Готовность жду по логу (`is being served at`), проверяю curl'ом изнутри.
-2. Прошу пользователя отдать порт 8080 наружу и прислать preview-URL:
+2. Прошу пользователя отдать порт 8788 наружу и прислать preview-URL:
    быстрый вариант — `docker compose --profile preview up -d` (второй
    trycloudflare-URL без токена), постоянный — именованный туннель
    (`home/cloudflared-config.example.yml`).

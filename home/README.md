@@ -102,9 +102,9 @@ docker compose down          # туннель закроется, доступ �
 
 ```powershell
 # 1. Приложение на devbox (агент поднимет его сам через мост, либо ты руками):
-docker compose exec toolbox flutter run -d web-server --web-hostname 0.0.0.0 --web-port 8080
+docker compose exec toolbox flutter run -d web-server --web-hostname 0.0.0.0 --web-port 8788
 
-# 2. Второй туннель на порт 8080 (по умолчанию выключен):
+# 2. Второй туннель на порт 8788 (по умолчанию выключен):
 docker compose --profile preview up -d
 docker compose logs cloudflared-preview | Select-String trycloudflare
 ```
@@ -114,7 +114,7 @@ docker compose logs cloudflared-preview | Select-String trycloudflare
 `docker compose stop cloudflared-preview`.
 
 Постоянный вариант (свой домен на Cloudflare): именованный туннель с двумя
-hostname — `mcp.* → toolbox:8787` и `preview.* → toolbox:8080`, настройка в
+hostname — `mcp.* → toolbox:8787` и `preview.* → toolbox:8788`, настройка в
 `cloudflared-config.example.yml`.
 
 ## Если что-то не так
@@ -146,12 +146,12 @@ docker compose restart cloudflared
 Docker Desktop водит трафик через роутинг хоста — туннель поедет через VPN.
 
 **План Б — альтернативный туннель.** Порты уже проброшены на `127.0.0.1`
-(8787 — MCP, 8080 — preview), поэтому подходит любой:
+(8787 — MCP, 8788 — preview), поэтому подходит любой:
 
 - `ssh -R` на свой VPS + reverse-proxy (Caddy/nginx) — самый стабильный,
   SSH DPI не трогает:
   ```bash
-  ssh -N -R 19000:localhost:8787 -R 19001:localhost:8080 \
+  ssh -N -R 19000:localhost:8787 -R 19001:localhost:8788 \
       -o ServerAliveInterval=30 -o ServerAliveCountMax=3 user@твой-vps
   ```
 - localhost.run — без аккаунта, URL сразу: `ssh -R 0:localhost:8787 nokey@localhost.run`

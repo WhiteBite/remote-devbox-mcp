@@ -2,7 +2,7 @@
 #
 # Quick-туннель (trycloudflare) умеет только ОДИН hostname → только MCP.
 # Preview нужен, чтобы агент из своей песочницы снимал скриншоты запущенного
-# на devbox приложения (flutter run -d web-server --web-port 8080, bootRun).
+# на devbox приложения (flutter run -d web-server --web-port 8788, bootRun).
 #
 # Локально-управляемый туннель:
 #   1. cloudflared tunnel create remote-devbox
@@ -26,5 +26,5 @@ ingress:
     service: http://toolbox:8787
   # запущенное на devbox приложение — агент открывает его своим playwright
   - hostname: preview.<твой-домен>
-    service: http://toolbox:8080
+    service: http://toolbox:8788
   - service: http_status:404

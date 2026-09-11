@@ -42,14 +42,14 @@ services:
       - rdm-tools:/opt/tools                    # рантайм-тулчейны, переживают пересоздание
     expose:
       - "8787"
-      - "8080"                                  # preview: flutter web-server / bootRun для агента
+      - "8788"                                  # preview: flutter web-server / bootRun для агента
     # Loopback-проброс на хост: нужен альтернативным туннелям (ssh -R, tailscale
     # funnel, localhost.run), когда cloudflared деградирует из-за DPI провайдера
     # (см. cloudflare/cloudflared#1456 и README «Если что-то не так»).
     # Только 127.0.0.1 — снаружи не видно; мост по-прежнему требует токен.
     ports:
       - "127.0.0.1:8787:8787"
-      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:8788:8788"
 
   # Единственный выход наружу: туннель наружу, входящих портов на роутере нет.
   # --protocol http2: QUIC (UDP 7844) на некоторых сетях нестабилен —
@@ -70,7 +70,7 @@ services:
     environment:
       TUNNEL_TOKEN: "${TUNNEL_TOKEN:-}"
 
-  # Preview для агента: ВТОРОЙ быстрый туннель на порт 8080 (виджетбук /
+  # Preview для агента: ВТОРОЙ быстрый туннель на порт 8788 (виджетбук /
   # flutter web-server / bootRun). По умолчанию выключен — поднимай на время
   # проверки UI:
   #     docker compose --profile preview up -d
@@ -84,7 +84,7 @@ services:
     profiles: ["preview"]
     depends_on:
       - toolbox
-    command: tunnel --no-autoupdate --protocol http2 --url http://toolbox:8080
+    command: tunnel --no-autoupdate --protocol http2 --url http://toolbox:8788
 
 # Будущая опция: семантический граф кода (codegraph) агент индексирует у себя
 # в песочнице (см. arena/AGENT_INSTRUCTIONS.md §6) — в этот стек он не входит.
