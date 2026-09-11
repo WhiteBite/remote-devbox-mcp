@@ -38,6 +38,9 @@ services:
       # OPENCODE_MCP_PERMISSIONS: '{"edit":"allow","bash":"allow"}'
     volumes:
       - "${PROJECT_DIR:?укажи папку проекта в .env}:/workspace"
+      # shadow-монт: воркер не видит opencode.json проекта и не пытается поднять
+      # его MCP-серверы внутри контейнера (деградация старта); диск не меняется
+      - ./docker/workspace-opencode.json:/workspace/opencode.json:ro
       - rdm-state:/state                        # TODO/сессии моста, вне проекта
       - rdm-tools:/opt/tools                    # рантайм-тулчейны, переживают пересоздание
     expose:
