@@ -61,6 +61,22 @@ services:
     environment:
       TUNNEL_TOKEN: "${TUNNEL_TOKEN:-}"
 
+  # Preview для агента: ВТОРОЙ быстрый туннель на порт 8080 (виджетбук /
+  # flutter web-server / bootRun). По умолчанию выключен — поднимай на время
+  # проверки UI:
+  #     docker compose --profile preview up -d
+  #     docker compose logs cloudflared-preview | Select-String trycloudflare
+  #     docker compose stop cloudflared-preview     # когда закончили
+  # Токена на этом URL нет: кто знает URL — видит приложение.
+  cloudflared-preview:
+    image: cloudflare/cloudflared:latest
+    container_name: rdm-tunnel-preview
+    restart: unless-stopped
+    profiles: ["preview"]
+    depends_on:
+      - toolbox
+    command: tunnel --no-autoupdate --url http://toolbox:8080
+
 # Будущая опция: семантический граф кода (codegraph) агент индексирует у себя
 # в песочнице (см. arena/AGENT_INSTRUCTIONS.md §6) — в этот стек он не входит.
 

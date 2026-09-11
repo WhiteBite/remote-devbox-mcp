@@ -93,13 +93,29 @@ docker compose up -d
 docker compose down          # туннель закроется, доступ извне пропадёт
 ```
 
-## 7. Preview для агента (опционально)
+## 7. Preview для агента (виджетбук, запущенное приложение)
 
-Чтобы агент видел запущенное приложение (flutter web-server, bootRun) и
-снимал его скриншоты своим playwright, порт приложения должен быть виден
-наружу второй hostname именованного туннеля (`preview.* → toolbox:8080`).
-Настройка — `cloudflared-config.example.yml`. Быстрый trycloudflare-туннель
-умеет один hostname, preview через него не работает.
+Агент проверяет UI своим playwright из своей песочницы: приложение
+поднимается на devbox и отдаётся наружу вторым URL туннеля.
+
+Быстрый вариант (без домена, второй trycloudflare-туннель):
+
+```powershell
+# 1. Приложение на devbox (агент поднимет его сам через мост, либо ты руками):
+docker compose exec toolbox flutter run -d web-server --web-hostname 0.0.0.0 --web-port 8080
+
+# 2. Второй туннель на порт 8080 (по умолчанию выключен):
+docker compose --profile preview up -d
+docker compose logs cloudflared-preview | Select-String trycloudflare
+```
+
+Полученный `https://yyyyy.trycloudflare.com` пришли агенту. Токена на нём
+нет — кто знает URL, тот видит приложение; после проверки выключи:
+`docker compose stop cloudflared-preview`.
+
+Постоянный вариант (свой домен на Cloudflare): именованный туннель с двумя
+hostname — `mcp.* → toolbox:8787` и `preview.* → toolbox:8080`, настройка в
+`cloudflared-config.example.yml`.
 
 ## Если что-то не так
 

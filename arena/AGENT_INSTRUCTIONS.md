@@ -118,17 +118,23 @@ flutter run -d web-server --web-hostname 0.0.0.0 --web-port 8080   # headless-с
   репо прошу у пользователя); нет → `git archive`/tar + base64 через `bash`
   моста (годится только для небольших проектов).
 
-Схема визуальной проверки UI:
+Схема визуальной проверки UI (виджетбук / веб-сборка / запущенное приложение):
 
-1. Поднимаю приложение на devbox через `./mcp run --auto bash`:
-   `flutter run -d web-server --web-hostname 0.0.0.0 --web-port 8080`
-   или `./gradlew bootRun` (порт 8080).
-2. Порт отдаёт наружу **вторая hostname именованного туннеля**
-   (`preview.* → toolbox:8080`, см. `home/cloudflared-config.example.yml`).
-   Быстрый trycloudflare-туннель умеет один hostname — preview через него
-   не виден, прошу пользователя перейти на именованный.
-3. Открываю preview-URL своим playwright, скриншот сохраняю в PNG и смотрю
-   своим `read_file` — он реально показывает изображения.
+1. Поднимаю приложение на devbox через `./mcp run --auto bash` **отделённо** —
+   джоб моста живёт до таймаута, сервер так не держат; stdin у bash закрыт,
+   поэтому hot reload недоступен, после правок перезапускаю процесс:
+   ```bash
+   nohup flutter run -d web-server --web-hostname 0.0.0.0 --web-port 8080 \
+       > /tmp/widgetbook.log 2>&1 &
+   ```
+   Готовность жду по логу (`is being served at`), проверяю curl'ом изнутри.
+2. Прошу пользователя отдать порт 8080 наружу и прислать preview-URL:
+   быстрый вариант — `docker compose --profile preview up -d` (второй
+   trycloudflare-URL без токена), постоянный — именованный туннель
+   (`home/cloudflared-config.example.yml`).
+3. Открываю preview-URL своим playwright (из своей песочницы), скриншоты
+   сохраняю в PNG и смотрю своим `read_file` — он реально показывает
+   изображения. После проверки прошу пользователя выключить preview-туннель.
 
 Также вижу переполнения и ошибки компоновки текстом
 (`A RenderFlex overflowed by N pixels`) в выводе `flutter analyze`/`flutter test`
