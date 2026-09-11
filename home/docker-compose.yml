@@ -1,0 +1,63 @@
+# remote-devbox-mcp — твой комп как toolbox для арена-агента (меня).
+#
+# Принцип: ОДИН сервис, ОДИН проект, ОДНА переменная.
+#   Меняешь PROJECT_DIR в .env  →  docker compose up -d  →  работаю с другим проектом.
+#
+# Внутри нет ни агента, ни LLM: мост только исполняет тулы OpenCode
+# (read/write/edit/apply_patch/glob/grep/bash/lsp), решения принимаю я.
+
+services:
+
+  toolbox:
+    build:
+      context: ./docker
+      dockerfile: toolbox.Dockerfile
+      args:
+        WITH_FLUTTER: "${WITH_FLUTTER:-1}"     # 0 — если проект только Java
+    image: remote-devbox-toolbox:local
+    container_name: rdm-toolbox
+    restart: unless-stopped
+    init: true                                  # reap зомби от exec'ов
+    environment:
+      # корень = твоя папка проекта; выход за неё мост отвергает, а не спрашивает
+      OPENCODE_MCP_ROOT: /workspace
+      OPENCODE_MCP_TOKEN: "${MCP_BEARER_TOKEN:?задай в .env, минимум 24 символа}"
+      OPENCODE_MCP_HOST: 0.0.0.0                # по умолчанию 127.0.0.1 — извне не достучаться
+      OPENCODE_MCP_PORT: "8787"
+      OPENCODE_MCP_LSP: "true"                  # публикует тул lsp (jdtls для .java, dart для .dart)
+      # сборки Spring/Flutter долгие: дефолт 600 с, максимум по документам 3600
+      OPENCODE_MCP_JOB_TIMEOUT_SECONDS: "${JOB_TIMEOUT_SECONDS:-1800}"
+      OPENCODE_MCP_WAIT_MAX_SECONDS: "50"
+      # Правила auto-allow для write/edit/apply_patch/bash. Схема — нативные
+      # правила разрешений OpenCode; по умолчанию пусто и клиент отвечает на
+      # запросы сам (./mcp run --auto).
+      # OPENCODE_MCP_PERMISSIONS: '{"edit":"allow","bash":"allow"}'
+      JAVA_HOME: /opt/java/openjdk
+    volumes:
+      - "${PROJECT_DIR:?укажи папку проекта в .env}:/workspace"
+      - rdm-state:/state                        # TODO/сессии моста, вне проекта
+    expose:
+      - "8787"
+
+  # Единственный выход наружу: туннель наружу, входящих портов на роутере нет.
+  # Быстрый вариант (URL меняется при перезапуске):
+  #     docker compose logs cloudflared | Select-String trycloudflare
+  # Постоянный: создай именованный туннель, впиши TUNNEL_TOKEN в .env
+  # и замени command на: tunnel --no-autoupdate run
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: rdm-tunnel
+    restart: unless-stopped
+    depends_on:
+      - toolbox
+    command: tunnel --no-autoupdate --url http://toolbox:8787
+    environment:
+      TUNNEL_TOKEN: "${TUNNEL_TOKEN:-}"
+
+# Будущая опция: семантический граф кода (codegraph MCP) отдельным контейнером.
+# В текущий стек не входит: туннель один и смотрит только на toolbox, а второй
+# туннель означал бы публичный эндпоинт без авторизации. Агент обходится
+# нативными grep/glob.
+
+volumes:
+  rdm-state:

@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# mcp — обёртка над mcp_client.py: подставляет URL и токен из конфига.
+#
+# Настройка (один раз):
+#     cp mcp.conf.example ~/.remote-devbox-mcp.conf
+#     # вписать MCP_URL и MCP_TOKEN из своей машины
+#
+# Использование:
+#     ./mcp check
+#     ./mcp list
+#     ./mcp run read '{"filePath":"src/Main.java","offset":1,"limit":80}'
+#     ./mcp run --auto edit '{"filePath":"src/a.java","oldString":"x","newString":"y"}'
+#     ./mcp run --auto bash '{"command":"./gradlew test"}'
+#     ./mcp schema edit
+set -euo pipefail
+
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CONF="${MCP_CONF:-$HOME/.remote-devbox-mcp.conf}"
+
+if [[ -f "$CONF" ]]; then
+  # shellcheck disable=SC1090
+  set -a; source "$CONF"; set +a
+fi
+
+if [[ -z "${MCP_URL:-}" ]]; then
+  echo "MCP_URL не задан. Создай $CONF из mcp.conf.example" >&2
+  exit 2
+fi
+
+exec python3 "$DIR/mcp_client.py" \
+  --url "$MCP_URL" \
+  --token "${MCP_TOKEN:-}" \
+  --timeout "${MCP_TIMEOUT:-120}" \
+  "$@"

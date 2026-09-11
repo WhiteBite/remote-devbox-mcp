@@ -1,0 +1,11 @@
+# Скопируй в ~/.remote-devbox-mcp.conf и заполни значениями со своего компа.
+# Этот файл подхватывается обёрткой ./mcp автоматически.
+
+# Публичный URL твоего MCP-эндпоинта (из cloudflared / именованного туннеля).
+MCP_URL=https://xxxxx.trycloudflare.com/mcp
+
+# Bearer-токен (тот же, что MCP_BEARER_TOKEN в .env на твоём компе).
+MCP_TOKEN=replace-me
+
+# Таймаут одного вызова в секундах. Сборки/тесты могут быть долгими.
+MCP_TIMEOUT=300

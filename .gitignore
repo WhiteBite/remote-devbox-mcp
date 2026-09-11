@@ -1,0 +1,9 @@
+.env
+.codegraph/
+.omo/
+__pycache__/
+*.pyc
+.mcp-home.conf
+.remote-devbox-mcp.conf
+Thumbs.db
+.DS_Store
