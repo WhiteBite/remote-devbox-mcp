@@ -51,21 +51,49 @@ services:
       - "127.0.0.1:8787:8787"
       - "127.0.0.1:8788:8788"
 
+  # Встроенный VPN: VLESS-подписка -> sing-box в TUN-режиме. Туннели
+  # cloudflared делят его netns — провайдеру виден только VLESS-трафик,
+  # DPI против края Cloudflare до туннеля не достаёт (issue #1456).
+  vpn:
+    build:
+      context: ./docker
+      dockerfile: vpn.Dockerfile
+    image: remote-devbox-vpn:local
+    container_name: rdm-vpn
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun
+    environment:
+      VLESS_SUB_URL: "${VLESS_SUB_URL:-}"
+    volumes:
+      - rdm-vpn-cache:/cache                 # последняя удачная подписка
+    healthcheck:
+      # прямой режим (без подписки) = всегда healthy; в VPN-режиме требуем tun0
+      test: ["CMD-SHELL", "test ! -f /run/vpn-active || ip link show tun0 >/dev/null 2>&1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
   # Единственный выход наружу: туннель наружу, входящих портов на роутере нет.
-  # --protocol http2: QUIC (UDP 7844) на некоторых сетях нестабилен —
-  # соединение регистрируется, но потоки отваливаются (502 на краю).
+  # Трафик идёт через VPN-сайдкар (network_mode: container:rdm-vpn).
+  # --protocol http2: QUIC (UDP 7844) на некоторых сетях нестабилен.
   # Быстрый вариант (URL меняется при перезапуске):
   #     docker compose logs cloudflared | Select-String trycloudflare
-  # Именованный туннель (постоянные URL, плюс второй hostname для preview
-  # запущенного приложения — агент снимает его скриншоты из своей песочницы):
-  # создай туннель, впиши TUNNEL_TOKEN в .env, замени command на
-  # `tunnel --no-autoupdate run` и настрой ingress (cloudflared-config.example.yml).
+  # Именованный туннель: TUNNEL_TOKEN в .env + command `tunnel --no-autoupdate run`,
+  # ingress — cloudflared-config.example.yml.
   cloudflared:
     image: cloudflare/cloudflared:latest
     container_name: rdm-tunnel
     restart: unless-stopped
+    network_mode: container:rdm-vpn
     depends_on:
-      - toolbox
+      toolbox:
+        condition: service_started
+      vpn:
+        condition: service_healthy
     command: tunnel --no-autoupdate --protocol http2 --url http://toolbox:8787
     environment:
       TUNNEL_TOKEN: "${TUNNEL_TOKEN:-}"
@@ -82,8 +110,12 @@ services:
     container_name: rdm-tunnel-preview
     restart: unless-stopped
     profiles: ["preview"]
+    network_mode: container:rdm-vpn
     depends_on:
-      - toolbox
+      toolbox:
+        condition: service_started
+      vpn:
+        condition: service_healthy
     command: tunnel --no-autoupdate --protocol http2 --url http://toolbox:8788
 
 # Будущая опция: семантический граф кода (codegraph) агент индексирует у себя
@@ -92,3 +124,4 @@ services:
 volumes:
   rdm-state:
   rdm-tools:
+  rdm-vpn-cache:

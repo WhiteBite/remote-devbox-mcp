@@ -10,9 +10,12 @@ Cloudflare-туннель и правит код, собирает и тести
 
 ```
 ┌─ home/  → ставится на ТВОЙ комп (Windows + Docker Desktop)
-│   docker-compose.yml             один сервис toolbox + туннель cloudflared
+│   docker-compose.yml             toolbox + встроенный VPN (VLESS) + туннели cloudflared
 │   docker/toolbox.Dockerfile      образ: мост к тулам OpenCode (стеково-нейтральный;
 │                                  JDK 21 / Flutter — опциональные build-args)
+│   docker/vpn.Dockerfile          sing-box TUN-сайдкар: туннели едут через VLESS,
+│                                  DPI провайдера до туннеля не достаёт
+│   docker/vpn-entrypoint.sh       подписка → конфиг sing-box, пробинг и ротация серверов
 │   .env.example                   → скопировать в .env, заполнить PROJECT_DIR и токен
 │   cloudflared-config.example.yml именованный туннель: MCP + preview приложения
 │   SECURITY.md                    что запрещено монтировать, про изоляцию честно
