@@ -45,7 +45,9 @@ services:
       - "8080"                                  # preview: flutter web-server / bootRun для агента
 
   # Единственный выход наружу: туннель наружу, входящих портов на роутере нет.
-  # Быстрый вариант (URL меняется при перезапуске, только MCP-эндпоинт):
+  # --protocol http2: QUIC (UDP 7844) на некоторых сетях нестабилен —
+  # соединение регистрируется, но потоки отваливаются (502 на краю).
+  # Быстрый вариант (URL меняется при перезапуске):
   #     docker compose logs cloudflared | Select-String trycloudflare
   # Именованный туннель (постоянные URL, плюс второй hostname для preview
   # запущенного приложения — агент снимает его скриншоты из своей песочницы):
@@ -57,7 +59,7 @@ services:
     restart: unless-stopped
     depends_on:
       - toolbox
-    command: tunnel --no-autoupdate --url http://toolbox:8787
+    command: tunnel --no-autoupdate --protocol http2 --url http://toolbox:8787
     environment:
       TUNNEL_TOKEN: "${TUNNEL_TOKEN:-}"
 
@@ -75,7 +77,7 @@ services:
     profiles: ["preview"]
     depends_on:
       - toolbox
-    command: tunnel --no-autoupdate --url http://toolbox:8080
+    command: tunnel --no-autoupdate --protocol http2 --url http://toolbox:8080
 
 # Будущая опция: семантический граф кода (codegraph) агент индексирует у себя
 # в песочнице (см. arena/AGENT_INSTRUCTIONS.md §6) — в этот стек он не входит.

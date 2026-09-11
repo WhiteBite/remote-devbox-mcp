@@ -124,4 +124,5 @@ hostname — `mcp.* → toolbox:8787` и `preview.* → toolbox:8080`, наст�
 | `healthz` не отвечает | `docker compose logs toolbox` — мост сверяет версию Bun (нужна 1.3.14) и коммит upstream, зафиксированный `BRIDGE_COMMIT` в Dockerfile |
 | 401 у агента | токен в `.env` и в `~/.remote-devbox-mcp.conf` у агента должны совпадать |
 | URL каждый раз новый | это быстрый туннель; для постоянного создай именованный и впиши `TUNNEL_TOKEN` |
+| в логах cloudflared частые `Lost connection with the edge`, агент ловит 530/1033 | DPI провайдера рвёт соединения с краем Cloudflare (частая картина на QUIC — поэтому в compose стоит `--protocol http2`). Лечится маршрутом хоста через VPN или именованным туннелем через свой VPS. Клиент агента сам ретраит 502/520/521/523/524/530 |
 | сборка/тест обрываются по времени | подними `JOB_TIMEOUT_SECONDS` (максимум 3600) |

@@ -48,14 +48,19 @@ class HttpTransport:
 
     name = "http"
 
+    # Ошибки края Cloudflare «ориджин недоступен»: запрос НЕ доставлен мосту,
+    # повтор безопасен (в отличие от таймаута чтения — тот не ретраим).
+    RETRYABLE_STATUS = frozenset({502, 520, 521, 523, 524, 530})
+
     def __init__(self, url: str, token: str | None = None,
                  header: str = "Authorization", bearer: bool = True,
-                 timeout: float = 120.0):
+                 timeout: float = 120.0, retries: int = 4):
         self.url = url
         self.token = token
         self.header = header
         self.bearer = bearer
         self.timeout = timeout
+        self.retries = retries
         self.session_id: str | None = None
 
     def _headers(self) -> dict:
@@ -72,26 +77,40 @@ class HttpTransport:
 
     def send(self, payload: dict) -> dict | None:
         data = json.dumps(payload).encode()
-        req = urllib.request.Request(self.url, data=data,
-                                     headers=self._headers(), method="POST")
-        try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-                sid = resp.headers.get("Mcp-Session-Id")
-                if sid:
-                    self.session_id = sid
-                ctype = (resp.headers.get("Content-Type") or "").lower()
-                body = resp.read().decode("utf-8", "replace")
-        except urllib.error.HTTPError as e:
-            detail = e.read().decode("utf-8", "replace")[:600]
-            raise RuntimeError(f"HTTP {e.code} {e.reason}: {detail}") from None
-        except urllib.error.URLError as e:
-            raise RuntimeError(f"нет соединения: {e.reason}") from None
+        for attempt in range(self.retries + 1):
+            if attempt:
+                pause = min(2 ** attempt, 12)
+                print(f"[retry {attempt}/{self.retries}] через {pause} с",
+                      file=sys.stderr)
+                time.sleep(pause)
+            req = urllib.request.Request(self.url, data=data,
+                                         headers=self._headers(), method="POST")
+            try:
+                with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                    sid = resp.headers.get("Mcp-Session-Id")
+                    if sid:
+                        self.session_id = sid
+                    ctype = (resp.headers.get("Content-Type") or "").lower()
+                    body = resp.read().decode("utf-8", "replace")
+            except urllib.error.HTTPError as e:
+                detail = e.read().decode("utf-8", "replace")[:600]
+                if e.code in self.RETRYABLE_STATUS and attempt < self.retries:
+                    print(f"[!] HTTP {e.code}: туннель временно недоступен",
+                          file=sys.stderr)
+                    continue
+                raise RuntimeError(f"HTTP {e.code} {e.reason}: {detail}") from None
+            except urllib.error.URLError as e:
+                if attempt < self.retries:
+                    print(f"[!] нет соединения: {e.reason}", file=sys.stderr)
+                    continue
+                raise RuntimeError(f"нет соединения: {e.reason}") from None
 
-        if not body.strip():
-            return None                       # это было уведомление
-        if "text/event-stream" in ctype:
-            return self._parse_sse(body)
-        return json.loads(body)
+            if not body.strip():
+                return None                       # это было уведомление
+            if "text/event-stream" in ctype:
+                return self._parse_sse(body)
+            return json.loads(body)
+        raise RuntimeError("исчерпаны повторы")   # недостижимо: цикл либо return, либо raise
 
     @staticmethod
     def _parse_sse(body: str) -> dict | None:
@@ -323,7 +342,7 @@ def build_client(args) -> MCPClient:
         token = args.token if args.token is not None else os.environ.get("MCP_TOKEN")
         header = args.header or os.environ.get("MCP_HEADER", "Authorization")
         bearer = not args.no_bearer
-        t = HttpTransport(url, token, header, bearer, args.timeout)
+        t = HttpTransport(url, token, header, bearer, args.timeout, args.retries)
     return MCPClient(t)
 
 
@@ -336,6 +355,8 @@ def main():
     p.add_argument("--header", help="имя заголовка авторизации (по умолчанию Authorization)")
     p.add_argument("--no-bearer", action="store_true", help="не добавлять префикс 'Bearer '")
     p.add_argument("--timeout", type=float, default=120.0)
+    p.add_argument("--retries", type=int, default=4,
+                   help="повторы при ошибках края туннеля (502/520/521/523/524/530) и обрыве соединения")
     p.add_argument("--stdio", dest="command_stdio", nargs="+",
                    help="вместо HTTP: команда локального MCP-сервера")
     p.add_argument("--cwd", help="рабочая директория для stdio-сервера")
