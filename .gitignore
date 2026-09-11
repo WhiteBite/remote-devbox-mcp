@@ -7,3 +7,4 @@ __pycache__/
 .remote-devbox-mcp.conf
 Thumbs.db
 .DS_Store
+home/bin/
