@@ -58,8 +58,10 @@ Cloudflare-туннель и правит код, собирает и тести
 секреты не читать). Быстрый старт:
 
 ```bash
+git clone --depth 1 https://github.com/WhiteBite/remote-devbox-mcp
+cd remote-devbox-mcp
 cp arena/mcp.conf.example ~/.remote-devbox-mcp.conf   # вписать URL и токен
-cd arena && ./mcp check
+cd arena && chmod +x mcp && ./mcp check
 ```
 
 ## Безопасность
