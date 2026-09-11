@@ -124,5 +124,39 @@ hostname — `mcp.* → toolbox:8787` и `preview.* → toolbox:8080`, наст�
 | `healthz` не отвечает | `docker compose logs toolbox` — мост сверяет версию Bun (нужна 1.3.14) и коммит upstream, зафиксированный `BRIDGE_COMMIT` в Dockerfile |
 | 401 у агента | токен в `.env` и в `~/.remote-devbox-mcp.conf` у агента должны совпадать |
 | URL каждый раз новый | это быстрый туннель; для постоянного создай именованный и впиши `TUNNEL_TOKEN` |
-| в логах cloudflared частые `Lost connection with the edge`, агент ловит 530/1033 | DPI провайдера рвёт соединения с краем Cloudflare (частая картина на QUIC — поэтому в compose стоит `--protocol http2`). Лечится маршрутом хоста через VPN или именованным туннелем через свой VPS. Клиент агента сам ретраит 502/520/521/523/524/530 |
+| в логах cloudflared частые `Lost connection with the edge`, агент ловит 530/1033 | DPI провайдера рвёт соединения с краем Cloudflare — см. раздел ниже |
 | сборка/тест обрываются по времени | подними `JOB_TIMEOUT_SECONDS` (максимум 3600) |
+
+## Если Cloudflare-туннель рвёт DPI провайдера
+
+Симптомы: в `docker compose logs cloudflared` каждые 10–60 с
+`Lost connection with the edge` / `connection with edge closed`, снаружи
+периодические 530/1033. На российских линиях это известная проблема
+([cloudflare/cloudflared#1456](https://github.com/cloudflare/cloudflared/issues/1456)):
+вмешательство в соединения с диапазоном края Cloudflare `198.41.128.0/17`.
+Через прокси cloudflared не умеет — `--proxy-url`/`HTTPS_PROXY` не поддерживаются.
+
+**План А — TUN VPN на хосте** (или сплит-маршрут только для края):
+
+```powershell
+route add 198.41.128.0 mask 255.255.128.0 <шлюз-VPN>
+docker compose restart cloudflared
+```
+
+Docker Desktop водит трафик через роутинг хоста — туннель поедет через VPN.
+
+**План Б — альтернативный туннель.** Порты уже проброшены на `127.0.0.1`
+(8787 — MCP, 8080 — preview), поэтому подходит любой:
+
+- `ssh -R` на свой VPS + reverse-proxy (Caddy/nginx) — самый стабильный,
+  SSH DPI не трогает:
+  ```bash
+  ssh -N -R 19000:localhost:8787 -R 19001:localhost:8080 \
+      -o ServerAliveInterval=30 -o ServerAliveCountMax=3 user@твой-vps
+  ```
+- localhost.run — без аккаунта, URL сразу: `ssh -R 0:localhost:8787 nokey@localhost.run`
+- pinggy.io — без аккаунта: `ssh -p 443 -R0:localhost:8787 a.pinggy.io`
+- Tailscale funnel — нужен аккаунт: `tailscale funnel 8787`
+
+Агенту вместо trycloudflare-URL просто отдаётся URL альтернативного туннеля;
+токен и порядок работы не меняются.
