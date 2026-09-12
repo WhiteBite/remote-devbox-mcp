@@ -5,6 +5,8 @@
 set -u
 
 CACHE=/cache/sub.txt
+# канарейка для e2e-пробы туннеля (идёт через сам sing-box)
+CANARY=${CANARY:-https://1.1.1.1/cdn-cgi/trace}
 LINKS=/tmp/links.txt
 CONF=/run/sing-box.json
 UA="sing-box/1.11.15"
@@ -112,13 +114,19 @@ while true; do
   SB=$!
   fails=0
   while kill -0 $SB 2>/dev/null; do
-    sleep 60
+    sleep 20
     kill -0 $SB 2>/dev/null || break
-    if tcp_alive "$CUR_HOST" "$CUR_PORT"; then
+    ok=1
+    tcp_alive "$CUR_HOST" "$CUR_PORT" || ok=0
+    # e2e-канарейка через сам sing-box: ловит случай «TCP живой, а сессии рвутся»
+    if [ -n "$CANARY" ]; then
+      curl -fsS -m 8 -o /dev/null "$CANARY" || ok=0
+    fi
+    if [ "$ok" = 1 ]; then
       fails=0
     else
-      fails=$((fails + 1)); log "проба $CUR_HOST не прошла ($fails/3)"
-      if [ "$fails" -ge 3 ]; then
+      fails=$((fails + 1)); log "проба не прошла ($fails/2)"
+      if [ "$fails" -ge 2 ]; then
         log "ротация: сервер сменится"
         kill $SB 2>/dev/null; wait $SB 2>/dev/null
         break
