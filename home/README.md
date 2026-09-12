@@ -188,8 +188,12 @@ docker compose logs cloudflared-mcp | Select-String trycloudflare
 Агент работает со вторым конфигом: `MCP_CONF=~/.mcp-supervisor.conf ./mcp list`.
 Сервер по умолчанию — muffin-supervisor (HTTP-режим включается его переменной
 `MCP_HTTP_PORT`, правка в Muffin `tools/muffin-supervisor/cli.py`). Другой сервер:
-`-ServerCwd/-ServerCommand/-ServerPort`. Стоп: убить процессы (pid в
-`%TEMP%\mcp-public\pids.txt`) и `docker compose stop cloudflared-mcp`.
+`-ServerCwd/-ServerCommand/-ServerPort`. Стоп: `home\host\stop-mcp-public.ps1`
+(убивает только записанные при старте pid, сверяя cmdline — pid мог быть
+переиспользован ОС) + `docker compose stop cloudflared-mcp`. Процессы никогда не
+убиваются по паттерну cmdline: на машине легально живут чужие python/node-
+серверы с такими же командами; чужие сервисы останавливаются только их штатными
+командами (у Muffin — `supervisor cli stop`).
 
 Прокси сырым TCP: Bearer на каждый запрос (keep-alive у cloudflared
 переиспользует соединения), Host переписывается на loopback, X-Forwarded-Host
