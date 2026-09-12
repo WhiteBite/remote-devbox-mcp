@@ -1,5 +1,37 @@
 # Часть «дом» — установка на твой компьютер
 
+## 0. Ежедневный запуск (ранбук)
+
+Все команды из папки `home\`. `.env` уже настроен (PROJECT_DIR, токены).
+
+```powershell
+cd D:\Sources\WhiteBite\remote-devbox-mcp\home
+
+# база: toolbox + VPN-сайдкар + MCP-туннель
+docker compose up -d
+docker compose ps                       # ждём: toolbox healthy, vpn healthy
+docker compose logs cloudflared | Select-String trycloudflare   # -> hostname
+# MCP_URL = https://<hostname>/mcp, токен = MCP_BEARER_TOKEN из .env
+
+# опционально, по задаче:
+docker compose --profile preview up -d   # preview запущенного приложения
+#   (внутри toolbox поднять приложение, напр. nohup node serve.js &)
+docker compose --profile shots up -d     # скриншоты для оценки агентом
+#   сначала на хосте: python -m http.server 8791 --bind 127.0.0.1 --directory <папка>
+docker compose --profile mcp up -d       # локальные MCP наружу (supervisor)
+#   сначала на хосте: home\host\start-mcp-public.ps1
+#   URL: docker compose logs cloudflared-mcp | Select-String trycloudflare
+```
+
+Закрыть доступ наружу: `docker compose stop cloudflared cloudflared-mcp
+cloudflared-preview cloudflared-shots` (или `down` — весь стек). Хостовую
+цепочку mcp: `home\host\stop-mcp-public.ps1`.
+
+Смена проекта: правка `PROJECT_DIR` в `.env` → `docker compose up -d`
+(туннели выживают). Смена стека (`WITH_JAVA`/`WITH_FLUTTER`): сначала
+`docker compose build toolbox`. URL меняются только при пересоздании
+соответствующего cloudflared или vpn-контейнера.
+
 Нужны только Docker Desktop и доступ в интернет. Входящие порты на роутере не
 требуются: туннель соединяется наружу сам.
 
