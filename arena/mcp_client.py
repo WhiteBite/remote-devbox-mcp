@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import hashlib
 import json
 import os
 import subprocess
@@ -45,6 +46,22 @@ for _stream in (sys.stdout, sys.stderr):
         pass
 
 PROTOCOL_VERSION = "2025-06-18"
+
+# коды возврата для скриптования агентом
+EX_OK = 0
+EX_GENERIC = 1
+EX_CONFIG = 2
+EX_TUNNEL = 3
+EX_PERMISSION = 4
+EX_JOB_FAILED = 5
+
+# Кэш идемпотентности мутаций
+MUTATION_TOOLS = frozenset({"write", "edit", "apply_patch", "bash"})
+CACHE_DIR = os.path.join("shots", ".mcp_responses")
+CACHE_TTL = 300
+
+# Перзистентность джобов
+JOBS_FILE = os.path.join("shots", ".mcp_jobs.json")
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -70,6 +87,11 @@ class HttpTransport:
         self.timeout = timeout
         self.retries = retries
         self.session_id: str | None = None
+
+    def _redact(self, msg: str) -> str:
+        if self.token and self.token in msg:
+            return msg.replace(self.token, "***")
+        return msg
 
     def _headers(self) -> dict:
         h = {
@@ -102,16 +124,23 @@ class HttpTransport:
                     body = resp.read().decode("utf-8", "replace")
             except urllib.error.HTTPError as e:
                 detail = e.read().decode("utf-8", "replace")[:600]
+                if e.code in (401, 403) and self.session_id \
+                        and attempt < self.retries:
+                    print("[!] сессия истекла, переподключаюсь", file=sys.stderr)
+                    self.session_id = None
+                    continue
                 if e.code in self.RETRYABLE_STATUS and attempt < self.retries:
                     print(f"[!] HTTP {e.code}: туннель временно недоступен",
                           file=sys.stderr)
                     continue
-                raise RuntimeError(f"HTTP {e.code} {e.reason}: {detail}") from None
+                raise RuntimeError(
+                    self._redact(f"HTTP {e.code} {e.reason}: {detail}")) from None
             except urllib.error.URLError as e:
                 if attempt < self.retries:
                     print(f"[!] нет соединения: {e.reason}", file=sys.stderr)
                     continue
-                raise RuntimeError(f"нет соединения: {e.reason}") from None
+                raise RuntimeError(
+                    self._redact(f"нет соединения: {e.reason}")) from None
 
             if not body.strip():
                 return None                       # это было уведомление
@@ -175,6 +204,72 @@ class StdioTransport:
 
 
 # ──────────────────────────────────────────────────────────────────────
+# Кэш идемпотентности мутаций
+# ──────────────────────────────────────────────────────────────────────
+
+def _mutation_key(tool: str, arguments: dict) -> str:
+    return hashlib.sha256(
+        f"{tool}:{json.dumps(arguments, sort_keys=True)}".encode()
+    ).hexdigest()[:20]
+
+
+def _load_mutation_cache(key: str) -> dict | None:
+    path = os.path.join(CACHE_DIR, f"{key}.json")
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            entry = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return None
+    if time.time() - entry.get("saved_at", 0) > CACHE_TTL:
+        return None
+    return entry.get("response")
+
+
+def _store_mutation_cache(key: str, response: dict) -> None:
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    path = os.path.join(CACHE_DIR, f"{key}.json")
+    entry = {"saved_at": time.time(), "response": response}
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(entry, f, ensure_ascii=False)
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Перзистентность джобов
+# ──────────────────────────────────────────────────────────────────────
+
+def save_job_state(job: dict, tool: str) -> None:
+    os.makedirs("shots", exist_ok=True)
+    try:
+        with open(JOBS_FILE, "r", encoding="utf-8") as f:
+            jobs = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        jobs = {}
+    jobs[job["job_id"]] = {
+        "saved_at": time.time(),
+        "status": job.get("status"),
+        "tool": tool,
+    }
+    with open(JOBS_FILE, "w", encoding="utf-8") as f:
+        json.dump(jobs, f, ensure_ascii=False, indent=2)
+
+
+def load_job_states() -> dict:
+    try:
+        with open(JOBS_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def save_job_states(jobs: dict) -> None:
+    os.makedirs("shots", exist_ok=True)
+    with open(JOBS_FILE, "w", encoding="utf-8") as f:
+        json.dump(jobs, f, ensure_ascii=False, indent=2)
+
+
+# ──────────────────────────────────────────────────────────────────────
 # Клиент
 # ──────────────────────────────────────────────────────────────────────
 
@@ -212,9 +307,24 @@ class MCPClient:
         return (res or {}).get("result", {}).get("tools", [])
 
     def call(self, name: str, arguments: dict) -> dict:
-        res = self.t.send({"jsonrpc": "2.0", "id": self._next(),
-                           "method": "tools/call",
-                           "params": {"name": name, "arguments": arguments}})
+        if name in MUTATION_TOOLS:
+            key = _mutation_key(name, arguments)
+            cached = _load_mutation_cache(key)
+            if cached is not None:
+                print("[!] повтор мутации — ответ из кэша", file=sys.stderr)
+                res = cached
+            else:
+                res = self.t.send({"jsonrpc": "2.0", "id": self._next(),
+                                   "method": "tools/call",
+                                   "params": {"name": name,
+                                              "arguments": arguments}})
+                if res and "error" not in res:
+                    _store_mutation_cache(key, res)
+        else:
+            res = self.t.send({"jsonrpc": "2.0", "id": self._next(),
+                               "method": "tools/call",
+                               "params": {"name": name,
+                                          "arguments": arguments}})
         if not res:
             raise RuntimeError("пустой ответ")
         if "error" in res:
@@ -316,7 +426,7 @@ def job_brief(job: dict) -> str:
 
 def settle_job(client, job: dict, auto: bool,
                max_polls: int = 60, delay: float = 1.0,
-               wait_seconds: int = 45) -> dict:
+               wait_seconds: int = 45, progress: bool = True) -> dict:
     """Довести джоб до конца.
 
     Мост на write/edit/apply_patch/bash отвечает awaiting_permission:
@@ -327,8 +437,12 @@ def settle_job(client, job: dict, auto: bool,
     поэтому один опрос покрывает до 45 с сборки: 60 опросов ≈ 45 минут.
     Счётчик итераций общий для всех статусов — цикл ограничен даже если
     ответ разрешения не принят и статус не меняется.
+
+    При progress=True инкрементальный вывод джоба стримится в stderr,
+    чтобы длинные сборки показывали живость.
     """
     polls = 0
+    last_output = ""
     while job.get("status") in ("awaiting_permission", "running", "cancelling"):
         polls += 1
         if polls > max_polls:
@@ -349,6 +463,15 @@ def settle_job(client, job: dict, auto: bool,
         job = parse_job(client.call("opencode_job_result", {
             "job_id": job["job_id"],
             "wait_seconds": wait_seconds})) or job
+        if progress:
+            out = ((job.get("result") or {}).get("output") or "")
+            if out and out != last_output:
+                if out.startswith(last_output):
+                    sys.stderr.write(out[len(last_output):])
+                else:
+                    sys.stderr.write(out)
+                sys.stderr.flush()
+                last_output = out
     return job
 
 
@@ -366,6 +489,22 @@ def print_tools(tools: list[dict]):
 
 
 # ──────────────────────────────────────────────────────────────────────
+# Адаптивные ожидания
+# ──────────────────────────────────────────────────────────────────────
+
+def resolve_wait(s: str) -> int:
+    if s == "auto":
+        return min(50, max(30, int(os.environ.get("JOB_TIMEOUT_SECONDS", "1800")) // 40))
+    return int(s)
+
+
+def resolve_polls(s: str, wait: int) -> int:
+    if s == "auto":
+        return max(20, int(int(os.environ.get("JOB_TIMEOUT_SECONDS", "1800")) / wait * 1.5))
+    return int(s)
+
+
+# ──────────────────────────────────────────────────────────────────────
 # CLI
 # ──────────────────────────────────────────────────────────────────────
 
@@ -375,12 +514,25 @@ def build_client(args) -> MCPClient:
     else:
         url = args.url or os.environ.get("MCP_URL")
         if not url:
-            sys.exit("укажи --url или MCP_URL")
+            print("укажи --url или MCP_URL", file=sys.stderr)
+            sys.exit(EX_CONFIG)
         token = args.token if args.token is not None else os.environ.get("MCP_TOKEN")
         header = args.header or os.environ.get("MCP_HEADER", "Authorization")
         bearer = not args.no_bearer
         t = HttpTransport(url, token, header, bearer, args.timeout, args.retries)
     return MCPClient(t)
+
+
+def _add_progress_flags(sub):
+    sub.add_argument("--progress", dest="progress", action="store_true",
+                     default=True, help="стримить вывод джоба в stderr (по умолчанию вкл)")
+    sub.add_argument("--no-progress", dest="progress", action="store_false",
+                     help="отключить стриминг вывода")
+
+
+def _add_wait_flag(sub):
+    sub.add_argument("--wait-seconds", type=str, default="45",
+                    help="серверное ожидание в opencode_job_result (1-50 или 'auto')")
 
 
 def main():
@@ -415,16 +567,22 @@ def main():
     s.add_argument("args", nargs="?", default="{}", help="JSON-аргументы")
     s.add_argument("--auto", action="store_true",
                    help="самому отвечать 'once' на запрос разрешения")
-    s.add_argument("--polls", type=int, default=60, help="сколько раз опрашивать джоб")
+    s.add_argument("--polls", type=str, default="60", help="сколько раз опрашивать джоб (int или 'auto')")
     s.add_argument("--delay", type=float, default=1.0, help="пауза между опросами, сек")
-    s.add_argument("--wait-seconds", type=int, default=45,
-                   help="серверное ожидание в opencode_job_result (максимум 50)")
+    _add_wait_flag(s)
+    _add_progress_flags(s)
     s = sub.add_parser("job", help="состояние/результат джоба")
     s.add_argument("job_id")
     s = sub.add_parser("reply", help="ответить на запрос разрешения")
     s.add_argument("job_id")
     s.add_argument("permission_id")
     s.add_argument("reply", nargs="?", default="once", choices=["once", "reject"])
+
+    s = sub.add_parser("resume", help="дозавершить незаконченные джобы из shots/.mcp_jobs.json")
+    s.add_argument("--auto", action="store_true",
+                   help="самому отвечать 'once' на запрос разрешения")
+    _add_wait_flag(s)
+    _add_progress_flags(s)
 
     args = p.parse_args()
     client = build_client(args)
@@ -468,6 +626,8 @@ def main():
                 arguments = json.loads(args.args)
             except json.JSONDecodeError as e:
                 sys.exit(f"аргументы не JSON: {e}")
+            wait = resolve_wait(args.wait_seconds)
+            polls = resolve_polls(args.polls, wait)
             raw = client.call(args.tool, arguments)
             job = parse_job(raw)
             if job is None:            # сервер без job-протокола — обычный вызов
@@ -476,18 +636,22 @@ def main():
                     print("сохранены картинки: " + ", ".join(imgs))
                 print(flatten(raw))
             else:
-                job = settle_job(client, job, args.auto, args.polls, args.delay,
-                                 args.wait_seconds)
+                save_job_state(job, args.tool)
+                job = settle_job(client, job, args.auto, polls, args.delay,
+                                 wait, args.progress)
+                save_job_state(job, args.tool)
                 imgs = dump_images(raw, job, f"mcp-{job.get('job_id', 'job')[:8]}")
                 if imgs:
                     print("сохранены картинки: " + ", ".join(imgs))
                 print(job_brief(job))
+                if job.get("status") == "awaiting_permission":
+                    sys.exit(EX_PERMISSION)
                 # Мост считает «completed» даже при ненулевом коде команды
                 # (result.metadata.exit). Непройденный тест не должен выглядеть
                 # как успех, поэтому падаем и в этом случае.
                 exit_code = ((job.get("result") or {}).get("metadata") or {}).get("exit")
                 if job.get("status") == "failed" or exit_code not in (None, 0):
-                    sys.exit(1)
+                    sys.exit(EX_JOB_FAILED)
 
         if args.action == "job":
             job = parse_job(client.call("opencode_job_result", {"job_id": args.job_id}))
@@ -498,7 +662,37 @@ def main():
                 "job_id": args.job_id, "permission_id": args.permission_id,
                 "reply": args.reply}))
             print(job_brief(job) if job else "ответ не принят")
+
+        if args.action == "resume":
+            wait = resolve_wait(args.wait_seconds)
+            jobs = load_job_states()
+            for job_id, entry in list(jobs.items()):
+                if entry.get("status") not in ("running", "awaiting_permission", "cancelling"):
+                    continue
+                try:
+                    raw = client.call("opencode_job_result", {"job_id": job_id})
+                    job = parse_job(raw)
+                except RuntimeError:
+                    job = None
+                if job is None:
+                    print(f"джоб {job_id} не найден (мост перезапущен)")
+                    del jobs[job_id]
+                    continue
+                job = settle_job(client, job, args.auto, max_polls=60,
+                                 delay=1.0, wait_seconds=wait,
+                                 progress=args.progress)
+                print(job_brief(job))
+                status = job.get("status")
+                if status in ("completed", "failed", "cancelled"):
+                    del jobs[job_id]
+                else:
+                    jobs[job_id]["status"] = status
+            save_job_states(jobs)
     except RuntimeError as e:
+        msg = str(e)
+        if "530" in msg or "нет соединения" in msg:
+            print(f"ОШИБКА: {e}", file=sys.stderr)
+            sys.exit(EX_TUNNEL)
         sys.exit(f"ОШИБКА: {e}")
     finally:
         client.close()

@@ -31,6 +31,7 @@ PROFILE = CFG.get("profile", "default")
 RUN_DIR = Path(os.environ.get("TEMP", "/tmp")) / "rdm-runner"
 RUN_DIR.mkdir(parents=True, exist_ok=True)
 DEFAULT_TIMEOUT = int(CFG.get("timeout", 900))
+AUDIT_LOG = RUN_DIR / "audit.log"
 
 mcp = FastMCP(
     f"devbox-runner-{PROFILE}",
@@ -40,7 +41,12 @@ mcp = FastMCP(
 
 
 def _audit(line: str) -> None:
-    with open(RUN_DIR / "audit.log", "a", encoding="utf-8") as f:
+    try:
+        if AUDIT_LOG.exists() and AUDIT_LOG.stat().st_size > 10 * 1024 * 1024:
+            AUDIT_LOG.rename(RUN_DIR / "audit.log.1")
+    except OSError:
+        pass
+    with open(AUDIT_LOG, "a", encoding="utf-8") as f:
         f.write(f"{time.strftime('%Y-%m-%dT%H:%M:%S')} {line}\n")
 
 
@@ -100,8 +106,13 @@ def _build_argv(spec: dict, kwargs: dict) -> list[str]:
     return argv
 
 
+def _tool_name(name: str) -> str:
+    return f"run_{name.replace(':', '_').replace('-', '_')}"
+
+
 def _make_tool(name: str, spec: dict):
     argnames = list((spec.get("args") or {}).keys())
+    timeout = int(spec.get("timeout", DEFAULT_TIMEOUT))
 
     def run(**kwargs):
         present = {k: v for k, v in kwargs.items() if v is not None}
@@ -122,16 +133,16 @@ def _make_tool(name: str, spec: dict):
                 "port": spec.get("port"), "log": str(log),
             })
         proc = subprocess.run(
-            argv, cwd=CWD, capture_output=True, timeout=DEFAULT_TIMEOUT,
+            argv, cwd=CWD, capture_output=True, timeout=timeout,
         )
         _audit(f"{name} exit={proc.returncode}")
         return json.dumps({
             "exit_code": proc.returncode,
-            "stdout": proc.stdout.decode("utf-8", "replace")[-8000:],
-            "stderr": proc.stderr.decode("utf-8", "replace")[-4000:],
+            "stdout": proc.stdout.decode("utf-8", "replace")[-64000:],
+            "stderr": proc.stderr.decode("utf-8", "replace")[-32000:],
         })
 
-    run.__name__ = f"run_{name.replace(':', '_').replace('-', '_')}"
+    run.__name__ = _tool_name(name)
     run.__doc__ = (spec.get("description") or f"runner: {name}") + (
         f"\nargs: {argnames}" if argnames else "\nargs: нет")
     # явная сигнатура: FastMCP строит схему аргументов из signature
@@ -145,6 +156,37 @@ def _make_tool(name: str, spec: dict):
     return run
 
 
+def _make_kill_tool(name: str):
+    def kill():
+        pidfile = RUN_DIR / f"{PROFILE}-{name}.pid"
+        if not pidfile.exists():
+            return json.dumps({"killed": False, "reason": "no pidfile"})
+        pid = int(pidfile.read_text().strip())
+        if os.name == "nt":
+            subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)])
+        else:
+            try:
+                pgid = os.getpgid(pid)
+                if pgid != os.getpgid(0):
+                    os.killpg(pgid, 9)
+                else:
+                    os.kill(pid, 9)
+            except OSError:
+                pass
+        try:
+            pidfile.unlink()
+        except OSError:
+            pass
+        _audit(f"{name}_kill pid={pid}")
+        return json.dumps({"killed": True, "pid": pid})
+
+    kill.__name__ = _tool_name(name) + "_kill"
+    kill.__doc__ = f"kill background runner: {name}"
+    kill.__signature__ = inspect.Signature(return_annotation=str)
+    kill.__annotations__ = {"return": str}
+    return kill
+
+
 @mcp.tool()
 def runner_list() -> str:
     """Список объявленных команд раннера (имя, argv, args, background, port)."""
@@ -156,6 +198,9 @@ for _cmd in CFG.get("commands", []):
     _cmd["args"] = {k: _norm(v) for k, v in (_cmd.get("args") or {}).items()}
     _fn = _make_tool(_cmd["name"], _cmd)
     mcp.add_tool(_fn, name=_fn.__name__)
+    if _cmd.get("background"):
+        _kill_fn = _make_kill_tool(_cmd["name"])
+        mcp.add_tool(_kill_fn, name=_kill_fn.__name__)
 
 
 if __name__ == "__main__":

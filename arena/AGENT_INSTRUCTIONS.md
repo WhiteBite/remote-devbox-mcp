@@ -28,6 +28,9 @@ Trycloudflare-URL меняется после любого рестарта Dock
 такого рестарта `./mcp check` персистентно даёт 530 — прошу у пользователя
 новый URL и правлю `MCP_URL` в конфиге.
 
+После клона `cd devbox/arena && ./mcp check` сам чинит exec-бит; playwright
+ставится один раз за сессию: `pip install playwright && python -m playwright install chromium`.
+
 ## 1. Окружение
 
 - Возможен второй эндпоинт: локальные MCP хоста (например, muffin-supervisor)
@@ -169,3 +172,55 @@ flutter run -d web-server --web-hostname 0.0.0.0 --web-port 8788   # headless-с
 Также вижу переполнения и ошибки компоновки текстом
 (`A RenderFlex overflowed by N pixels`) в выводе `flutter analyze`/`flutter test`
 через `bash` моста.
+
+## 7. Проверка свежести артефактов
+
+Перед визуальной оценкой читаю `/workspace/.devbox-artifacts.json` если есть.
+Если файла нет или `generated-at` старше начала задачи — артефакты могут быть
+устаревшими; не судить по ним. Для Flutter Widgetbook: компактный превью не
+раскрывает expanded tiles → перед оценкой раскрытых виджетов запросить
+регенерацию через supervisor/runner и только потом судить.
+
+## 8. Словарь ошибок и действий
+
+| Ситуация | Действие |
+|---|---|
+| HTTP 502/520/521/523/530 | клиент ретраит сам, ждать |
+| Персистентные 530 >3 мин | подождать 2–3 мин (ротация VLESS), повторить check один раз, затем стоп+спросить |
+| 401 после рестарта Docker | URL сменился, запросить новый INGRESS |
+| awaiting_permission без --auto | напечатать пользователю `./mcp reply <job> <perm>` once |
+| metadata.exit≠0 | exit 5 клиента, читать outputPath если обрезан |
+| Статус cancelling | не опрашивать, завести заново |
+| 'нет такого джоба' | мост перезапущен, завести заново |
+| 403 на /p/<port> | порт не в allowlist профиля, попросить добавить |
+| 401 на /p/<port> | сверить токен |
+| Клиент убит по таймауту | джоб жив на сервере, дозапросить `./mcp job <id>` |
+| Нет TTY/interactive | не использовать интерактивные команды |
+
+## 9. Классы вызовов и таймауты
+
+| Класс | Флаги | wait/polls | MCP_TIMEOUT |
+|---|---|---|---|
+| read/glob/grep/lsp | — | — | 120 |
+| edit/write/patch | --auto | wait 30, polls 30 | 300 |
+| bash short (git/ls) | --auto | wait 30, 20 | 300 |
+| bash medium (compile) | --auto --wait-seconds auto --polls auto | — | 600 |
+| bash long (test/build) | --auto --wait-seconds auto --polls auto | — | 1800 |
+| settle after client kill | ./mcp job <id> | — | 120 |
+| host-MCP call | call | — | 300 |
+| runner call | call | — | 900 |
+
+Правило батча: ≥2 файлов меняешь — один apply_patch вместо N edit (один permission-цикл). Пример блока:
+
+```
+*** Begin Patch
+--- a/src/A.java
++++ b/src/A.java
+@@ -1,3 +1,3 @@
+-old
++new
+--- a/src/B.java
++++ b/src/B.java
+...
+*** End Patch
+```

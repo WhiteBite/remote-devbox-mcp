@@ -80,6 +80,8 @@ EOF
 только git и read-only; `pnpm install`/`pip install` в контейнере запрещены
 (испортят хост-артефакты другой ОС).
 
+Коды возврата клиента: 0 успех, 2 конфиг, 3 туннель, 4 разрешение, 5 джоб-ошибка — используй для ветвления в скриптах.
+
 ## Приложение. Шаблон передачи задачи (для пользователя)
 
 ```
@@ -87,9 +89,10 @@ EOF
 INGRESS=https://<актуальный>.trycloudflare.com
 BRIDGE_TOKEN=<MCP_BEARER_TOKEN из home/.env>
 HOST_TOKEN=<MCP_PUBLIC_TOKEN из home/.env>   # если в ТЗ есть host-MCP
-Доп. эндпоинты: /p/8792/mcp (supervisor), /p/8765 (gallery), /p/8080 (widgetbook)
 ТЗ: /workspace/ARENA_TASK.md
 ```
+
+Эндпоинты и порты: GET <INGRESS>/p/9000/manifest.json с заголовком Authorization: Bearer <INGRESS_TOKEN> — машиночитаемый список эндпоинтов, портов и команд раннера; не перечисляй порты вручную.
 
 Актуальный INGRESS: `docker compose logs cloudflared-ingress | Select-String trycloudflare`
 из папки `home\` на машине пользователя.

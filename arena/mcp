@@ -12,10 +12,23 @@
 #     ./mcp run --auto edit '{"filePath":"src/a.java","oldString":"x","newString":"y"}'
 #     ./mcp run --auto bash '{"command":"./gradlew test"}'
 #     ./mcp schema edit
+#     ./mcp --conf mybox check
 set -euo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CONF="${MCP_CONF:-$HOME/.remote-devbox-mcp.conf}"
+
+# Самолечение exec-битов: если файлы не +x, чиним на месте.
+[[ -x "$DIR/mcp" ]] || chmod +x "$DIR/mcp" 2>/dev/null || true
+[[ -x "$DIR/mcp_client.py" ]] || chmod +x "$DIR/mcp_client.py" 2>/dev/null || true
+
+# --conf NAME первым аргументом: конфиг ~/.devbox/NAME.conf
+if [[ "${1:-}" == "--conf" ]]; then
+  [[ $# -ge 2 ]] || { echo "--conf требует имя (напр. --conf mybox)" >&2; exit 2; }
+  CONF="$HOME/.devbox/${2}.conf"
+  shift 2
+else
+  CONF="${MCP_CONF:-$HOME/.remote-devbox-mcp.conf}"
+fi
 
 if [[ -f "$CONF" ]]; then
   # shellcheck disable=SC1090
@@ -27,8 +40,8 @@ if [[ -z "${MCP_URL:-}" ]]; then
   exit 2
 fi
 
+export MCP_TOKEN="${MCP_TOKEN:-}"
 exec python3 "$DIR/mcp_client.py" \
   --url "$MCP_URL" \
-  --token "${MCP_TOKEN:-}" \
-  --timeout "${MCP_TIMEOUT:-120}" \
+  --timeout "${MCP_TIMEOUT:-300}" \
   "$@"

@@ -16,8 +16,9 @@ $selfAuthed = if ($selfAuthed) { ($selfAuthed -replace '^SELF_AUTHED_PORTS=', ''
 $env:SELF_AUTHED_PORTS = $selfAuthed
 $allowed = (Get-Content $envFile | Where-Object { $_ -match '^ALLOWED_PORTS=' } | Select-Object -First 1)
 $env:ALLOWED_PORTS = if ($allowed) { ($allowed -replace '^ALLOWED_PORTS=', '').Trim() } else { "" }
+$env:RDM_MANIFEST_PATH = Join-Path $env:TEMP "rdm-host\rdm-manifest.json"
 $p = Start-Process -FilePath "python" -ArgumentList "`"$here\ingress-proxy.py`"" `
   -WindowStyle Hidden -PassThru `
   -RedirectStandardOutput "$logDir\ingress.out" -RedirectStandardError "$logDir\ingress.err"
 "$($p.Id)" | Out-File "$logDir\pids.txt"
-"ingress-proxy pid=$($p.Id) :8793; логи: $logDir\"
+"ingress-proxy pid=$($p.Id) :8799; логи: $logDir\"
