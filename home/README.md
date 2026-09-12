@@ -23,6 +23,12 @@ docker compose --profile mcp up -d       # локальные MCP наружу (
 #   URL: docker compose logs cloudflared-mcp | Select-String trycloudflare
 docker compose --profile gallery up -d   # review-сайт галереи с хоста (:8765)
 #   URL: docker compose logs cloudflared-gallery | Select-String trycloudflare
+
+# постоянный ingress на ВСЕ loopback-эндпоинты хоста (без профилей):
+#   на хосте: home\host\start-ingress.ps1
+#   URL: docker compose logs cloudflared-ingress | Select-String trycloudflare
+#   доступ: <INGRESS>/p/<порт>/<путь> + заголовок Authorization: Bearer <INGRESS_TOKEN>
+#   порты со своей авторизацией (8792) — с их токеном, ingress-токен не нужен
 ```
 
 Закрыть доступ наружу: `docker compose stop cloudflared cloudflared-mcp
@@ -232,6 +238,34 @@ docker compose logs cloudflared-mcp | Select-String trycloudflare
 Прокси сырым TCP: Bearer на каждый запрос (keep-alive у cloudflared
 переиспользует соединения), Host переписывается на loopback, X-Forwarded-Host
 вырезается — FastMCP валидирует Host (DNS-rebinding) и без этого отбивает 421.
+
+## 11. Ingress: один вход на все эндпоинты
+
+Профили preview/gallery/shots добавляют по контейнеру-туннелю на эндпоинт и
+требуют ручного поднятия + передачи нового URL. Ingress убирает и то и другое:
+один постоянный туннель (`cloudflared-ingress`, поднимается обычной `up -d`)
+ведёт на `ingress-proxy` на хосте, который роутит по пути:
+
+```
+<INGRESS>/p/<порт>/<путь>  ->  127.0.0.1:<порт>/<путь>   (префикс срезается)
+```
+
+Новый эндпоинт = просто запущенный сервис на loopback-порту (supervisor op,
+`python -m http.server`, dev-сервер и т.п.). URL детерминированный, агент
+вычисляет его сам, контейнеры не плодятся, никто никого не ждёт.
+
+Примеры (Muffin):
+- галерея: `<INGRESS>/p/8765/docs/review/index.html#tab=screens&theme=mpearl`
+- виджетбук: `<INGRESS>/p/8080/`
+- supervisor MCP: `<INGRESS>/p/8792/mcp` (порт в SELF_AUTHED_PORTS: авторизует
+  нижний auth-proxy своим MCP_PUBLIC_TOKEN, ingress-токен не подставляется)
+
+Авторизация: Bearer `INGRESS_TOKEN` на каждый запрос для портов без своей
+авторизации. Ограничение: веб-приложения с абсолютными путями ассетов
+(flutter web без `--base-href`) под префиксом теряют ассеты — для них либо
+сборка с `--base-href /p/<порт>/`, либо старый выделенный туннель-профиль.
+
+Стоп: `home\host\stop-ingress.ps1` (только записанный pid, сверяя cmdline).
 
 ## Если что-то не так
 
