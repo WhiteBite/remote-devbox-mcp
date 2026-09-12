@@ -58,7 +58,8 @@ def handle(client: socket.socket) -> None:
     up = None
     try:
         client.settimeout(60)
-        up_connected = False
+        up = None
+        cur_port = None
         carry = b""
         while True:
             while b"\r\n\r\n" not in carry:
@@ -99,11 +100,18 @@ def handle(client: socket.socket) -> None:
                     b"HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
                 )
                 return
-            if not up_connected:
+            if cur_port != port:
+                # cloudflared переиспользует одно соединение под запросы к
+                # разным портам: апстрим переподключаем при смене цели
+                if up is not None:
+                    try:
+                        up.close()
+                    except OSError:
+                        pass
                 up = socket.create_connection(("127.0.0.1", port), timeout=10)
                 up.settimeout(None)
                 threading.Thread(target=_pipe_up, args=(up, client), daemon=True).start()
-                up_connected = True
+                cur_port = port
             up.sendall(b"\r\n".join(out) + b"\r\n\r\n")
             cl = int(headers.get(b"content-length") or 0)
             if cl <= len(carry):

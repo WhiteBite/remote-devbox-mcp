@@ -11,7 +11,9 @@ $logDir = Join-Path $env:TEMP "rdm-ingress"
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 $env:INGRESS_TOKEN = $token
 $env:PROXY_PORT = "8793"
-$env:SELF_AUTHED_PORTS = "8792"
+$selfAuthed = (Get-Content $envFile | Where-Object { $_ -match '^SELF_AUTHED_PORTS=' } | Select-Object -First 1)
+$selfAuthed = if ($selfAuthed) { ($selfAuthed -replace '^SELF_AUTHED_PORTS=', '').Trim() } else { "8792,8787" }
+$env:SELF_AUTHED_PORTS = $selfAuthed
 $p = Start-Process -FilePath "python" -ArgumentList "`"$here\ingress-proxy.py`"" `
   -WindowStyle Hidden -PassThru `
   -RedirectStandardOutput "$logDir\ingress.out" -RedirectStandardError "$logDir\ingress.err"

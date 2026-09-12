@@ -7,11 +7,15 @@
 ```powershell
 cd D:\Sources\WhiteBite\remote-devbox-mcp\home
 
-# база: toolbox + VPN-сайдкар + MCP-туннель
+# база: toolbox + VPN-сайдкар + ingress (единственный публичный вход)
 docker compose up -d
 docker compose ps                       # ждём: toolbox healthy, vpn healthy
-docker compose logs cloudflared | Select-String trycloudflare   # -> hostname
-# MCP_URL = https://<hostname>/mcp, токен = MCP_BEARER_TOKEN из .env
+# ingress на хосте (один раз за сессию машины):
+home\host\start-ingress.ps1
+docker compose logs cloudflared-ingress | Select-String trycloudflare  # -> INGRESS
+# MCP_URL = <INGRESS>/p/8787/mcp, токен = MCP_BEARER_TOKEN из .env
+# любой другой loopback-эндпоинт: <INGRESS>/p/<порт>/<путь> — новые контейнеры
+# и туннели под него НЕ нужны (см. §11)
 
 # опционально, по задаче:
 docker compose --profile preview up -d   # preview запущенного приложения
@@ -31,9 +35,9 @@ docker compose --profile gallery up -d   # review-сайт галереи с х�
 #   порты со своей авторизацией (8792) — с их токеном, ingress-токен не нужен
 ```
 
-Закрыть доступ наружу: `docker compose stop cloudflared cloudflared-mcp
-cloudflared-preview cloudflared-shots` (или `down` — весь стек). Хостовую
-цепочку mcp: `home\host\stop-mcp-public.ps1`.
+Закрыть доступ наружу: `docker compose stop cloudflared-ingress` (или `down` —
+весь стек). Хостовые цепочки: `home\host\stop-ingress.ps1` и
+`home\host\stop-mcp-public.ps1`.
 
 Смена проекта: правка `PROJECT_DIR` в `.env` → `docker compose up -d`
 (туннели выживают). Смена стека (`WITH_JAVA`/`WITH_FLUTTER`): сначала
