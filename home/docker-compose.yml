@@ -5,8 +5,9 @@
 #
 # Внутри нет ни агента, ни LLM: мост только исполняет тулы OpenCode
 # (read/write/edit/apply_patch/glob/grep/bash/lsp), решения принимает агент.
-# Образ стеково-нейтральный: тулчейны проекта — build-аргументы WITH_JAVA /
-# WITH_FLUTTER, всё остальное агент ставит рантайм в /opt/tools (volume).
+# Образ стеково-нейтральный: тулчейны проекта ставит entrypoint в /opt/tools
+# (volume rdm-tools) по переменной TOOLCHAIN — кэш переживает смены проекта,
+# пересборки образа не нужны. Профиль проекта: home\devbox.ps1 use <имя>.
 # Кастомные тулы агента (playwright, codegraph) живут в ЕГО песочнице, не здесь.
 
 services:
@@ -15,10 +16,6 @@ services:
     build:
       context: ./docker
       dockerfile: toolbox.Dockerfile
-      args:
-        WITH_JAVA: "${WITH_JAVA:-0}"            # 1 — JDK 21 для Java/Spring и jdtls
-        WITH_FLUTTER: "${WITH_FLUTTER:-0}"      # 1 — Flutter/Dart SDK (~4 ГБ)
-        FLUTTER_CHANNEL: "${FLUTTER_CHANNEL:-stable}"   # тег/канал под пин проекта
     image: remote-devbox-toolbox:local
     container_name: rdm-toolbox
     restart: unless-stopped
@@ -26,6 +23,11 @@ services:
     environment:
       # корень = твоя папка проекта; выход за неё мост отвергает, а не спрашивает
       OPENCODE_MCP_ROOT: /workspace
+      # тулчейны ставятся entrypoint'ом в /opt/tools (volume), кэш между проектами
+      TOOLCHAIN: "${TOOLCHAIN:-}"
+      # git-идентичность агента для коммитов внутри контейнера
+      GIT_NAME: "${GIT_NAME:-}"
+      GIT_EMAIL: "${GIT_EMAIL:-}"
       OPENCODE_MCP_TOKEN: "${MCP_BEARER_TOKEN:?задай в .env, минимум 24 символа}"
       OPENCODE_MCP_HOST: 0.0.0.0                # по умолчанию 127.0.0.1 — извне не достучаться
       OPENCODE_MCP_PORT: "8787"
@@ -43,7 +45,8 @@ services:
       # его MCP-серверы внутри контейнера (деградация старта); диск не меняется
       - ./docker/workspace-opencode.json:/workspace/opencode.json:ro
       - rdm-state:/state                        # TODO/сессии моста, вне проекта
-      - rdm-tools:/opt/tools                    # рантайм-тулчейны, переживают пересоздание
+      - rdm-tools:/opt/tools                    # тулчейны, переживают пересоздание
+      - rdm-agent:/agent                        # постоянный скретч агента
     expose:
       - "8787"
       - "8788"                                  # preview: flutter web-server / bootRun для агента
@@ -81,30 +84,10 @@ services:
       retries: 5
       start_period: 40s
 
-  # Единственный выход наружу: туннель наружу, входящих портов на роутере нет.
-  # Трафик идёт через VPN-сайдкар (network_mode: container:rdm-vpn).
-  # --protocol http2: QUIC (UDP 7844) на некоторых сетях нестабилен.
-  # Быстрый вариант (URL меняется при перезапуске):
-  #     docker compose logs cloudflared | Select-String trycloudflare
-  # Именованный туннель: TUNNEL_TOKEN в .env + command `tunnel --no-autoupdate run`,
-  # ingress — cloudflared-config.example.yml.
-  cloudflared:
-    image: cloudflare/cloudflared:latest
-    container_name: rdm-tunnel
-    restart: unless-stopped
-    network_mode: container:rdm-vpn
-    depends_on:
-      toolbox:
-        condition: service_started
-      vpn:
-        condition: service_healthy
-    command: tunnel --no-autoupdate --protocol http2 --url http://toolbox:8787
-    environment:
-      TUNNEL_TOKEN: "${TUNNEL_TOKEN:-}"
-
-  # Preview для агента: ВТОРОЙ быстрый туннель на порт 8788 (виджетбук /
-  # flutter web-server / bootRun). По умолчанию выключен — поднимай на время
-  # проверки UI:
+  # Preview для агента: выделенный туннель на порт 8788 (виджетбук / flutter
+  # web-server / bootRun). Нужен ТОЛЬКО для flutter-web с абсолютными путями
+  # ассетов, которые ломаются под префиксом ingress /p/<port>/; всё остальное
+  # ходит через ingress. По умолчанию выключен:
   #     docker compose --profile preview up -d
   #     docker compose logs cloudflared-preview | Select-String trycloudflare
   #     docker compose stop cloudflared-preview     # когда закончили
@@ -125,50 +108,6 @@ services:
 # Будущая опция: семантический граф кода (codegraph) агент индексирует у себя
 # в песочнице (см. arena/AGENT_INSTRUCTIONS.md §6) — в этот стек он не входит.
 
-  # Скриншоты для оценки агентом: статический сервер на ХОСТЕ (порт 8791),
-  # туннель из netns vpn-сайдкара. На хосте поднять сервер:
-  #   python -m http.server 8791 --directory <папка со скриншотами>
-  # URL без токена: поднимать только на время сессии оценки, потом стоп.
-  cloudflared-shots:
-    image: cloudflare/cloudflared:latest
-    container_name: rdm-tunnel-shots
-    restart: unless-stopped
-    profiles: ["shots"]
-    network_mode: container:rdm-vpn
-    depends_on:
-      vpn:
-        condition: service_healthy
-    command: tunnel --no-autoupdate --protocol http2 --url http://host.docker.internal:8791
-
-  # Локальные MCP наружу (muffin-supervisor и пр.): сервер + bearer-прокси
-  # на хосте (loopback), туннель из netns vpn-сайдкара. Запуск цепочки:
-  #   home\host\start-mcp-public.ps1   (MCP_PUBLIC_TOKEN из .env)
-  #   docker compose --profile mcp up -d
-  #   docker compose logs cloudflared-mcp | Select-String trycloudflare
-  cloudflared-mcp:
-    image: cloudflare/cloudflared:latest
-    container_name: rdm-tunnel-mcp
-    restart: unless-stopped
-    profiles: ["mcp"]
-    network_mode: container:rdm-vpn
-    depends_on:
-      vpn:
-        condition: service_healthy
-    command: tunnel --no-autoupdate --protocol http2 --url http://host.docker.internal:8792
-
-  # Review-сайт галереи с хоста (supervisor gallery, :8765): индекс скриншотов,
-  # темы/устройства, parity-таб. Туннель из netns vpn-сайдкара.
-  cloudflared-gallery:
-    image: cloudflare/cloudflared:latest
-    container_name: rdm-tunnel-gallery
-    restart: unless-stopped
-    profiles: ["gallery"]
-    network_mode: container:rdm-vpn
-    depends_on:
-      vpn:
-        condition: service_healthy
-    command: tunnel --no-autoupdate --protocol http2 --url http://host.docker.internal:8765
-
   # Постоянный вход на все loopback-эндпоинты хоста: ingress-proxy роутит
   # /p/<port>/* на 127.0.0.1:<port>. Новый эндпоинт = просто запущенный
   # сервис на порту; контейнеры и туннели под него не плодятся.
@@ -181,9 +120,10 @@ services:
     depends_on:
       vpn:
         condition: service_healthy
-    command: tunnel --no-autoupdate --protocol http2 --url http://host.docker.internal:8793
+    command: tunnel --no-autoupdate --protocol http2 --url http://host.docker.internal:8799
 
 volumes:
   rdm-state:
   rdm-tools:
+  rdm-agent:
   rdm-vpn-cache:

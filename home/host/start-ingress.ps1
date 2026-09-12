@@ -10,7 +10,7 @@ if (-not $token) { throw "INGRESS_TOKEN не задан в $envFile" }
 $logDir = Join-Path $env:TEMP "rdm-ingress"
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 $env:INGRESS_TOKEN = $token
-$env:PROXY_PORT = "8793"
+$env:PROXY_PORT = "8799"
 $selfAuthed = (Get-Content $envFile | Where-Object { $_ -match '^SELF_AUTHED_PORTS=' } | Select-Object -First 1)
 $selfAuthed = if ($selfAuthed) { ($selfAuthed -replace '^SELF_AUTHED_PORTS=', '').Trim() } else { "8792,8787" }
 $env:SELF_AUTHED_PORTS = $selfAuthed

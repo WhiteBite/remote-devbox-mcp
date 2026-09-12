@@ -26,7 +26,7 @@ TOKEN = os.environ.get("INGRESS_TOKEN")
 if not TOKEN:
     sys.exit("INGRESS_TOKEN не задан")
 
-LISTEN = ("127.0.0.1", int(os.environ.get("PROXY_PORT", "8793")))
+LISTEN = ("127.0.0.1", int(os.environ.get("PROXY_PORT", "8799")))
 SELF_AUTHED = {int(p) for p in os.environ.get("SELF_AUTHED_PORTS", "8792").split(",") if p}
 EXPECTED = f"Bearer {TOKEN}".encode()
 MAX_HEADER = 64 * 1024

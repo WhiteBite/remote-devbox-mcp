@@ -2,47 +2,39 @@
 
 ## 0. Ежедневный запуск (ранбук)
 
-Все команды из папки `home\`. `.env` уже настроен (PROJECT_DIR, токены).
+Все команды из папки `home\`. Проект = профиль `..\projects\<имя>.ps1`.
 
 ```powershell
 cd D:\Sources\WhiteBite\remote-devbox-mcp\home
 
-# база: toolbox + VPN-сайдкар + ingress (единственный публичный вход)
+# применить профиль проекта (рендер .env, host-сервисы, пересоздание toolbox):
+.\devbox.ps1 use muffin
 docker compose up -d
-docker compose ps                       # ждём: toolbox healthy, vpn healthy
-# ingress на хосте (один раз за сессию машины):
-home\host\start-ingress.ps1
+docker compose ps          # ждём: toolbox healthy, vpn healthy.
+                           # Первый старт профиля = установка тулчейнов в
+                           # /opt/tools (несколько минут), дальше — кэш
+.\host\start-ingress.ps1 # один раз за сессию машины
 docker compose logs cloudflared-ingress | Select-String trycloudflare  # -> INGRESS
-# MCP_URL = <INGRESS>/p/8787/mcp, токен = MCP_BEARER_TOKEN из .env
-# любой другой loopback-эндпоинт: <INGRESS>/p/<порт>/<путь> — новые контейнеры
-# и туннели под него НЕ нужны (см. §11)
+# MCP_URL    = <INGRESS>/p/8787/mcp   токен MCP_BEARER_TOKEN
+# supervisor = <INGRESS>/p/8792/mcp   токен MCP_PUBLIC_TOKEN
+# всё прочее на хосте: <INGRESS>/p/<порт>/<путь> (см. §11)
 
-# опционально, по задаче:
-docker compose --profile preview up -d   # preview запущенного приложения
-#   (внутри toolbox поднять приложение, напр. nohup node serve.js &)
-docker compose --profile shots up -d     # скриншоты для оценки агентом
-#   сначала на хосте: python -m http.server 8791 --bind 127.0.0.1 --directory <папка>
-docker compose --profile mcp up -d       # локальные MCP наружу (supervisor)
-#   сначала на хосте: home\host\start-mcp-public.ps1
-#   URL: docker compose logs cloudflared-mcp | Select-String trycloudflare
-docker compose --profile gallery up -d   # review-сайт галереи с хоста (:8765)
-#   URL: docker compose logs cloudflared-gallery | Select-String trycloudflare
-
-# постоянный ingress на ВСЕ loopback-эндпоинты хоста (без профилей):
-#   на хосте: home\host\start-ingress.ps1
-#   URL: docker compose logs cloudflared-ingress | Select-String trycloudflare
-#   доступ: <INGRESS>/p/<порт>/<путь> + заголовок Authorization: Bearer <INGRESS_TOKEN>
-#   порты со своей авторизацией (8792) — с их токеном, ingress-токен не нужен
+# опционально, только для flutter-web с абсолютными ассетами:
+docker compose --profile preview up -d
+#   URL: docker compose logs cloudflared-preview | Select-String trycloudflare
 ```
 
-Закрыть доступ наружу: `docker compose stop cloudflared-ingress` (или `down` —
-весь стек). Хостовые цепочки: `home\host\stop-ingress.ps1` и
-`home\host\stop-mcp-public.ps1`.
+Тулчейны: спек в профиле (`TOOLCHAIN="java21 flutter:3.44.9"`) entrypoint
+идемпотентно ставит в `/opt/tools` (volume rdm-tools): первая установка платная,
+повторные старты и смены проекта бесплатны, пересборки образа не нужно.
+Git-идентичность агента в контейнере: `GIT_NAME`/`GIT_EMAIL` из профиля.
+Постоянный скретч агента между сессиями: `/agent` (volume rdm-agent).
 
-Смена проекта: правка `PROJECT_DIR` в `.env` → `docker compose up -d`
-(туннели выживают). Смена стека (`WITH_JAVA`/`WITH_FLUTTER`): сначала
-`docker compose build toolbox`. URL меняются только при пересоздании
-соответствующего cloudflared или vpn-контейнера.
+Закрыть доступ наружу: `docker compose stop cloudflared-ingress
+cloudflared-preview` (или `down` — весь стек). Host-сервисы профиля:
+`.\devbox.ps1 stop-host`; ingress: `.\host\stop-ingress.ps1`.
+
+Смена проекта: `.\devbox.ps1 use <имя>` (туннели выживают, URL не меняется).
 
 Нужны только Docker Desktop и доступ в интернет. Входящие порты на роутере не
 требуются: туннель соединяется наружу сам.

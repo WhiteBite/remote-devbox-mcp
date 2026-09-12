@@ -18,9 +18,14 @@ Cloudflare-туннель и правит код, собирает и тести
 │   docker/vpn-entrypoint.sh       подписка → конфиг sing-box, пробинг и ротация серверов
 │   .env.example                   → скопировать в .env, заполнить PROJECT_DIR и токен
 │   cloudflared-config.example.yml именованный туннель: MCP + preview приложения
-│   host/auth-proxy.py             bearer-прокси для выдачи локальных MCP наружу
-│   host/start-mcp-public.ps1      цепочка: MCP-сервер + прокси (профиль mcp)
-│   SECURITY.md                    что запрещено монтировать, про изоляцию честно
+│   devbox.ps1                   применение профиля проекта (use/status/stop-host)
+│   host/auth-proxy.py           bearer-прокси для выдачи локальных MCP наружу
+│   host/ingress-proxy.py        один вход /p/<порт>/* на все loopback-эндпоинты
+│   host/start-ingress.ps1       подъём ingress-прокси (INGRESS_TOKEN из .env)
+│   SECURITY.md                  что запрещено монтировать, про изоляцию честно
+│
+├─ projects/ → профили проектов (project_dir, тулчейны, host-сервисы)
+│   muffin.ps1, _template.ps1
 │
 └─ arena/ → сторона агента (скачивает сам, ничего ставить не нужно)
     mcp_client.py             MCP-клиент на чистом Python (stdlib, 3.10+)
