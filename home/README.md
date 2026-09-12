@@ -161,6 +161,40 @@ OPENCODE_MCP_PERMISSIONS={"edit":"deny","write":"deny","apply_patch":"deny","bas
 откатываются git'ом проекта (держи агента в ветке/worktree). Это сетевой аналог
 правил `permission` локального OpenCode: граница workspace + ask/allow на тулы.
 
+## 10. Локальные MCP наружу (профиль mcp)
+
+Свои MCP-серверы (например, `muffin-supervisor` из Muffin) можно отдать агенту
+отдельным эндпоинтом с авторизацией. Мост их не публикует (каталог бриджа —
+только нативные тулы OpenCode), поэтому цепочка отдельная:
+
+```
+MCP-сервер (streamable-http, 127.0.0.1:8790)
+  → auth-proxy (Bearer, 127.0.0.1:8792)   # home/host/auth-proxy.py
+  → cloudflared-mcp (профиль mcp, через vpn-сайдкар)
+  → агент (mcp_client.py с вторым конфигом)
+```
+
+Запуск:
+
+```powershell
+# 1. токен в .env: MCP_PUBLIC_TOKEN=<64 hex>
+# 2. сервер + прокси на хосте:
+home\host\start-mcp-public.ps1
+# 3. туннель:
+docker compose --profile mcp up -d
+docker compose logs cloudflared-mcp | Select-String trycloudflare
+```
+
+Агент работает со вторым конфигом: `MCP_CONF=~/.mcp-supervisor.conf ./mcp list`.
+Сервер по умолчанию — muffin-supervisor (HTTP-режим включается его переменной
+`MCP_HTTP_PORT`, правка в Muffin `tools/muffin-supervisor/cli.py`). Другой сервер:
+`-ServerCwd/-ServerCommand/-ServerPort`. Стоп: убить процессы (pid в
+`%TEMP%\mcp-public\pids.txt`) и `docker compose stop cloudflared-mcp`.
+
+Прокси сырым TCP: Bearer на каждый запрос (keep-alive у cloudflared
+переиспользует соединения), Host переписывается на loopback, X-Forwarded-Host
+вырезается — FastMCP валидирует Host (DNS-rebinding) и без этого отбивает 421.
+
 ## Если что-то не так
 
 | Симптом | Что делать |

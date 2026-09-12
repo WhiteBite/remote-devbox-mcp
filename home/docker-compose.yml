@@ -139,6 +139,22 @@ services:
         condition: service_healthy
     command: tunnel --no-autoupdate --protocol http2 --url http://host.docker.internal:8791
 
+  # Локальные MCP наружу (muffin-supervisor и пр.): сервер + bearer-прокси
+  # на хосте (loopback), туннель из netns vpn-сайдкара. Запуск цепочки:
+  #   home\host\start-mcp-public.ps1   (MCP_PUBLIC_TOKEN из .env)
+  #   docker compose --profile mcp up -d
+  #   docker compose logs cloudflared-mcp | Select-String trycloudflare
+  cloudflared-mcp:
+    image: cloudflare/cloudflared:latest
+    container_name: rdm-tunnel-mcp
+    restart: unless-stopped
+    profiles: ["mcp"]
+    network_mode: container:rdm-vpn
+    depends_on:
+      vpn:
+        condition: service_healthy
+    command: tunnel --no-autoupdate --protocol http2 --url http://host.docker.internal:8792
+
 volumes:
   rdm-state:
   rdm-tools:
