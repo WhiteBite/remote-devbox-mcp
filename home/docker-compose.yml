@@ -18,6 +18,7 @@ services:
       args:
         WITH_JAVA: "${WITH_JAVA:-0}"            # 1 — JDK 21 для Java/Spring и jdtls
         WITH_FLUTTER: "${WITH_FLUTTER:-0}"      # 1 — Flutter/Dart SDK (~4 ГБ)
+        FLUTTER_CHANNEL: "${FLUTTER_CHANNEL:-stable}"   # тег/канал под пин проекта
     image: remote-devbox-toolbox:local
     container_name: rdm-toolbox
     restart: unless-stopped
@@ -119,7 +120,7 @@ services:
         condition: service_started
       vpn:
         condition: service_healthy
-    command: tunnel --no-autoupdate --protocol http2 --url http://toolbox:8788
+    command: tunnel --no-autoupdate --protocol http2 --url ${PREVIEW_ORIGIN:-http://toolbox:8788}
 
 # Будущая опция: семантический граф кода (codegraph) агент индексирует у себя
 # в песочнице (см. arena/AGENT_INSTRUCTIONS.md §6) — в этот стек он не входит.
