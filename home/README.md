@@ -21,6 +21,8 @@ docker compose --profile shots up -d     # скриншоты для оценк�
 docker compose --profile mcp up -d       # локальные MCP наружу (supervisor)
 #   сначала на хосте: home\host\start-mcp-public.ps1
 #   URL: docker compose logs cloudflared-mcp | Select-String trycloudflare
+docker compose --profile gallery up -d   # review-сайт галереи с хоста (:8765)
+#   URL: docker compose logs cloudflared-gallery | Select-String trycloudflare
 ```
 
 Закрыть доступ наружу: `docker compose stop cloudflared cloudflared-mcp

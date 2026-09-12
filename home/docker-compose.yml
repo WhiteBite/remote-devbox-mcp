@@ -156,6 +156,19 @@ services:
         condition: service_healthy
     command: tunnel --no-autoupdate --protocol http2 --url http://host.docker.internal:8792
 
+  # Review-сайт галереи с хоста (supervisor gallery, :8765): индекс скриншотов,
+  # темы/устройства, parity-таб. Туннель из netns vpn-сайдкара.
+  cloudflared-gallery:
+    image: cloudflare/cloudflared:latest
+    container_name: rdm-tunnel-gallery
+    restart: unless-stopped
+    profiles: ["gallery"]
+    network_mode: container:rdm-vpn
+    depends_on:
+      vpn:
+        condition: service_healthy
+    command: tunnel --no-autoupdate --protocol http2 --url http://host.docker.internal:8765
+
 volumes:
   rdm-state:
   rdm-tools:
