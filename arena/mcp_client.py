@@ -28,6 +28,7 @@ mcp_client.py — минимальный MCP-клиент без внешних 
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import os
 import subprocess
@@ -230,12 +231,15 @@ class MCPClient:
 # ──────────────────────────────────────────────────────────────────────
 
 def flatten(result: dict) -> str:
-    """MCP возвращает content-блоки; склеиваем в один текст."""
+    """MCP возвращает content-блоки; склеиваем в один текст.
+    image-блоки не инлайним: они сохраняются файлами через dump_images."""
     parts = []
     for block in result.get("content", []) or []:
         kind = block.get("type")
         if kind == "text":
             parts.append(block.get("text", ""))
+        elif kind == "image":
+            continue
         elif kind == "resource":
             parts.append(json.dumps(block.get("resource", {}), ensure_ascii=False))
         else:
@@ -243,6 +247,32 @@ def flatten(result: dict) -> str:
     if result.get("isError"):
         parts.insert(0, "[ИНСТРУМЕНТ ВЕРНУЛ ОШИБКУ]")
     return "\n".join(parts)
+
+
+def dump_images(result: dict | None, job: dict | None, prefix: str) -> list[str]:
+    """Картинки из ответа (content-блоки и attachments джоба) пишем файлами
+    в ./shots/, чтобы агент смотрел их своим read_file, а не base64 в stdout."""
+    items: list[tuple[str | None, str | None]] = []
+    for block in (result or {}).get("content", []) or []:
+        if block.get("type") == "image" and block.get("data"):
+            items.append((block["data"], block.get("mimeType")))
+    for att in ((job or {}).get("result") or {}).get("attachments", []) or []:
+        url = att.get("url") or ""
+        if url.startswith("data:") and "," in url:
+            items.append((url.split(",", 1)[1], att.get("mime")))
+    if not items:
+        return []
+    os.makedirs("shots", exist_ok=True)
+    paths = []
+    for i, (data, mime) in enumerate(items):
+        if not data:
+            continue
+        ext = "png" if (mime or "").endswith("png") else "img"
+        p = f"shots/{prefix}-{i}.{ext}"
+        with open(p, "wb") as f:
+            f.write(base64.b64decode(data))
+        paths.append(p)
+    return paths
 
 
 def parse_job(result: dict) -> dict | None:
@@ -418,6 +448,10 @@ def main():
             except json.JSONDecodeError as e:
                 sys.exit(f"аргументы не JSON: {e}")
             result = client.call(args.tool, arguments)
+            if not args.json:
+                imgs = dump_images(result, None, f"mcp-{int(time.time())}")
+                if imgs:
+                    print("сохранены картинки: " + ", ".join(imgs))
             print(json.dumps(result, ensure_ascii=False, indent=2)
                   if args.json else flatten(result))
 
@@ -436,11 +470,17 @@ def main():
                 sys.exit(f"аргументы не JSON: {e}")
             raw = client.call(args.tool, arguments)
             job = parse_job(raw)
-            if job is None:            # сервер без протокола джобов — обычный вызов
+            if job is None:            # сервер без job-протокола — обычный вызов
+                imgs = dump_images(raw, None, f"mcp-{int(time.time())}")
+                if imgs:
+                    print("сохранены картинки: " + ", ".join(imgs))
                 print(flatten(raw))
             else:
                 job = settle_job(client, job, args.auto, args.polls, args.delay,
                                  args.wait_seconds)
+                imgs = dump_images(raw, job, f"mcp-{job.get('job_id', 'job')[:8]}")
+                if imgs:
+                    print("сохранены картинки: " + ", ".join(imgs))
                 print(job_brief(job))
                 # Мост считает «completed» даже при ненулевом коде команды
                 # (result.metadata.exit). Непройденный тест не должен выглядеть
