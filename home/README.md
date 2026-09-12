@@ -82,11 +82,10 @@ VPN-сайдкар (сервис `vpn`, sing-box в TUN-режиме). Пуст�
 -join ((1..64) | % { '{0:x}' -f (Get-Random -Max 16) })
 ```
 
-Тулчейны опциональны: `WITH_JAVA=1` — JDK 21 (Temurin из Adoptium apt) для
-Java/Spring и jdtls; `WITH_FLUTTER=1` — Flutter/Dart SDK (~4 ГБ, сборка
-заметно дольше). По умолчанию оба 0 — получается стеково-нейтральный
-toolbox: всё, чего не хватит, агент доустановит рантайм в `/opt/tools`
-(volume, переживает пересоздание контейнера).
+Тулчейны задаёт профиль проекта (`TOOLCHAIN="java21 flutter:3.44.9"`):
+entrypoint идемпотентно ставит их в `/opt/tools` (volume rdm-tools) — первая
+установка платная, дальше кэш, пересборки образа не нужно. Всё, чего в спеке
+нет, агент доустанавливает сам в `/opt/tools` через bash.
 
 ## 3. Собрать и поднять
 
@@ -96,10 +95,10 @@ docker compose up -d
 docker compose ps
 ```
 
-Первая сборка при `WITH_FLUTTER=1` долгая: ставится Flutter SDK (~4 ГБ).
-Базовый образ — `node:22-bookworm-slim`, JDK ставится из apt-репозитория
-Adoptium; если сборка падает на этих внешних источниках — проверь их
-доступность, из песочницы агента они не проверялись.
+Первый старт профиля ставит тулчейны в `/opt/tools` (java ~1 мин, flutter
+~3–5 мин с прогревом Dart SDK) — контейнер становится healthy после установки.
+Базовый образ — `node:22-bookworm-slim`; если установка падает на внешних
+источниках (Adoptium API, github) — проверь их доступность.
 
 ## 4. Проверить
 
@@ -107,25 +106,25 @@ Adoptium; если сборка падает на этих внешних ист
 # сервис жив? (порт наружу не публикуется, смотрим изнутри контейнера)
 docker compose exec toolbox curl -fsS http://127.0.0.1:8787/healthz
 
-# публичный URL туннеля
-docker compose logs cloudflared | Select-String trycloudflare
+# публичный URL входа
+docker compose logs cloudflared-ingress | Select-String trycloudflare
 ```
 
-URL вида `https://xxxxx.trycloudflare.com` + токен из `.env` — это всё,
-что нужно агенту.
+`<INGRESS>/p/8787/mcp` + токен из `.env` — это всё, что нужно агенту для кода;
+остальные эндпоинты — тем же ingress (см. §11).
 
 ## 5. Сменить проект
 
-Одна строка в `.env` и перезапуск:
+Одна команда:
 
 ```powershell
-notepad .env                 # PROJECT_DIR=C:/Users/<ты>/dev/app
-docker compose up -d
+.\devbox.ps1 use <имя>     # профиль из ..\projects\<имя>.ps1
 ```
 
-Контейнер один и тот же: языковой сервер выбирается по расширению файла
-(`jdtls` для `.java`, `dart` для `.dart`) — при условии, что стек испечён
-в образ (`WITH_JAVA` / `WITH_FLUTTER`).
+Профиль задаёт PROJECT_DIR, TOOLCHAIN, GIT_*, PREVIEW_ORIGIN и host-сервисы.
+Туннели выживают, URL не меняется; тулчейны берутся из кэша `/opt/tools`,
+ недостающие ставятся один раз. Языковой сервер выбирается по расширению
+(`jdtls` для `.java`, `dart` для `.dart`) — при наличии тулчейна в спеке.
 
 ## 6. Остановить
 
@@ -158,30 +157,23 @@ hostname — `mcp.* → toolbox:8787` и `preview.* → toolbox:8788`, наст�
 
 ## 8. Оценка скриншотов агентом (профиль shots)
 
-Агент может визуально оценивать скриншоты проекта, не монтируя проект в
-девбокс: на хосте поднимается статический сервер, туннель идёт через тот же
-VPN-сайдкар (профиль `shots`).
+Агент может визуально оценивать скриншоты/статику проекта, не монтируя ничего
+лишнего: любой статический сервер на хосте сразу виден через ingress:
 
 ```powershell
-# 1. статический сервер на хосте (loopback; Docker Desktop форвардит
-#    host.docker.internal в loopback хоста):
 python -m http.server 8791 --bind 127.0.0.1 --directory <папка со скриншотами>
-# 2. туннель:
-docker compose --profile shots up -d
-docker compose logs cloudflared-shots | Select-String trycloudflare
-# 3. после оценки — убрать:
-docker compose stop cloudflared-shots
-#    и убить python-сервер (pid в файле, которым его запускали)
+# агент: <INGRESS>/p/8791/<путь> + Authorization: Bearer <INGRESS_TOKEN>
 ```
 
-URL скриншотов **без токена** (случайный hostname = слабая защита): поднимать
-только на время сессии оценки, предрелизный UI не публиковать дальше.
+Контейнеры и туннели под это не поднимаются вовсе (см. §11). URL защищён
+токеном; предрелизный UI не публиковать дальше сессии оценки.
 
 ## 9. Выдача агенту доступа к проекту
 
-**Смена проекта** — одна строка в `.env` (`PROJECT_DIR`) + `docker compose up -d`.
+**Смена проекта** — `.\devbox.ps1 use <имя>` (профиль из `..\projects\`).
 `opencode.json` проекта автоматически экранируется shadow-монтом (воркер не
-поднимает MCP-серверы проекта), тулчейны — build-args `WITH_JAVA`/`WITH_FLUTTER`.
+поднимает MCP-серверы проекта), тулчейны — спек `TOOLCHAIN` профиля в
+`/opt/tools` (volume, кэш между проектами).
 
 **Уровень доступа** задаётся правилами разрешений OpenCode в `.env`
 (`OPENCODE_MCP_PERMISSIONS`). По умолчанию мутации требуют разрешения на каждый
@@ -193,43 +185,29 @@ OPENCODE_MCP_PERMISSIONS={"edit":"deny","write":"deny","apply_patch":"deny","bas
 ```
 
 **Страховка**: токен ротируется правкой `.env` + `up -d`; после сессии доступ
-наружу закрывается `docker compose stop cloudflared` (или `down`); правки агента
-откатываются git'ом проекта (держи агента в ветке/worktree). Это сетевой аналог
-правил `permission` локального OpenCode: граница workspace + ask/allow на тулы.
+наружу закрывается `docker compose stop cloudflared-ingress` (или `down`);
+правки агента откатываются git'ом проекта (держи агента в ветке/worktree).
+Это сетевой аналог правил `permission` локального OpenCode: граница
+workspace + ask/allow на тулы.
 
-## 10. Локальные MCP наружу (профиль mcp)
+## 10. Локальные MCP наружу (host-сервисы профиля)
 
-Свои MCP-серверы (например, `muffin-supervisor` из Muffin) можно отдать агенту
-отдельным эндпоинтом с авторизацией. Мост их не публикует (каталог бриджа —
-только нативные тулы OpenCode), поэтому цепочка отдельная:
+Свои MCP-серверы (например, `muffin-supervisor` из Muffin) отдаются агенту
+через ingress без отдельных туннелей. Мост их не публикует (каталог бриджа —
+только нативные тулы OpenCode), поэтому цепочка такая:
 
 ```
-MCP-сервер (streamable-http, 127.0.0.1:8790)
-  → auth-proxy (Bearer, 127.0.0.1:8792)   # home/host/auth-proxy.py
-  → cloudflared-mcp (профиль mcp, через vpn-сайдкар)
-  → агент (mcp_client.py с вторым конфигом)
+MCP-сервер (streamable-http, 127.0.0.1:<Port+1>, без авторизации)
+  → auth-proxy (Bearer MCP_PUBLIC_TOKEN, 127.0.0.1:<Port>)  # host/auth-proxy.py
+  → ingress (/p/<Port>/...) → агент (mcp_client.py со вторым конфигом)
 ```
 
-Запуск:
-
-```powershell
-# 1. токен в .env: MCP_PUBLIC_TOKEN=<64 hex>
-# 2. сервер + прокси на хосте:
-home\host\start-mcp-public.ps1
-# 3. туннель:
-docker compose --profile mcp up -d
-docker compose logs cloudflared-mcp | Select-String trycloudflare
-```
-
-Агент работает со вторым конфигом: `MCP_CONF=~/.mcp-supervisor.conf ./mcp list`.
-Сервер по умолчанию — muffin-supervisor (HTTP-режим включается его переменной
-`MCP_HTTP_PORT`, правка в Muffin `tools/muffin-supervisor/cli.py`). Другой сервер:
-`-ServerCwd/-ServerCommand/-ServerPort`. Стоп: `home\host\stop-mcp-public.ps1`
-(убивает только записанные при старте pid, сверяя cmdline — pid мог быть
-переиспользован ОС) + `docker compose stop cloudflared-mcp`. Процессы никогда не
-убиваются по паттерну cmdline: на машине легально живут чужие python/node-
-серверы с такими же командами; чужие сервисы останавливаются только их штатными
-командами (у Muffin — `supervisor cli stop`).
+Объявляется в профиле проекта (`HostServices`, `Auth='bearer'`); поднимает и
+останавливает `devbox.ps1 use <имя>` / `devbox.ps1 stop-host`. Останов убивает
+только записанные при старте pid, сверяя cmdline (pid мог быть переиспользован
+ОС); чужие сервисы останавливаются только их штатными командами (у Muffin —
+`supervisor cli stop`). HTTP-режим supervisor'а включается его переменной
+`MCP_HTTP_PORT` (правка в Muffin `tools/muffin-supervisor/cli.py`).
 
 Прокси сырым TCP: Bearer на каждый запрос (keep-alive у cloudflared
 переиспользует соединения), Host переписывается на loopback, X-Forwarded-Host
