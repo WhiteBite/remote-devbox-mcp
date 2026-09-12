@@ -47,6 +47,9 @@ services:
       - rdm-state:/state                        # TODO/сессии моста, вне проекта
       - rdm-tools:/opt/tools                    # тулчейны, переживают пересоздание
       - rdm-agent:/agent                        # постоянный скретч агента
+      # deny-монты секретов и тень .opencode/ генерируются в override-файле;
+      # setup-project.sh рендерит devbox.ps1 из $SetupCmds профиля
+      - ./docker/setup-project.sh:/opt/tools/setup-project.sh:ro
     expose:
       - "8787"
       - "8788"                                  # preview: flutter web-server / bootRun для агента
@@ -93,7 +96,7 @@ services:
   #     docker compose stop cloudflared-preview     # когда закончили
   # Токена на этом URL нет: кто знает URL — видит приложение.
   cloudflared-preview:
-    image: cloudflare/cloudflared:latest
+    image: cloudflare/cloudflared@sha256:ff69a2225ad7c6f85ed84fbd5f3087df46202426b2388ec60214098e0adf05e9
     container_name: rdm-tunnel-preview
     restart: unless-stopped
     profiles: ["preview"]
@@ -113,7 +116,7 @@ services:
   # сервис на порту; контейнеры и туннели под него не плодятся.
   # Хост-часть: home\host\start-ingress.ps1 (INGRESS_TOKEN из .env).
   cloudflared-ingress:
-    image: cloudflare/cloudflared:latest
+    image: cloudflare/cloudflared@sha256:ff69a2225ad7c6f85ed84fbd5f3087df46202426b2388ec60214098e0adf05e9
     container_name: rdm-tunnel-ingress
     restart: unless-stopped
     network_mode: container:rdm-vpn

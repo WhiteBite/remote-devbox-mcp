@@ -190,28 +190,22 @@ OPENCODE_MCP_PERMISSIONS={"edit":"deny","write":"deny","apply_patch":"deny","bas
 Это сетевой аналог правил `permission` локального OpenCode: граница
 workspace + ask/allow на тулы.
 
-## 10. Локальные MCP наружу (host-сервисы профиля)
+## 10. Локальные MCP и host-команды наружу
 
-Свои MCP-серверы (например, `muffin-supervisor` из Muffin) отдаются агенту
-через ingress без отдельных туннелей. Мост их не публикует (каталог бриджа —
-только нативные тулы OpenCode), поэтому цепочка такая:
+Два механизма, оба через ingress без отдельных туннелей:
 
-```
-MCP-сервер (streamable-http, 127.0.0.1:<Port+1>, без авторизации)
-  → auth-proxy (Bearer MCP_PUBLIC_TOKEN, 127.0.0.1:<Port>)  # host/auth-proxy.py
-  → ingress (/p/<Port>/...) → агент (mcp_client.py со вторым конфигом)
-```
+- **Bearer-сервисы профиля** (`$HostServices`, напр. muffin-supervisor):
+  сервис слушает Port+1 без авторизации, auth-proxy на Port проверяет
+  `MCP_PUBLIC_TOKEN`; агент ходит `/p/<Port>/mcp` со своим токеном.
+- **runner-mcp** (`$RunnerCommands`): универсальный host-MCP для команд
+  проекта (Windows-native стеки: MidasAI и т.п.). Команды = argv-массивы без
+  shell, аргументы агента по схеме (path валидируется), background-процессы
+  с pid-файлом, каждый вызов в аудит-логе `%TEMP%\rdm-runner\audit.log`.
+  Агент: `MCP_CONF=~/.mcp-runner.conf ./mcp call run_<имя> ...`.
 
-Объявляется в профиле проекта (`HostServices`, `Auth='bearer'`); поднимает и
-останавливает `devbox.ps1 use <имя>` / `devbox.ps1 stop-host`. Останов убивает
-только записанные при старте pid, сверяя cmdline (pid мог быть переиспользован
-ОС); чужие сервисы останавливаются только их штатными командами (у Muffin —
-`supervisor cli stop`). HTTP-режим supervisor'а включается его переменной
-`MCP_HTTP_PORT` (правка в Muffin `tools/muffin-supervisor/cli.py`).
-
-Прокси сырым TCP: Bearer на каждый запрос (keep-alive у cloudflared
-переиспользует соединения), Host переписывается на loopback, X-Forwarded-Host
-вырезается — FastMCP валидирует Host (DNS-rebinding) и без этого отбивает 421.
+Ingress rout'ит только порты из `$AllowedPorts` профиля + SELF_AUTHED
+(bridge, bearer-сервисы, runner-auth-proxy); всё остальное — 403 даже с
+верным токеном (fail-closed).
 
 ## 11. Ingress: один вход на все эндпоинты
 

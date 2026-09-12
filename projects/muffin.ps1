@@ -12,3 +12,7 @@ $PreviewOrigin = 'http://host.docker.internal:8080'
 $HostServices = @(
   @{ Port = 8792; Auth = 'bearer'; Cwd = 'D:\Sources\StartUp\Muffin'; Cmd = 'python tools/muffin-supervisor/server.py' }
 )
+# порты, routable через ingress с ingress-токеном (fail-closed)
+$AllowedPorts = @(8765, 8080)
+# секреты проекта, закрытые deny-монтами из /workspace
+$DenyMounts = @('.env.staging', 'apps/backend/.env')

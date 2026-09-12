@@ -16,7 +16,7 @@ $logRoot = Join-Path $env:TEMP 'rdm-host'
 New-Item -ItemType Directory -Force -Path $logRoot | Out-Null
 
 $EnvOrder = @('PROJECT_DIR','TOOLCHAIN','GIT_NAME','GIT_EMAIL','PREVIEW_ORIGIN',
-              'SELF_AUTHED_PORTS','ACTIVE_PROFILE','MCP_BEARER_TOKEN',
+              'SELF_AUTHED_PORTS','ALLOWED_PORTS','ACTIVE_PROFILE','MCP_BEARER_TOKEN',
               'MCP_PUBLIC_TOKEN','INGRESS_TOKEN','VLESS_SUB_URL',
               'JOB_TIMEOUT_SECONDS','TUNNEL_TOKEN')
 
@@ -101,13 +101,55 @@ switch ($Cmd) {
     $map['TOOLCHAIN'] = $Toolchain
     $map['GIT_NAME'] = $GitName
     $map['GIT_EMAIL'] = $GitEmail
-    if ($PreviewOrigin) { $map['PREVIEW_ORIGIN'] = $PreviewOrigin }
+    if ($PreviewOrigin) { $map['PREVIEW_ORIGIN'] = $PreviewOrigin } else { $map.Remove('PREVIEW_ORIGIN') }
     $bearerPorts = @($HostServices | Where-Object { $_.Auth -eq 'bearer' } | ForEach-Object { $_.Port })
-    $map['SELF_AUTHED_PORTS'] = (@('8787') + $bearerPorts) -join ','
+
+    # runner-mcp: хостовые команды проекта (argv-модель, без shell)
+    $hostSvcs = @() + $HostServices
+    if ($RunnerCommands -and $RunnerCommands.Count) {
+        $rPort = if ($RunnerPort) { $RunnerPort } else { 8796 }
+        $runnerCfg = Join-Path $logRoot "runner-$Name.json"
+        @{ profile = $Name; cwd = $ProjectDir; commands = $RunnerCommands } |
+            ConvertTo-Json -Depth 8 | Set-Content $runnerCfg -Encoding utf8
+        $env:RUNNER_CONFIG = $runnerCfg
+        $env:RUNNER_PORT = "$($rPort + 1)"
+        $hostSvcs += @{ Port = $rPort; Auth = 'bearer'; Cwd = $here; Cmd = "python host\runner-mcp.py" }
+        $bearerPorts += $rPort
+        "runner-mcp: порт $rPort (inner $($rPort+1)), команд: $($RunnerCommands.Count)"
+    }
+    $map['SELF_AUTHED_PORTS'] = (@('8787') + $bearerPorts | Select-Object -Unique) -join ','
+
+    # fail-closed allowlist портов ingress: профиль + небearer-сервисы + background-порты
+    $allowed = @()
+    if ($AllowedPorts) { $allowed += $AllowedPorts }
+    $allowed += @($HostServices | Where-Object { $_.Auth -ne 'bearer' } | ForEach-Object { $_.Port })
+    $allowed += @($RunnerCommands | Where-Object { $_.Port } | ForEach-Object { $_.Port })
+    $map['ALLOWED_PORTS'] = (@($allowed | Select-Object -Unique) -join ',')
+
     $map['ACTIVE_PROFILE'] = $Name
     Write-Env $envFile $map
-    Start-HostServices $Name $HostServices $map['MCP_PUBLIC_TOKEN']
-    # ingress-proxy перечитывает SELF_AUTHED_PORTS только при старте
+
+    # override-compose: deny-монты секретов + тень .opencode/ (empty dir)
+    $ov = "services:`n  toolbox:`n    volumes:`n      - ./docker/workspace-empty:/workspace/.opencode:ro`n"
+    foreach ($d in $DenyMounts) {
+        $ov += "      - /dev/null:/workspace/" + $d + ":ro`n"
+    }
+    [IO.File]::WriteAllText((Join-Path $here 'docker-compose.override.yml'), $ov)
+
+    # setup-project.sh: пост-установочные команды профиля с маркерами (LF!)
+    $setup = "# generated: devbox.ps1 use $Name`n"
+    $i = 0
+    foreach ($s in $SetupCmds) {
+        $i++
+        $h = ([BitConverter]::ToString([System.Security.Cryptography.MD5]::Create().ComputeHash(
+              [Text.Encoding]::UTF8.GetBytes($s.Cmd + $s.Marker + $Name))) -replace '-', '').ToLower()
+        $onfail = if ($s.Required) { 'exit 1' } else { "echo '[setup] WARN: cmd $i failed, continue'" }
+        $setup += "if [ ! -f /opt/tools/.setup-$i-$h ]; then`n  " + $s.Cmd + " || " + $onfail + "`n  touch /opt/tools/.setup-$i-$h`nfi`n"
+    }
+    [IO.File]::WriteAllText((Join-Path $here 'docker\setup-project.sh'), $setup)
+
+    Start-HostServices $Name $hostSvcs $map['MCP_PUBLIC_TOKEN']
+    # ingress-proxy перечитывает SELF_AUTHED_PORTS/ALLOWED_PORTS только при старте
     & "$hostDir\stop-ingress.ps1" | Out-Null
     & "$hostDir\start-ingress.ps1" | Out-Null
     docker compose -f (Join-Path $here 'docker-compose.yml') up -d --force-recreate toolbox

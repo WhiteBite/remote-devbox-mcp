@@ -28,12 +28,19 @@ if not TOKEN:
 
 LISTEN = ("127.0.0.1", int(os.environ.get("PROXY_PORT", "8799")))
 SELF_AUTHED = {int(p) for p in os.environ.get("SELF_AUTHED_PORTS", "8792").split(",") if p}
+# fail-closed: порты, routable через ingress с ingress-токеном.
+# Пусто = все non-self-authed порты запрещены (403).
+ALLOWED = {int(p) for p in os.environ.get("ALLOWED_PORTS", "").split(",") if p}
+MAX_BODY = int(os.environ.get("MAX_BODY_MB", "50")) * 1024 * 1024
 EXPECTED = f"Bearer {TOKEN}".encode()
 MAX_HEADER = 64 * 1024
 ROUTE = re.compile(rb"^/p/(\d{1,5})(/.*)?$")
 
 
-def _forward_body(src: socket.socket, dst: socket.socket, n: int) -> None:
+def _forward_body(src: socket.socket, dst: socket.socket, n: int) -> bool:
+    """False = заявленное тело больше MAX_BODY — вызывающий шлёт 413."""
+    if n > MAX_BODY:
+        return False
     left = n
     while left > 0:
         d = src.recv(min(65536, left))
@@ -41,6 +48,7 @@ def _forward_body(src: socket.socket, dst: socket.socket, n: int) -> None:
             break
         dst.sendall(d)
         left -= len(d)
+    return True
 
 
 def _pipe_up(up: socket.socket, client: socket.socket) -> None:
@@ -81,6 +89,11 @@ def handle(client: socket.socket) -> None:
                 )
                 return
             port = int(m.group(1))
+            if not 1 <= port <= 65535:
+                client.sendall(
+                    b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                )
+                return
             rest = m.group(2) or b"/"
             headers = {}
             out = [parts[0] + b" " + rest + b" " + parts[2]]
@@ -95,11 +108,17 @@ def handle(client: socket.socket) -> None:
                     continue
                 else:
                     out.append(line)
-            if port not in SELF_AUTHED and headers.get(b"authorization") != EXPECTED:
-                client.sendall(
-                    b"HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
-                )
-                return
+            if port not in SELF_AUTHED:
+                if headers.get(b"authorization") != EXPECTED:
+                    client.sendall(
+                        b"HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                    )
+                    return
+                if port not in ALLOWED:
+                    client.sendall(
+                        b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                    )
+                    return
             if cur_port != port:
                 # cloudflared переиспользует одно соединение под запросы к
                 # разным портам: апстрим переподключаем при смене цели
@@ -114,6 +133,11 @@ def handle(client: socket.socket) -> None:
                 cur_port = port
             up.sendall(b"\r\n".join(out) + b"\r\n\r\n")
             cl = int(headers.get(b"content-length") or 0)
+            if cl > MAX_BODY:
+                client.sendall(
+                    b"HTTP/1.1 413 Payload Too Large\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                )
+                return
             if cl <= len(carry):
                 up.sendall(carry[:cl])
                 carry = carry[cl:]
@@ -121,7 +145,11 @@ def handle(client: socket.socket) -> None:
                 need = cl - len(carry)
                 up.sendall(carry)
                 carry = b""
-                _forward_body(client, up, need)
+                if not _forward_body(client, up, need):
+                    client.sendall(
+                        b"HTTP/1.1 413 Payload Too Large\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                    )
+                    return
     except (OSError, ValueError):
         pass
     finally:

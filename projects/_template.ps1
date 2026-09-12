@@ -15,3 +15,18 @@ $PreviewOrigin = 'http://toolbox:8788'
 $HostServices = @(
   # @{ Port = 8792; Auth = 'bearer'; Cwd = 'D:\path\to\repo'; Cmd = 'python tools/supervisor/server.py' }
 )
+
+# === v2: host-сборка через runner-mcp (Windows-native проекты)
+# Если $RunnerCommands непустой: сборки/тесты/dev-серверы ТОЛЬКО через runner
+# (MCP_CONF=~/.mcp-runner.conf у агента), bash моста = git + read-only.
+# Cmd = argv-массив (НИКАКОГО shell); Args: type=path валидируется на '..'/abs;
+# Background=$true детачит процесс, Port = порт dev-сервера для ingress.
+$RunnerCommands = @()
+$RunnerPort = 8796
+
+# порты, routable через ingress с ingress-токеном (fail-closed: вне списка 403)
+$AllowedPorts = @()
+# секреты проекта, закрытые deny-монтами (/dev/null поверх пути в /workspace)
+$DenyMounts = @()
+# пост-установочные команды в контейнере: @{ Cmd='...'; Marker='...'; Required=$false }
+$SetupCmds = @()

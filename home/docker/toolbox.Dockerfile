@@ -72,6 +72,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=900s \
     CMD curl -fsS http://127.0.0.1:8787/healthz || exit 1
 
 COPY toolchain.sh /usr/local/bin/devbox-entrypoint.sh
-RUN chmod +x /usr/local/bin/devbox-entrypoint.sh
+COPY toolchains/ /usr/local/bin/toolchains/
+RUN chmod +x /usr/local/bin/devbox-entrypoint.sh /usr/local/bin/toolchains/*.sh
 
 ENTRYPOINT ["/usr/local/bin/devbox-entrypoint.sh"]

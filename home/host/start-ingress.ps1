@@ -12,8 +12,10 @@ New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 $env:INGRESS_TOKEN = $token
 $env:PROXY_PORT = "8799"
 $selfAuthed = (Get-Content $envFile | Where-Object { $_ -match '^SELF_AUTHED_PORTS=' } | Select-Object -First 1)
-$selfAuthed = if ($selfAuthed) { ($selfAuthed -replace '^SELF_AUTHED_PORTS=', '').Trim() } else { "8792,8787" }
+$selfAuthed = if ($selfAuthed) { ($selfAuthed -replace '^SELF_AUTHED_PORTS=', '').Trim() } else { "8787,8792" }
 $env:SELF_AUTHED_PORTS = $selfAuthed
+$allowed = (Get-Content $envFile | Where-Object { $_ -match '^ALLOWED_PORTS=' } | Select-Object -First 1)
+$env:ALLOWED_PORTS = if ($allowed) { ($allowed -replace '^ALLOWED_PORTS=', '').Trim() } else { "" }
 $p = Start-Process -FilePath "python" -ArgumentList "`"$here\ingress-proxy.py`"" `
   -WindowStyle Hidden -PassThru `
   -RedirectStandardOutput "$logDir\ingress.out" -RedirectStandardError "$logDir\ingress.err"

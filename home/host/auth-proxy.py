@@ -26,6 +26,7 @@ TARGET_HOST = os.environ.get("TARGET_HOST", "127.0.0.1")
 TARGET_PORT = int(os.environ.get("TARGET_PORT", "8790"))
 EXPECTED = f"Bearer {TOKEN}".encode()
 MAX_HEADER = 64 * 1024
+MAX_BODY = int(os.environ.get("MAX_BODY_MB", "50")) * 1024 * 1024
 NEW_HOST = f"Host: {TARGET_HOST}:{TARGET_PORT}".encode()
 
 
@@ -97,6 +98,11 @@ def handle(client: socket.socket) -> None:
                 return
             up.sendall(b"\r\n".join(out) + b"\r\n\r\n")
             cl = int(headers.get(b"content-length") or 0)
+            if cl > MAX_BODY:
+                client.sendall(
+                    b"HTTP/1.1 413 Payload Too Large\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                )
+                return
             # carry уже может содержать начало тела (и даже следующий запрос):
             # досылаем ровно недостающее, остаток уходит в следующий виток
             if cl <= len(carry):

@@ -8,3 +8,5 @@ __pycache__/
 Thumbs.db
 .DS_Store
 home/bin/
+home/docker-compose.override.yml
+home/docker/setup-project.sh
