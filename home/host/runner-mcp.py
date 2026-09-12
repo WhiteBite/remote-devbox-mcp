@@ -44,6 +44,39 @@ def _audit(line: str) -> None:
         f.write(f"{time.strftime('%Y-%m-%dT%H:%M:%S')} {line}\n")
 
 
+def _norm(d):
+    """Ключи из PowerShell ConvertTo-Json приходят с капитализацией профиля."""
+    return {(k.lower() if isinstance(k, str) else k): v for k, v in (d or {}).items()}
+
+
+def _quote_cmd(a: str) -> str:
+    """Экранирование аргумента для cmd.exe только когда необходимо:
+    простые аргументы передаём как есть (иначе npm получит литеральные кавычки)."""
+    if not any(c in a for c in ' &|<>()^%!"'):
+        return a
+    a = a.replace('"', '""')
+    for ch in "&|<>()^%!":
+        a = a.replace(ch, "^" + ch)
+    return f'"{a}"'
+
+
+def _resolve(argv: list[str]) -> list[str]:
+    """npm/npx на Windows = .cmd-шимы; shutil.which матчит и бесрасширенный
+    sh-скрипт (WinError 193), поэтому ищем только явные расширения.
+    argv остаётся allowlist-ным; аргументы экранируются для cmd."""
+    import shutil
+    exe = None
+    if os.name == "nt":
+        for ext in (".exe", ".cmd", ".bat"):
+            exe = shutil.which(argv[0] + ext)
+            if exe:
+                break
+    exe = exe or shutil.which(argv[0]) or argv[0]
+    if os.name == "nt" and exe.lower().endswith((".cmd", ".bat")):
+        return ["cmd", "/c", " ".join([exe] + [_quote_cmd(a) for a in argv[1:]])]
+    return [exe] + argv[1:]
+
+
 def _safe_path(value: str) -> str:
     p = Path(value)
     if p.is_absolute() or ".." in p.parts:
@@ -74,6 +107,7 @@ def _make_tool(name: str, spec: dict):
         present = {k: v for k, v in kwargs.items() if v is not None}
         argv = _build_argv(spec, present)
         _audit(f"{name} argv={argv}")
+        argv = _resolve(argv)
         if spec.get("background"):
             pidfile = RUN_DIR / f"{PROFILE}-{name}.pid"
             log = RUN_DIR / f"{PROFILE}-{name}.log"
@@ -118,6 +152,8 @@ def runner_list() -> str:
 
 
 for _cmd in CFG.get("commands", []):
+    _cmd = _norm(_cmd)
+    _cmd["args"] = {k: _norm(v) for k, v in (_cmd.get("args") or {}).items()}
     _fn = _make_tool(_cmd["name"], _cmd)
     mcp.add_tool(_fn, name=_fn.__name__)
 
