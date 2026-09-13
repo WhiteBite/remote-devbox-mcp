@@ -261,11 +261,13 @@ Quick-туннель даёт новый hostname при каждом перес
    скопируй токен.
 2. В том же туннеле: Public hostname → `devbox.<твой-домен>` → service
    `HTTP` → `host.docker.internal:8799` (дашборд сам создаст CNAME).
-3. В `.env`: `TUNNEL_TOKEN=<токен>`, `PUBLIC_URL=https://devbox.<твой-домен>`;
-   `docker compose up -d` (cloudflared-ingress перейдёт в именованный режим).
+3. В `.env`: `TUNNEL_TOKEN=<токен туннеля>` (длинная строка `eyJ...`),
+   `PUBLIC_URL=https://devbox.<твой-домен>`. Затем `.\devbox.ps1 use <профиль>`
+   (отрендерит `TUNNEL_TAIL` из токена) и
+   `docker compose up -d --force-recreate cloudflared-ingress`.
 4. Все эндпоинты навсегда: `https://devbox.<домен>/p/<порт>/...`
    (MCP `/p/8787/mcp`, супервайзер `/p/8792/mcp`, галерея `/p/8765`, …).
-   Конфиг агента больше никогда не меняется.
+   Конфиг агента больше никогда не меняется. `doctor` проверяет цепь по этому URL.
 
 Без `TUNNEL_TOKEN` всё работает как раньше через trycloudflare (URL дрейфует).
 

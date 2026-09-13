@@ -19,7 +19,7 @@ $EnvOrder = @('PROJECT_DIR','TOOLCHAIN','GIT_NAME','GIT_EMAIL','PREVIEW_ORIGIN',
               'SELF_AUTHED_PORTS','ALLOWED_PORTS','OPENCODE_MCP_PERMISSIONS',
               'SETUP_SCRIPT_B64','PUBLIC_URL','ACTIVE_PROFILE','MCP_BEARER_TOKEN',
               'MCP_PUBLIC_TOKEN','INGRESS_TOKEN','VLESS_SUB_URL',
-              'JOB_TIMEOUT_SECONDS','TUNNEL_TOKEN')
+              'JOB_TIMEOUT_SECONDS','TUNNEL_TOKEN','TUNNEL_TAIL')
 
 function Read-Env($path) {
   $map = @{}
@@ -306,6 +306,10 @@ $scLines
     $setupDir = Join-Path $here 'docker\setup'
     $setupB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($setup))
     $map['SETUP_SCRIPT_B64'] = $setupB64
+
+    # именованный туннель (стабильный URL) vs быстрый trycloudflare — по TUNNEL_TOKEN
+    if ($map['TUNNEL_TOKEN']) { $map['TUNNEL_TAIL'] = "run --token $($map['TUNNEL_TOKEN'])" }
+    else { $map['TUNNEL_TAIL'] = '--protocol http2 --url http://host.docker.internal:8799' }
 
     Start-HostServices $Name $hostSvcs $map['MCP_PUBLIC_TOKEN']
     # ingress-proxy перечитывает SELF_AUTHED_PORTS/ALLOWED_PORTS только при старте
