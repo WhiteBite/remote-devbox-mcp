@@ -14,7 +14,9 @@ pid пишется в %TEMP%\\rdm-runner\\<profile>-<name>.pid. Каждый в�
 
 import json
 import inspect
+import hashlib
 import os
+import re
 import subprocess
 import sys
 import time
@@ -32,22 +34,67 @@ RUN_DIR = Path(os.environ.get("TEMP", "/tmp")) / "rdm-runner"
 RUN_DIR.mkdir(parents=True, exist_ok=True)
 DEFAULT_TIMEOUT = int(CFG.get("timeout", 900))
 AUDIT_LOG = RUN_DIR / "audit.log"
+CHAIN = RUN_DIR / "audit.chain"
+
+# Политика безопасности аргументов агента (mcp-shell-server pattern):
+# exec-векторы отклоняются даже внутри разрешённой команды.
+DENY_ARG = [
+    r"find\b.*-exec", r"\bxargs\b", r"awk\b.*system\s*\(",
+    r"tar\b.*--checkpoint-action", r"\bgit\s+-c\b",
+    r"Invoke-Expression", r"\biex\b", r"certutil\s+-urlcache",
+    r"(curl|wget)\b.*\|\s*(sh|bash|powershell|pwsh)",
+]
+SECRETISH = re.compile(
+    r"(token|key|secret|password|passwd|bearer)\s*[=:]\s*\S+|^[A-Fa-f0-9]{32,}$", re.I)
+
+
+def _audit(obj) -> None:
+    """JSONL-аудит с SHA-256 цепочкой (tamper-evident) и ротацией 10МБ."""
+    try:
+        if AUDIT_LOG.exists() and AUDIT_LOG.stat().st_size > 10 * 1024 * 1024:
+            AUDIT_LOG.rename(RUN_DIR / "audit.log.1")
+            CHAIN.unlink(missing_ok=True)
+    except OSError:
+        pass
+    prev = CHAIN.read_text().strip() if CHAIN.exists() else "0" * 64
+    entry = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S"), "event": obj, "prev": prev}
+    h = hashlib.sha256(json.dumps(entry, sort_keys=True).encode()).hexdigest()
+    entry["hash"] = h
+    try:
+        with open(AUDIT_LOG, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        CHAIN.write_text(h)
+    except OSError:
+        pass
+
+
+def _redact_argv(argv):
+    return ["[REDACTED]" if SECRETISH.search(a) else a for a in argv]
+
+
+def _check_args(values) -> None:
+    for v in values:
+        s = str(v)
+        for pat in DENY_ARG:
+            if re.search(pat, s, re.I):
+                raise ValueError(f"аргумент отклонён политикой безопасности: {s!r}")
+
+
+def _child_env(spec):
+    """Минимальное окружение ребёнка: системный минимум + env команды."""
+    base = {}
+    for k in ("PATH", "SYSTEMROOT", "COMSPEC", "PATHEXT", "TEMP", "TMP",
+              "USERPROFILE", "HOME", "JAVA_HOME", "FLUTTER_ROOT"):
+        if os.environ.get(k):
+            base[k] = os.environ[k]
+    base.update(spec.get("env") or {})
+    return base
 
 mcp = FastMCP(
     f"devbox-runner-{PROFILE}",
     host="127.0.0.1",
     port=int(os.environ.get("RUNNER_PORT", "8797")),
 )
-
-
-def _audit(line: str) -> None:
-    try:
-        if AUDIT_LOG.exists() and AUDIT_LOG.stat().st_size > 10 * 1024 * 1024:
-            AUDIT_LOG.rename(RUN_DIR / "audit.log.1")
-    except OSError:
-        pass
-    with open(AUDIT_LOG, "a", encoding="utf-8") as f:
-        f.write(f"{time.strftime('%Y-%m-%dT%H:%M:%S')} {line}\n")
 
 
 def _norm(d):
@@ -116,15 +163,17 @@ def _make_tool(name: str, spec: dict):
 
     def run(**kwargs):
         present = {k: v for k, v in kwargs.items() if v is not None}
+        _check_args(present.values())
         argv = _build_argv(spec, present)
-        _audit(f"{name} argv={argv}")
+        _audit({"tool": name, "argv": _redact_argv(argv)})
         argv = _resolve(argv)
+        env = _child_env(spec)
         if spec.get("background"):
             pidfile = RUN_DIR / f"{PROFILE}-{name}.pid"
             log = RUN_DIR / f"{PROFILE}-{name}.log"
             with open(log, "ab") as lf:
                 proc = subprocess.Popen(
-                    argv, cwd=CWD, stdout=lf, stderr=lf,
+                    argv, cwd=CWD, env=env, stdout=lf, stderr=lf,
                     creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
                 )
             pidfile.write_text(str(proc.pid))
@@ -133,9 +182,9 @@ def _make_tool(name: str, spec: dict):
                 "port": spec.get("port"), "log": str(log),
             })
         proc = subprocess.run(
-            argv, cwd=CWD, capture_output=True, timeout=timeout,
+            argv, cwd=CWD, env=env, capture_output=True, timeout=timeout,
         )
-        _audit(f"{name} exit={proc.returncode}")
+        _audit({"tool": name, "exit": proc.returncode})
         return json.dumps({
             "exit_code": proc.returncode,
             "stdout": proc.stdout.decode("utf-8", "replace")[-64000:],
@@ -201,6 +250,12 @@ for _cmd in CFG.get("commands", []):
     if _cmd.get("background"):
         _kill_fn = _make_kill_tool(_cmd["name"])
         mcp.add_tool(_kill_fn, name=_kill_fn.__name__)
+
+# именованные скрипты профиля ($Scripts) → run_script_<name>
+for _sc in CFG.get("scripts", []):
+    _sc = _norm(_sc)
+    _fn = _make_tool("script:" + _sc["name"], _sc)
+    mcp.add_tool(_fn, name=_fn.__name__)
 
 
 if __name__ == "__main__":

@@ -237,6 +237,20 @@ Ingress rout'ит только порты из `$AllowedPorts` профиля + 
 
 ## 12. Эксплуатация: doctor/watch/info/share/issue-tokens
 
+- `doctor` — проверка всей цепи PASS/FAIL с хинтами; exit-code для скриптов.
+- `watch` — watchdog-цикл: флап туннеля → auto-recreate ingress, смерть
+  host-сервисов/раннера → рестарт с бэкoff; логи `%TEMP%\rdm-watchdog\`.
+- `info` — дамп состояния + маскированный чат-блок для агента.
+- `share` — только чат-блок с полными текущими значениями.
+- `issue-tokens` — ротация трёх токенов + рестарт цепи + чат-блок.
+  Каденция: на каждую новую сессию агента; revocation = stop-host + stop-ingress.
+- `use` дополнительно: валидация профиля R1–R19 fail-fast; рендер
+  `OPENCODE_MCP_PERMISSIONS` из `$Mode` (readonly/standard/full); gitleaks
+  скан секретов проекта в фоне (отчёт `%TEMP%\rdm-host\gitleaks-<profile>.json`,
+  doctor показывает WARN/PASS; `SKIP_GITLEAKS=1` отключает);
+  refs тулчейнов в `/opt/tools/refs/` для registry.json с refcount;
+  эмиссия `/agent/AGENTS.md` (agent-consumable манифест окружения).
+
 Подкоманды `devbox.ps1`:
 
 - **doctor** — проверка цепи сервисов (PASS/FAIL), exit-code 0 если всё зелёно.

@@ -30,3 +30,13 @@ $AllowedPorts = @()
 $DenyMounts = @()
 # пост-установочные команды в контейнере: @{ Cmd='...'; Marker='...'; Required=$false }
 $SetupCmds = @()
+
+# режим доступа агента: readonly | standard | full
+#   readonly = write/edit/apply_patch/bash deny (аудит/оценка без правок)
+#   standard = мутации требуют разрешения (клиент отвечает --auto)
+#   full     = мутации allow без запросов (только для полностью доверенных сессий)
+$Mode = 'standard'
+
+# именованные скрипты проекта → тулы раннера run_script_<name> (argv-массив!)
+$Scripts = @()
+# @{ Name = 'build'; Cmd = @('npm', 'run', 'build'); Description = 'сборка' }

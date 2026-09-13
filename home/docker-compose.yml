@@ -35,10 +35,10 @@ services:
       # сборки Spring/Flutter долгие: дефолт 600 с, максимум по документам 3600
       OPENCODE_MCP_JOB_TIMEOUT_SECONDS: "${JOB_TIMEOUT_SECONDS:-1800}"
       OPENCODE_MCP_WAIT_MAX_SECONDS: "50"
-      # Правила auto-allow для write/edit/apply_patch/bash. Схема — нативные
-      # правила разрешений OpenCode; по умолчанию пусто и клиент отвечает на
-      # запросы сам (./mcp run --auto).
-      # OPENCODE_MCP_PERMISSIONS: '{"edit":"allow","bash":"allow"}'
+      # Правила auto-allow/deny для write/edit/apply_patch/bash. Схема — нативные
+      # правила разрешений OpenCode; рендерит devbox.ps1 из $Mode профиля
+      # (readonly/standard/full); пусто = клиент отвечает на запросы сам (--auto).
+      OPENCODE_MCP_PERMISSIONS: "${OPENCODE_MCP_PERMISSIONS:-}"
     volumes:
       - "${PROJECT_DIR:?укажи папку проекта в .env}:/workspace"
       # shadow-монт: воркер не видит opencode.json проекта и не пытается поднять
@@ -48,8 +48,7 @@ services:
       - rdm-tools:/opt/tools                    # тулчейны, переживают пересоздание
       - rdm-agent:/agent                        # постоянный скретч агента
       # deny-монты секретов и тень .opencode/ генерируются в override-файле;
-      # setup-project.sh рендерит devbox.ps1 из $SetupCmds профиля
-      - ./docker/setup-project.sh:/opt/tools/setup-project.sh:ro
+      # setup-команды профиля приходят base64 через SETUP_SCRIPT_B64
     expose:
       - "8787"
       - "8788"                                  # preview: flutter web-server / bootRun для агента

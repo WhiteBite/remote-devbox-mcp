@@ -154,6 +154,13 @@ def handle(client: socket.socket) -> None:
 
             _access_log(TARGET_PORT, parts[0], parts[1], "self")
 
+            # MCP spec: валидируем Origin (DNS-rebinding); наши клиенты без Origin
+            if b"origin" in headers:
+                client.sendall(
+                    b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                )
+                return
+
             if headers.get(b"authorization") != EXPECTED:
                 client.sendall(
                     b"HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"

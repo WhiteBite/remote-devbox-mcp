@@ -145,6 +145,11 @@ def handle(client: socket.socket) -> None:
                     )
                     return
                 auth_ok = False
+                if any(l.strip().lower().startswith(b"origin:") for l in lines[1:]):
+                    client.sendall(
+                        b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                    )
+                    return
                 for line in lines[1:]:
                     k, _, v = line.partition(b":")
                     if k.strip().lower() == b"authorization" and v.strip() == EXPECTED:
@@ -195,6 +200,13 @@ def handle(client: socket.socket) -> None:
 
             auth_mode = "self" if port in SELF_AUTHED else "ingress"
             _access_log(port, parts[0], parts[1], auth_mode)
+
+            # MCP spec: сервер валидирует Origin (DNS-rebinding); наши клиенты без Origin
+            if b"origin" in headers:
+                client.sendall(
+                    b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                )
+                return
 
             if port not in SELF_AUTHED:
                 if headers.get(b"authorization") != EXPECTED:

@@ -16,7 +16,8 @@ $logRoot = Join-Path $env:TEMP 'rdm-host'
 New-Item -ItemType Directory -Force -Path $logRoot | Out-Null
 
 $EnvOrder = @('PROJECT_DIR','TOOLCHAIN','GIT_NAME','GIT_EMAIL','PREVIEW_ORIGIN',
-              'SELF_AUTHED_PORTS','ALLOWED_PORTS','ACTIVE_PROFILE','MCP_BEARER_TOKEN',
+              'SELF_AUTHED_PORTS','ALLOWED_PORTS','OPENCODE_MCP_PERMISSIONS',
+              'SETUP_SCRIPT_B64','ACTIVE_PROFILE','MCP_BEARER_TOKEN',
               'MCP_PUBLIC_TOKEN','INGRESS_TOKEN','VLESS_SUB_URL',
               'JOB_TIMEOUT_SECONDS','TUNNEL_TOKEN')
 
@@ -45,7 +46,8 @@ function Stop-HostServices($profileName) {
     $id, $marker = $_ -split '\|', 2
     $p = Get-CimInstance Win32_Process -Filter "ProcessId=$id" -ErrorAction SilentlyContinue
     if (-not $p) { return }
-    if ($marker -and $p.CommandLine -match [regex]::Escape($marker)) {
+    $cmdline = ($p.CommandLine -replace '\s+', ' ')
+    if ($marker -and $cmdline -match [regex]::Escape(($marker -replace '\s+', ' '))) {
       taskkill /F /T /PID $id | Out-Null
       "stop-host: pid $id ($marker)"
     } else {
@@ -58,7 +60,7 @@ function Stop-HostServices($profileName) {
 function Start-HostServices($profileName, $services, $publicToken) {
   $pids = @()
   foreach ($svc in $services) {
-    $marker = ($svc.Cmd -split ' ')[0..2] -join ' '
+    $marker = ($svc.Cmd -replace '\s+', ' ')
     if ($svc.Auth -eq 'bearer') {
       $inner = [int]$svc.Port + 1
       $env:MCP_HTTP_PORT = "$inner"
@@ -66,7 +68,12 @@ function Start-HostServices($profileName, $services, $publicToken) {
         -WorkingDirectory $svc.Cwd -WindowStyle Hidden -PassThru `
         -RedirectStandardOutput (Join-Path $logRoot "$profileName-svc$($svc.Port).out") `
         -RedirectStandardError (Join-Path $logRoot "$profileName-svc$($svc.Port).err")
-      $pids += "$($c.Id)|$marker"
+      # pid wrappers умирает вместе с pwsh; фиксируем реальный pid сервиса:
+      # владелец LISTEN-сокета внутреннего порта
+      Start-Sleep -Seconds 3
+      $lst = Get-NetTCPConnection -LocalPort $inner -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
+      $svcPid = if ($lst) { $lst.OwningProcess } else { $c.Id }
+      $pids += "$svcPid|$marker"
       $env:MCP_PUBLIC_TOKEN = $publicToken
       $env:PROXY_PORT = "$($svc.Port)"
       $env:TARGET_PORT = "$inner"
@@ -74,15 +81,21 @@ function Start-HostServices($profileName, $services, $publicToken) {
         -WindowStyle Hidden -PassThru `
         -RedirectStandardOutput (Join-Path $logRoot "$profileName-auth$($svc.Port).out") `
         -RedirectStandardError (Join-Path $logRoot "$profileName-auth$($svc.Port).err")
-      $pids += "$($a.Id)|auth-proxy.py"
-      "start-host: bearer-сервис :$($svc.Port) -> :$inner (pid $($c.Id), auth pid $($a.Id))"
+      Start-Sleep -Seconds 2
+      $lstA = Get-NetTCPConnection -LocalPort $svc.Port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
+      $authPid = if ($lstA) { $lstA.OwningProcess } else { $a.Id }
+      $pids += "$authPid|auth-proxy.py"
+      "start-host: bearer-сервис :$($svc.Port) -> :$inner (pid $svcPid, auth pid $authPid)"
     } else {
       $c = Start-Process -FilePath 'cmd.exe' -ArgumentList "/c $($svc.Cmd)" `
         -WorkingDirectory $svc.Cwd -WindowStyle Hidden -PassThru `
         -RedirectStandardOutput (Join-Path $logRoot "$profileName-svc$($svc.Port).out") `
         -RedirectStandardError (Join-Path $logRoot "$profileName-svc$($svc.Port).err")
-      $pids += "$($c.Id)|$marker"
-      "start-host: сервис :$($svc.Port) (pid $($c.Id))"
+      Start-Sleep -Seconds 3
+      $lst = Get-NetTCPConnection -LocalPort $svc.Port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
+      $svcPid = if ($lst) { $lst.OwningProcess } else { $c.Id }
+      $pids += "$svcPid|$marker"
+      "start-host: сервис :$($svc.Port) (pid $svcPid)"
     }
   }
   $pids | Set-Content (Join-Path $logRoot "$profileName-pids.txt")
@@ -126,7 +139,7 @@ function Test-Profile {
     if ($ap -contains $RunnerPort) { $v += "R14: RunnerPort $p в AllowedPorts" }
     if ($ports -contains $RunnerPort) { $v += "R15: RunnerPort $p в HostServices" }
   }
-  foreach ($d in $DenyMounts) { if (-not (Test-Path (Join-Path $ProjectDir $d))) { $v += "R16: DenyMounts $ProjectDir/$d не существует" } }
+  foreach ($d in $DenyMounts) { if (-not (Test-Path (Join-Path $ProjectDir $d))) { $v += "WARN R16: DenyMounts $ProjectDir/$d не существует (ничего не денится)" } }
   $i = 0
   foreach ($s in $SetupCmds) { $i++; if (-not $s.Cmd) { $v += "R17: SetupCmd[$i]: Cmd обязателен" } }
   if (-not $PreviewOrigin) { $v += 'WARN R19: $PreviewOrigin не задан — preview-туннель не поднимется' }
@@ -165,7 +178,10 @@ function Write-Manifest($Name, $map, $hostSvcs, $RunnerCommands, $AllowedPorts) 
     endpoints = $eps
     allowed_ports = @($AllowedPorts)
     runner_commands = @($RunnerCommands | ForEach-Object { $_.Name })
+    scripts = @($Scripts | ForEach-Object { $_.Name })
     preview_origin = $map['PREVIEW_ORIGIN']
+    mode = $map['OPENCODE_MCP_PERMISSIONS'] ? 'custom' : 'standard'
+    host_requirements = @{ memory_mb = 4096; storage_mb = 20480; note = 'toolchains in /opt/tools volume' }
   }
   $manifest | ConvertTo-Json -Depth 6 |
     Set-Content (Join-Path $logRoot 'rdm-manifest.json') -Encoding utf8
@@ -186,7 +202,7 @@ switch ($Cmd) {
     $viol | Where-Object { $_ -match '^WARN' } | ForEach-Object { "profile warn: $($_ -replace '^WARN ','')" }
     $map = Read-Env $envFile
     $old = if ($map.ContainsKey('ACTIVE_PROFILE')) { $map['ACTIVE_PROFILE'] } else { '' }
-    if ($old -and $old -ne $Name) { Stop-HostServices $old }
+    if ($old) { Stop-HostServices $old }
     $map['PROJECT_DIR'] = $ProjectDir
     $map['TOOLCHAIN'] = $Toolchain
     $map['GIT_NAME'] = $GitName
@@ -217,8 +233,56 @@ switch ($Cmd) {
     $map['ALLOWED_PORTS'] = (@($allowed | Select-Object -Unique) -join ',')
 
     $map['ACTIVE_PROFILE'] = $Name
+    $mode = if ($Mode) { $Mode } else { 'standard' }
+    $perm = switch ($mode) {
+      'readonly' { '{"write":"deny","edit":"deny","apply_patch":"deny","bash":"deny"}' }
+      'full'     { '{"write":"allow","edit":"allow","apply_patch":"allow","bash":"allow"}' }
+      default    { '' }
+    }
+    if ($perm) { $map['OPENCODE_MCP_PERMISSIONS'] = $perm }
+    else { $map.Remove('OPENCODE_MCP_PERMISSIONS') }
     Write-Env $envFile $map
     Write-Manifest $Name $map $hostSvcs $RunnerCommands $allowed
+
+    # refs тулчейнов для registry.json (refcount по профилям)
+    docker run --rm -v rdm-tools:/opt/tools alpine sh -c "mkdir -p /opt/tools/refs && echo '$Toolchain' > /opt/tools/refs/$Name.list" 2>$null | Out-Null
+
+    # AGENTS.md-сниппет из профиля в /agent (agent-consumable manifest)
+    $rcLines = ($RunnerCommands | ForEach-Object { "- run_$($_.Name -replace '[:\-]','_'): $($_.Description)" }) -join "`n"
+    if (-not $rcLines) { $rcLines = '- (нет)' }
+    $scLines = ($Scripts | ForEach-Object { "- run_script_$($_.Name): $($_.Description)" }) -join "`n"
+    if (-not $scLines) { $scLines = '- (нет)' }
+    $agentsMd = @"
+<!-- auto-generated: devbox.ps1 use $Name -->
+## Environment
+- profile: $Name; project: $ProjectDir
+- toolchain: $Toolchain
+- mode: $mode; allowed ports: $($map['ALLOWED_PORTS'])
+## Runner commands
+$rcLines
+## Scripts
+$scLines
+"@
+    $agentsMd | docker run --rm -i -v rdm-agent:/agent alpine sh -c "cat > /agent/AGENTS.md" 2>$null | Out-Null
+
+    # gitleaks pre-mount скан секретов проекта в фоне (SKIP_GITLEAKS=1 отключает);
+    # отчёт читает doctor
+    if (-not $env:SKIP_GITLEAKS) {
+      $glReport = Join-Path $logRoot "gitleaks-$Name.json"
+      Remove-Item $glReport -ErrorAction SilentlyContinue
+      Start-Process -FilePath docker -ArgumentList @(
+        'run', '--rm',
+        "-v", "$($ProjectDir.Replace('\', '/')):/src:ro",
+        '-v', "$($here.Replace('\', '/'))/docker/gitleaks.toml:/cfg.toml:ro",
+        '-v', "$($logRoot.Replace('\', '/')):/out",
+        'zricethezav/gitleaks', 'detect', '--source', '/src', '--no-git',
+        '--config', '/cfg.toml', '--report-format', 'json',
+        '--report-path', "/out/gitleaks-$Name.json", '--exit-code', '0'
+      ) -WindowStyle Hidden `
+        -RedirectStandardOutput (Join-Path $logRoot "gitleaks-$Name.out") `
+        -RedirectStandardError (Join-Path $logRoot "gitleaks-$Name.err") | Out-Null
+      "gitleaks: скан секретов запущен в фоне: $glReport"
+    }
 
     # override-compose: deny-монты секретов + тень .opencode/ (empty dir)
     $ov = "services:`n  toolbox:`n    volumes:`n      - ./docker/workspace-empty:/workspace/.opencode:ro`n"
@@ -237,7 +301,9 @@ switch ($Cmd) {
         $onfail = if ($s.Required) { 'exit 1' } else { "echo '[setup] WARN: cmd $i failed, continue'" }
         $setup += "if [ ! -f /opt/tools/.setup-$i-$h ]; then`n  " + $s.Cmd + " || " + $onfail + "`n  touch /opt/tools/.setup-$i-$h`nfi`n"
     }
-    [IO.File]::WriteAllText((Join-Path $here 'docker\setup-project.sh'), $setup)
+    $setupDir = Join-Path $here 'docker\setup'
+    $setupB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($setup))
+    $map['SETUP_SCRIPT_B64'] = $setupB64
 
     Start-HostServices $Name $hostSvcs $map['MCP_PUBLIC_TOKEN']
     # ingress-proxy перечитывает SELF_AUTHED_PORTS/ALLOWED_PORTS только при старте
@@ -305,8 +371,17 @@ switch ($Cmd) {
       $dead = 0
       Get-Content $pf | ForEach-Object { $id, $marker = $_ -split '\|', 2
         $p = Get-CimInstance Win32_Process -Filter "ProcessId=$id" -ErrorAction SilentlyContinue
-        if (-not $p -or ($marker -and $p.CommandLine -notmatch [regex]::Escape($marker))) { $dead++ } }
+        $cmdline = if ($p) { ($p.CommandLine -replace '\s+', ' ') } else { '' }
+        if (-not $p -or ($marker -and $cmdline -notmatch [regex]::Escape(($marker -replace '\s+', ' ')))) { $dead++ } }
       Check 'host services alive' ($dead -eq 0) 'devbox.ps1 use <имя> перезапустит'
+    }
+    $glReport = Join-Path $logRoot "gitleaks-$prof.json"
+    if (Test-Path $glReport) {
+      $gl = @(Get-Content $glReport -Raw | ConvertFrom-Json | Where-Object { $_ })
+      if ($gl.Count) { "[WARN] gitleaks: найдено секретов $($gl.Count) — проверь DenyMounts" }
+      else { '[PASS] gitleaks clean' }
+    } else {
+      '[SKIP] gitleaks отчёт ещё не готов (фоновый скан)'
     }
     if ($fail) { exit 1 } else { 'doctor: all PASS'; exit 0 }
   }
@@ -331,7 +406,8 @@ switch ($Cmd) {
         $dead = $false
         Get-Content $pf | ForEach-Object { $id, $marker = $_ -split '\|', 2
           $p = Get-CimInstance Win32_Process -Filter "ProcessId=$id" -ErrorAction SilentlyContinue
-          if (-not $p -or ($marker -and $p.CommandLine -notmatch [regex]::Escape($marker))) { $dead = $true } }
+          $cmdline = if ($p) { ($p.CommandLine -replace '\s+', ' ') } else { '' }
+          if (-not $p -or ($marker -and $cmdline -notmatch [regex]::Escape(($marker -replace '\s+', ' ')))) { $dead = $true } }
         if ($dead) {
           "$(Get-Date -Format o) host services dead: restart" | Add-Content $wl
           $profileFile = Join-Path (Split-Path -Parent $here) "projects\$prof.ps1"

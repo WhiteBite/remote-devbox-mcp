@@ -1,0 +1,7 @@
+title = devbox pre-mount scan
+[extend]
+useDefault = true
+
+[[ignores]]
+description = "node_modules и кэши не сканируем"
+path = '''(node_modules|\.venv|\.venv\.broken-.*|\.gradle|\.pub-cache|build|dist|\.dart_tool|\.turbo|\.mypy_cache|\.ruff_cache|\.pytest_cache|\.hypothesis|local_cache|test-results|playwright-report.*)/'''
