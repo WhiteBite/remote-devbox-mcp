@@ -17,7 +17,7 @@ New-Item -ItemType Directory -Force -Path $logRoot | Out-Null
 
 $EnvOrder = @('PROJECT_DIR','TOOLCHAIN','GIT_NAME','GIT_EMAIL','PREVIEW_ORIGIN',
               'SELF_AUTHED_PORTS','ALLOWED_PORTS','OPENCODE_MCP_PERMISSIONS',
-              'SETUP_SCRIPT_B64','ACTIVE_PROFILE','MCP_BEARER_TOKEN',
+              'SETUP_SCRIPT_B64','PUBLIC_URL','ACTIVE_PROFILE','MCP_BEARER_TOKEN',
               'MCP_PUBLIC_TOKEN','INGRESS_TOKEN','VLESS_SUB_URL',
               'JOB_TIMEOUT_SECONDS','TUNNEL_TOKEN')
 
@@ -147,6 +147,8 @@ function Test-Profile {
 }
 
 function Get-IngressUrl {
+  $map = Read-Env $envFile
+  if ($map['PUBLIC_URL']) { return $map['PUBLIC_URL'] }
   $logs = docker compose -f (Join-Path $here 'docker-compose.yml') logs cloudflared-ingress 2>$null |
     Select-String 'https://[a-z0-9-]+\.trycloudflare\.com' |
     ForEach-Object { $_.Matches[0].Value } | Select-Object -Last 1

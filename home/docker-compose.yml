@@ -122,7 +122,12 @@ services:
     depends_on:
       vpn:
         condition: service_healthy
-    command: tunnel --no-autoupdate --protocol http2 --url http://host.docker.internal:8799
+    # TUNNEL_TOKEN задан = именованный туннель: ingress настроен в CF-дашборде
+    # (поддомен -> http://host.docker.internal:8799); URL стабилен и не зависит
+    # от домашнего IP (туннель исходящий). Пусто = быстрый trycloudflare.
+    command: ["sh", "-c", "if [ -n \"$$TUNNEL_TOKEN\" ]; then exec cloudflared tunnel --no-autoupdate run; else exec cloudflared tunnel --no-autoupdate --protocol http2 --url http://host.docker.internal:8799; fi"]
+    environment:
+      TUNNEL_TOKEN: "${TUNNEL_TOKEN:-}"
 
 volumes:
   rdm-state:

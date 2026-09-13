@@ -251,15 +251,25 @@ Ingress rout'ит только порты из `$AllowedPorts` профиля + 
   refs тулчейнов в `/opt/tools/refs/` для registry.json с refcount;
   эмиссия `/agent/AGENTS.md` (agent-consumable манифест окружения).
 
-Подкоманды `devbox.ps1`:
+## 13. Стабильный URL (именованный туннель)
 
-- **doctor** — проверка цепи сервисов (PASS/FAIL), exit-code 0 если всё зелёно.
-- **watch** — watchdog loop с авто-лечением: мониторит healthz и рестартит упавшие сервисы.
-- **info** — дамп текущего состояния всех сервисов + чат-блок с ключевыми значениями.
-- **share** — только чат-блок с текущими значениями (INGRESS, токены, порты) для передачи агенту.
-- **issue-tokens** — ротация трёх токенов + рестарт цепи + чат-блок; рекомендованная частота: на каждую новую сессию агента. Revocation = `stop-host` + `stop-ingress`.
+Quick-туннель даёт новый hostname при каждом пересоздании контейнера. Если
+домашний IP меняется — это НЕ проблема: именованный туннель исходит с твоей
+машины наружу, домен указывает CNAME на туннель, а не на IP.
 
-## Если что-то не так
+1. CF Dashboard → Zero Trust → Networks → Tunnels → Create tunnel (Cloudflared),
+   скопируй токен.
+2. В том же туннеле: Public hostname → `devbox.<твой-домен>` → service
+   `HTTP` → `host.docker.internal:8799` (дашборд сам создаст CNAME).
+3. В `.env`: `TUNNEL_TOKEN=<токен>`, `PUBLIC_URL=https://devbox.<твой-домен>`;
+   `docker compose up -d` (cloudflared-ingress перейдёт в именованный режим).
+4. Все эндпоинты навсегда: `https://devbox.<домен>/p/<порт>/...`
+   (MCP `/p/8787/mcp`, супервайзер `/p/8792/mcp`, галерея `/p/8765`, …).
+   Конфиг агента больше никогда не меняется.
+
+Без `TUNNEL_TOKEN` всё работает как раньше через trycloudflare (URL дрейфует).
+
+## 14. Если что-то не так
 
 | Симптом | Что делать |
 |---|---|
@@ -269,7 +279,7 @@ Ingress rout'ит только порты из `$AllowedPorts` профиля + 
 | в логах cloudflared частые `Lost connection with the edge`, агент ловит 530/1033 | DPI провайдера рвёт соединения с краем Cloudflare — см. раздел ниже |
 | сборка/тест обрываются по времени | подними `JOB_TIMEOUT_SECONDS` (максимум 3600) |
 
-## Если Cloudflare-туннель рвёт DPI провайдера
+## 15. Если Cloudflare-туннель рвёт DPI провайдера
 
 Симптомы: в `docker compose logs cloudflared` каждые 10–60 с
 `Lost connection with the edge` / `connection with edge closed`, снаружи
