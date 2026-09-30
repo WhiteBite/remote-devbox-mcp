@@ -176,7 +176,7 @@ flutter run -d web-server --web-hostname 0.0.0.0 --web-port 8788   # headless-с
 2. Прошу пользователя отдать порт 8788 наружу и прислать preview-URL:
    быстрый вариант — `docker compose --profile preview up -d` (второй
    trycloudflare-URL без токена), постоянный — именованный туннель
-   (`home/cloudflared-config.example.yml`).
+   (`TUNNEL_TOKEN` + `PUBLIC_URL` в `home/.env`).
 3. Открываю preview-URL своим playwright (из своей песочницы), скриншоты
    сохраняю в PNG и смотрю своим `read_file` — он реально показывает
    изображения. После проверки прошу пользователя выключить preview-туннель.

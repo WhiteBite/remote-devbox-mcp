@@ -1,7 +1,7 @@
 <!-- rdk:generated:start -->
 # WhiteBite/remote-devbox-mcp — full documentation
 
-> TODO: one sentence describing what this does and who it is for
+> Turn your own Windows+Docker machine into a remote devbox that an external coding agent drives through an outbound Cloudflare tunnel.
 
 This is the concatenated documentation intended for LLM grounding. Regenerate with `rdk fix`.
 
@@ -28,15 +28,15 @@ Cloudflare-туннель и правит код, собирает и тести
 │                                  DPI провайдера до туннеля не достаёт
 │   docker/vpn-entrypoint.sh       подписка → конфиг sing-box, пробинг и ротация серверов
 │   .env.example                   → скопировать в .env, заполнить PROJECT_DIR и токен
-│   cloudflared-config.example.yml именованный туннель: MCP + preview приложения
-│   devbox.ps1                   применение профиля проекта (use/status/stop-host)
-│   host/auth-proxy.py           bearer-прокси для выдачи локальных MCP наружу
-│   host/ingress-proxy.py        один вход /p/<порт>/* на все loopback-эндпоинты
-│   host/start-ingress.ps1       подъём ingress-прокси (INGRESS_TOKEN из .env)
+│   devbox.py / devbox.cmd       ядро (Python): профили, host-сервисы, ingress, doctor
+│   devbox.ps1                   тонкий шим к devbox.py
+│   rdm/                         core-пакет: envfile, hostos, profiles, proxy, render,
+│                                procman, doctor, watchdog, runner
+│   host/runner-mcp.py           шим к rdm.runner (host-MCP команд проекта)
 │   SECURITY.md                  что запрещено монтировать, про изоляцию честно
 │
-├─ projects/ → профили проектов (project_dir, тулчейны, host-сервисы)
-│   muffin.ps1, _template.ps1
+├─ projects/ → профили проектов (project_dir, тулчейны, host-сервисы), JSON
+│   muffin.json, _template.json
 │
 └─ arena/ → сторона агента (скачивает сам, ничего ставить не нужно)
     mcp_client.py             MCP-клиент на чистом Python (stdlib, 3.10+)
@@ -97,30 +97,60 @@ cd arena && chmod +x mcp && ./mcp check
 
 MIT — см. [LICENSE](LICENSE).
 
-## Who is it for
+## Для кого это
 
-<!-- TODO: who is this for? -->
+Для разработчика с Windows-машиной и Docker Desktop, который хочет, чтобы
+внешний кодинг-агент (arena.ai, Claude, Codex — любой MCP-клиент) собирал,
+тестировал и правил код **на его собственном железе**, а не в одноразовой
+облачной песочнице без доступа к реальному проекту.
 
-## Use cases
+## Сценарии
 
-<!-- TODO: 3-7 concrete use cases -->
+- Агент билдит и гоняет тесты большого проекта (Java/Gradle, Flutter/web) на
+  твоём компе: у него CPU, RAM и кэш сборки, которых нет ни у какой песочницы.
+- Работа с приватным кодом, который нельзя выгружать в облако: код не
+  покидает твою машину, наружу идут только запросы инструментов через туннель.
+- Preview запущенного приложения для визуальной проверки агентом: второй
+  туннель отдаёт dev-сервер (`docker compose --profile preview up -d`).
+- Host-MCP для Windows-native стеков: команды профиля (`$RunnerCommands`)
+  выполняются на хосте без shell, аргументы валидируются, каждый вызов —
+  в аудит-логе.
+- Смена проекта одной командой (`.\devbox.ps1 use <имя>`): профиль задаёт
+  папку, тулчейны, права; туннель и URL при этом не меняются.
+- Read-only аудит и оценки: режим `readonly` запрещает мутации, агент только
+  читает и запускает диагностику.
 
-## Why choose this
+## Почему так, а не иначе
 
-<!-- TODO: 2-4 differentiators, with numbers -->
+- Никакой сторонней исполнительной стороны: на твоём компе только контейнер-
+  исполнитель, на стороне агента — тонкий Python-клиент из `arena/` (stdlib,
+  ставить ничего не нужно).
+- Outbound-only: входящие порты на роутере не открываются; если DPI провайдера
+  рвёт Cloudflare-туннель, встроенный VLESS-сайдкар (sing-box) это обходит.
+- Профили проектов вместо ручных конфигов: `TOOLCHAIN`, `$Mode`
+  (`readonly | standard | full`), `$AllowedPorts`, `$DenyMounts` — fail-closed
+  механика, а не обещания (см. `home/SECURITY.md`).
+- Тулчейны кэшируются между проектами в volume `/opt/tools`: первая установка
+  платная, пересборки образа не нужно.
 
-## Examples
+## Примеры
 
-### Example (replace with a real one)
+Поднять devbox под проект `muffin` (из папки `home\`, PowerShell):
 
-```bash
-npm start
+```powershell
+copy .env.example .env      # заполнить PROJECT_DIR и токены
+.\devbox.ps1 use muffin     # профиль ..\projects\muffin.ps1
+docker compose up -d
+docker compose logs cloudflared-ingress | Select-String trycloudflare
 ```
 
-### Example (replace with a real one)
+Проверить доступность и поработать с кодом (сторона агента, bash):
 
 ```bash
-npm start
+cp arena/mcp.conf.example ~/.remote-devbox-mcp.conf   # вписать MCP_URL и MCP_TOKEN
+cd arena && ./mcp check
+./mcp run read '{"filePath":"src/Main.java","offset":1,"limit":80}'
+./mcp run --auto bash '{"command":"./gradlew test"}'
 ```
 <!-- rdk:generated:end -->
 

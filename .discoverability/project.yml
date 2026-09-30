@@ -4,14 +4,23 @@ schema_version: 1   # config schema revision; rdk warns on any other value
 
 project:
   name: "WhiteBite/remote-devbox-mcp"
-  one_liner: "TODO: one sentence describing what this does and who it is for"   # 1 sentence, shown as the GitHub description
-  description: "TODO: one sentence describing what this does and who it is for"
+  one_liner: "Turn your own Windows+Docker machine into a remote devbox that an external coding agent drives through an outbound Cloudflare tunnel."   # 1 sentence, shown as the GitHub description
+  description: "Turn your own Windows+Docker machine into a remote devbox that an external coding agent drives through an outbound Cloudflare tunnel."
   category: "mcp-server"   # library | app | template | research | tool | dataset | mcp-server
   copyright_holder: "WhiteBite"   # name on the LICENSE copyright line; seeded from the git owner
 
-audiences: []
+audiences:
+  - "developers who want an external coding agent to build and test on their own hardware instead of a cloud sandbox"
+  - "developers with private code that must not leave their machine"
+  - "Windows + Docker Desktop users running Java/Gradle or Flutter projects"
 
-use_cases: []   # 3-7 concrete jobs this project does
+use_cases:
+  - "agent compiles and runs tests for large projects on your CPU/RAM/build cache"
+  - "work on private code without uploading it anywhere (only tool calls cross the tunnel)"
+  - "preview a running dev server to the agent through a second tunnel"
+  - "run Windows-native host commands via runner-MCP with argv-only, validated arguments and an audit log"
+  - "switch project profiles with one command while the tunnel URL stays the same"
+  - "read-only audit sessions where mutations are denied by permission mode"
 
 keywords:
   github_topics:
@@ -22,14 +31,6 @@ keywords:
     - "remote"
     - "devbox"
     - "mcp"   # 8-20 terms, lowercase with hyphens
-  npm_keywords:
-    - "open-source"
-    - "developer-tools"
-    - "mcp-server"
-    - "whitebite"
-    - "remote"
-    - "devbox"
-    - "mcp"   # 5-15 terms for package.json keywords
 
 links:
   homepage:
@@ -39,16 +40,20 @@ links:
 
 quickstart:
   prerequisites:
-    - "Node.js >= 18"
-  install:
-  run:
-  test:
+    - "Python 3.10+"
+    - "Docker Desktop (Windows)"
+  install: "git clone https://github.com/WhiteBite/remote-devbox-mcp; in home/: copy .env.example .env and fill PROJECT_DIR + tokens"
+  run: "from home/: .\\devbox.ps1 use <profile>; docker compose up -d; agent side: cd arena && ./mcp check"
+  test: "python -m pip install -r requirements-dev.txt; python -m pytest"
 
 artifacts:
-  has_npm_package: false
   has_docs_site: false
 
-differentiators: []   # "why this repo, not the alternatives"
+differentiators:
+  - "no third-party execution side: only a container runner on your machine and a stdlib Python MCP client for the agent"
+  - "outbound-only Cloudflare tunnel, no router port forwarding; built-in VLESS sidecar works around DPI interference"
+  - "per-project profiles with fail-closed mechanics: permission modes (readonly/standard/full), allowed ports, deny-mounts, audit-logged host commands"
+  - "toolchains cached between projects in a /opt/tools volume - no image rebuilds"
 
 safety:
   allow_autofix: false          # lets the Action open autofix PRs

@@ -13,7 +13,7 @@ docker compose up -d
 docker compose ps          # ждём: toolbox healthy, vpn healthy.
                            # Первый старт профиля = установка тулчейнов в
                            # /opt/tools (несколько минут), дальше — кэш
-.\host\start-ingress.ps1 # один раз за сессию машины
+.\devbox.py ingress start  # один раз за сессию машины
 docker compose logs cloudflared-ingress | Select-String trycloudflare  # -> INGRESS
 # MCP_URL    = <INGRESS>/p/8787/mcp   токен MCP_BEARER_TOKEN
 # supervisor = <INGRESS>/p/8792/mcp   токен MCP_PUBLIC_TOKEN
@@ -32,7 +32,7 @@ Git-идентичность агента в контейнере: `GIT_NAME`/`G
 
 Закрыть доступ наружу: `docker compose stop cloudflared-ingress
 cloudflared-preview` (или `down` — весь стек). Host-сервисы профиля:
-`.\devbox.ps1 stop-host`; ingress: `.\host\stop-ingress.ps1`.
+`.\devbox.ps1 stop-host`; ingress: `.\devbox.py ingress stop`.
 
 Смена проекта: `.\devbox.ps1 use <имя>` (туннели выживают, URL не меняется).
 
@@ -50,9 +50,10 @@ cd C:\Users\<ты>\remote-devbox-mcp\home
 
 ```
 home\
+├── devbox.py / devbox.cmd / devbox.ps1   ядро и шимы
+├── rdm\                                 core-пакет (Python)
 ├── docker-compose.yml
 ├── .env.example
-├── cloudflared-config.example.yml
 ├── SECURITY.md
 └── docker\
     └── toolbox.Dockerfile
@@ -151,9 +152,9 @@ docker compose logs cloudflared-preview | Select-String trycloudflare
 нет — кто знает URL, тот видит приложение; после проверки выключи:
 `docker compose stop cloudflared-preview`.
 
-Постоянный вариант (свой домен на Cloudflare): именованный туннель с двумя
-hostname — `mcp.* → toolbox:8787` и `preview.* → toolbox:8788`, настройка в
-`cloudflared-config.example.yml`.
+Постоянный вариант (свой домен на Cloudflare): именованный туннель
+(`TUNNEL_TOKEN` + `PUBLIC_URL` в `.env`, см. §13) — один hostname на ingress,
+preview идёт тем же путём `/p/<порт>/`.
 
 ## 8. Оценка скриншотов агентом (профиль shots)
 
@@ -233,7 +234,7 @@ Ingress rout'ит только порты из `$AllowedPorts` профиля + 
 (flutter web без `--base-href`) под префиксом теряют ассеты — для них либо
 сборка с `--base-href /p/<порт>/`, либо старый выделенный туннель-профиль.
 
-Стоп: `home\host\stop-ingress.ps1` (только записанный pid, сверяя cmdline).
+Стоп: `devbox.py ingress stop` (только записанный pid, сверяя cmdline).
 
 ## 12. Эксплуатация: doctor/watch/info/share/issue-tokens
 

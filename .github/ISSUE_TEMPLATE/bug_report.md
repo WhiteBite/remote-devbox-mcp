@@ -18,5 +18,5 @@ labels: bug
 ## Environment
 
 - OS:
-- Node:
-- Package version:
+- Python:
+- Docker Desktop:
