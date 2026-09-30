@@ -104,7 +104,7 @@ services:
       toolbox:
         condition: service_started
       vpn:
-        condition: service_healthy
+        condition: service_started
     command: tunnel --no-autoupdate --protocol http2 --url ${PREVIEW_ORIGIN:-http://toolbox:8788}
 
 # Будущая опция: семантический граф кода (codegraph) агент индексирует у себя
@@ -113,7 +113,7 @@ services:
   # Постоянный вход на все loopback-эндпоинты хоста: ingress-proxy роутит
   # /p/<port>/* на 127.0.0.1:<port>. Новый эндпоинт = просто запущенный
   # сервис на порту; контейнеры и туннели под него не плодятся.
-  # Хост-часть: home\host\start-ingress.ps1 (INGRESS_TOKEN из .env).
+  # Хост-часть: devbox.py ingress start (INGRESS_TOKEN из .env).
   cloudflared-ingress:
     image: cloudflare/cloudflared@sha256:ff69a2225ad7c6f85ed84fbd5f3087df46202426b2388ec60214098e0adf05e9
     container_name: rdm-tunnel-ingress
@@ -121,13 +121,11 @@ services:
     network_mode: container:rdm-vpn
     depends_on:
       vpn:
-        condition: service_healthy
+        condition: service_started
     # TUNNEL_TAIL рендерит devbox.ps1 из TUNNEL_TOKEN:
     #   именованный: "run --token <TOKEN>"   (URL стабилен, от IP не зависит)
     #   быстрый:     "--protocol http2 --url http://host.docker.internal:8799"
     command: tunnel --no-autoupdate ${TUNNEL_TAIL}
-    environment:
-      TUNNEL_TOKEN: "${TUNNEL_TOKEN:-}"
 
 volumes:
   rdm-state:

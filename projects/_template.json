@@ -1,0 +1,15 @@
+{
+  "project_dir": "d:/Sources/StartUp/<repo>",
+  "toolchain": "",
+  "git_name": "WhiteBite",
+  "git_email": "ad.lord9000@yandex.ru",
+  "preview_origin": "http://toolbox:8788",
+  "mode": "standard",
+  "host_services": [],
+  "runner_commands": [],
+  "runner_port": 8796,
+  "allowed_ports": [],
+  "deny_mounts": [],
+  "setup_cmds": [],
+  "scripts": []
+}

@@ -22,18 +22,19 @@ mcp_client.py — минимальный MCP-клиент без внешних 
 
 Переменные окружения вместо флагов: MCP_URL, MCP_TOKEN, MCP_HEADER
 (имя заголовка авторизации, по умолчанию Authorization; значение получает
-префикс Bearer, если MCP_BEARER=1).
+префикс Bearer, если MCP_BEARER=1). RDM_ARENA_STATE_DIR задаёт каталог
+состояния — джобы и картинки (по умолчанию <tmp>/rdm-arena).
 """
 
 from __future__ import annotations
 
 import argparse
 import base64
-import hashlib
 import json
 import os
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -55,13 +56,10 @@ EX_TUNNEL = 3
 EX_PERMISSION = 4
 EX_JOB_FAILED = 5
 
-# Кэш идемпотентности мутаций
-MUTATION_TOOLS = frozenset({"write", "edit", "apply_patch", "bash"})
-CACHE_DIR = os.path.join("shots", ".mcp_responses")
-CACHE_TTL = 300
-
-# Перзистентность джобов
-JOBS_FILE = os.path.join("shots", ".mcp_jobs.json")
+# состояние (джобы, картинки) — вне cwd, чтобы resume не зависел от директории запуска
+STATE_DIR = os.environ.get("RDM_ARENA_STATE_DIR") or os.path.join(
+    tempfile.gettempdir(), "rdm-arena")
+JOBS_FILE = os.path.join(STATE_DIR, ".mcp_jobs.json")
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -204,43 +202,11 @@ class StdioTransport:
 
 
 # ──────────────────────────────────────────────────────────────────────
-# Кэш идемпотентности мутаций
-# ──────────────────────────────────────────────────────────────────────
-
-def _mutation_key(tool: str, arguments: dict) -> str:
-    return hashlib.sha256(
-        f"{tool}:{json.dumps(arguments, sort_keys=True)}".encode()
-    ).hexdigest()[:20]
-
-
-def _load_mutation_cache(key: str) -> dict | None:
-    path = os.path.join(CACHE_DIR, f"{key}.json")
-    if not os.path.exists(path):
-        return None
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            entry = json.load(f)
-    except (json.JSONDecodeError, OSError):
-        return None
-    if time.time() - entry.get("saved_at", 0) > CACHE_TTL:
-        return None
-    return entry.get("response")
-
-
-def _store_mutation_cache(key: str, response: dict) -> None:
-    os.makedirs(CACHE_DIR, exist_ok=True)
-    path = os.path.join(CACHE_DIR, f"{key}.json")
-    entry = {"saved_at": time.time(), "response": response}
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(entry, f, ensure_ascii=False)
-
-
-# ──────────────────────────────────────────────────────────────────────
 # Перзистентность джобов
 # ──────────────────────────────────────────────────────────────────────
 
 def save_job_state(job: dict, tool: str) -> None:
-    os.makedirs("shots", exist_ok=True)
+    os.makedirs(STATE_DIR, exist_ok=True)
     try:
         with open(JOBS_FILE, "r", encoding="utf-8") as f:
             jobs = json.load(f)
@@ -264,7 +230,7 @@ def load_job_states() -> dict:
 
 
 def save_job_states(jobs: dict) -> None:
-    os.makedirs("shots", exist_ok=True)
+    os.makedirs(STATE_DIR, exist_ok=True)
     with open(JOBS_FILE, "w", encoding="utf-8") as f:
         json.dump(jobs, f, ensure_ascii=False, indent=2)
 
@@ -307,24 +273,10 @@ class MCPClient:
         return (res or {}).get("result", {}).get("tools", [])
 
     def call(self, name: str, arguments: dict) -> dict:
-        if name in MUTATION_TOOLS:
-            key = _mutation_key(name, arguments)
-            cached = _load_mutation_cache(key)
-            if cached is not None:
-                print("[!] повтор мутации — ответ из кэша", file=sys.stderr)
-                res = cached
-            else:
-                res = self.t.send({"jsonrpc": "2.0", "id": self._next(),
-                                   "method": "tools/call",
-                                   "params": {"name": name,
-                                              "arguments": arguments}})
-                if res and "error" not in res:
-                    _store_mutation_cache(key, res)
-        else:
-            res = self.t.send({"jsonrpc": "2.0", "id": self._next(),
-                               "method": "tools/call",
-                               "params": {"name": name,
-                                          "arguments": arguments}})
+        res = self.t.send({"jsonrpc": "2.0", "id": self._next(),
+                           "method": "tools/call",
+                           "params": {"name": name,
+                                      "arguments": arguments}})
         if not res:
             raise RuntimeError("пустой ответ")
         if "error" in res:
@@ -361,7 +313,7 @@ def flatten(result: dict) -> str:
 
 def dump_images(result: dict | None, job: dict | None, prefix: str) -> list[str]:
     """Картинки из ответа (content-блоки и attachments джоба) пишем файлами
-    в ./shots/, чтобы агент смотрел их своим read_file, а не base64 в stdout."""
+    в STATE_DIR, чтобы агент смотрел их своим read_file, а не base64 в stdout."""
     items: list[tuple[str | None, str | None]] = []
     for block in (result or {}).get("content", []) or []:
         if block.get("type") == "image" and block.get("data"):
@@ -372,13 +324,13 @@ def dump_images(result: dict | None, job: dict | None, prefix: str) -> list[str]
             items.append((url.split(",", 1)[1], att.get("mime")))
     if not items:
         return []
-    os.makedirs("shots", exist_ok=True)
+    os.makedirs(STATE_DIR, exist_ok=True)
     paths = []
     for i, (data, mime) in enumerate(items):
         if not data:
             continue
         ext = "png" if (mime or "").endswith("png") else "img"
-        p = f"shots/{prefix}-{i}.{ext}"
+        p = os.path.join(STATE_DIR, f"{prefix}-{i}.{ext}")
         with open(p, "wb") as f:
             f.write(base64.b64decode(data))
         paths.append(p)
@@ -578,7 +530,7 @@ def main():
     s.add_argument("permission_id")
     s.add_argument("reply", nargs="?", default="once", choices=["once", "reject"])
 
-    s = sub.add_parser("resume", help="дозавершить незаконченные джобы из shots/.mcp_jobs.json")
+    s = sub.add_parser("resume", help="дозавершить незаконченные джобы из файла состояния")
     s.add_argument("--auto", action="store_true",
                    help="самому отвечать 'once' на запрос разрешения")
     _add_wait_flag(s)

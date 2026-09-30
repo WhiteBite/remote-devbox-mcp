@@ -1,0 +1,290 @@
+"""devbox CLI: apply project profiles and orchestrate the host side."""
+
+from __future__ import annotations
+
+import argparse
+import dataclasses
+import json
+import os
+import pathlib
+import re
+import sys
+
+from rdm import docker, envfile, hostos, procman, profiles, ps_import, render, tokens
+
+HOME_DIR = pathlib.Path(__file__).resolve().parent.parent
+PROJECTS_DIR = HOME_DIR.parent / "projects"
+ENV_FILE = HOME_DIR / ".env"
+OVERRIDE_FILE = HOME_DIR / "docker-compose.override.yml"
+COMPOSE_FILE = str(HOME_DIR / "docker-compose.yml")
+LOG_ROOT = hostos.tempdir() / "rdm-host"
+MANIFEST_PATH = LOG_ROOT / "rdm-manifest.json"
+BRIDGE_PORT = 8787
+INGRESS_PORT = 8799
+DEFAULT_RUNNER_PORT = 8796
+_TRYCLOUDFLARE = re.compile(r"https://[a-z0-9-]+\.trycloudflare\.com")
+
+_READONLY = '{"write":"deny","edit":"deny","apply_patch":"deny","bash":"deny"}'
+_FULL = '{"write":"allow","edit":"allow","apply_patch":"allow","bash":"allow"}'
+
+
+def _permissions(mode: str) -> str | None:
+    if mode == "readonly":
+        return _READONLY
+    if mode == "full":
+        return _FULL
+    return None
+
+
+def _ingress_url(env_map: dict[str, str]) -> str:
+    public = env_map.get("PUBLIC_URL")
+    if public:
+        return public
+    try:
+        logs = docker.compose("logs", "cloudflared-ingress", compose_file=COMPOSE_FILE).stdout
+    except OSError:
+        return ""
+    matches = _TRYCLOUDFLARE.findall(logs or "")
+    return matches[-1] if matches else ""
+
+
+def _runner_json(command: profiles.RunnerCommand) -> dict[str, object]:
+    return {
+        "name": command.name,
+        "cmd": list(command.cmd),
+        "description": command.description,
+        "args": {name: {"type": spec.type, "position": spec.position} for name, spec in command.args},
+        "background": command.background,
+        "port": command.port,
+    }
+
+
+def _with_runner(profile: profiles.Profile, name: str) -> profiles.Profile:
+    if not profile.runner_commands:
+        return profile
+    port = profile.runner_port or DEFAULT_RUNNER_PORT
+    LOG_ROOT.mkdir(parents=True, exist_ok=True)
+    config = LOG_ROOT / f"runner-{name}.json"
+    config.write_text(
+        json.dumps(
+            {
+                "profile": name,
+                "cwd": profile.project_dir,
+                "commands": [_runner_json(command) for command in profile.runner_commands],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    os.environ["RUNNER_CONFIG"] = str(config)
+    os.environ["RUNNER_PORT"] = str(port + 1)
+    service = profiles.HostService(port=port, auth="bearer", cwd=str(HOME_DIR), cmd="python host\\runner-mcp.py")
+    return dataclasses.replace(profile, host_services=(*profile.host_services, service))
+
+
+def _ingress_env(env_map: dict[str, str]) -> dict[str, str]:
+    return {
+        "INGRESS_TOKEN": env_map.get("INGRESS_TOKEN", ""),
+        "PROXY_PORT": str(INGRESS_PORT),
+        "SELF_AUTHED_PORTS": env_map.get("SELF_AUTHED_PORTS", ""),
+        "ALLOWED_PORTS": env_map.get("ALLOWED_PORTS", ""),
+        "RDM_MANIFEST_PATH": str(MANIFEST_PATH),
+    }
+
+
+def _emit_agent_artifacts(profile: profiles.Profile, name: str, allowed: str) -> None:
+    if profile.toolchain:
+        docker.run(
+            "run", "--rm", "-v", "rdm-tools:/opt/tools", "alpine", "sh", "-c",
+            f"mkdir -p /opt/tools/refs && echo '{profile.toolchain}' > /opt/tools/refs/{name}.list",
+        )
+    agents = render.render_agents_md(profile, name, profile.toolchain, profile.mode, allowed)
+    docker.run(
+        "run", "--rm", "-i", "-v", "rdm-agent:/agent", "alpine", "sh", "-c", "cat > /agent/AGENTS.md",
+        input=agents,
+    )
+
+
+def apply_use(name: str) -> int:
+    path = PROJECTS_DIR / f"{name}.json"
+    if not path.exists():
+        print(f"нет профиля {path}", file=sys.stderr)
+        return 1
+    profile = profiles.load(path)
+    problems = profiles.validate(profile)
+    for problem in problems:
+        if problem.startswith("WARN"):
+            print(f"profile warn: {problem[5:]}")
+    errors = [problem for problem in problems if not problem.startswith("WARN")]
+    if errors:
+        for error in errors:
+            print(f"profile error: {error}", file=sys.stderr)
+        return 1
+    profile = _with_runner(profile, name)
+    env = envfile.EnvFile.load(ENV_FILE)
+    active = env.get("ACTIVE_PROFILE")
+    if active:
+        procman.stop_host_services(active)
+    env.set("PROJECT_DIR", profile.project_dir)
+    env.set("TOOLCHAIN", profile.toolchain)
+    env.set("GIT_NAME", profile.git_name)
+    env.set("GIT_EMAIL", profile.git_email)
+    if profile.preview_origin:
+        env.set("PREVIEW_ORIGIN", profile.preview_origin)
+    else:
+        env.remove("PREVIEW_ORIGIN")
+    bearer_ports = [service.port for service in profile.host_services if service.auth == "bearer"]
+    env.set("SELF_AUTHED_PORTS", ",".join(str(port) for port in sorted({BRIDGE_PORT, *bearer_ports})))
+    allowed = set(profile.allowed_ports)
+    allowed |= {service.port for service in profile.host_services if service.auth != "bearer"}
+    allowed |= {command.port for command in profile.runner_commands if command.port}
+    allowed_text = ",".join(str(port) for port in sorted(allowed))
+    env.set("ALLOWED_PORTS", allowed_text)
+    permission = _permissions(profile.mode)
+    if permission:
+        env.set("OPENCODE_MCP_PERMISSIONS", permission)
+    else:
+        env.remove("OPENCODE_MCP_PERMISSIONS")
+    env.set("SETUP_SCRIPT_B64", render.setup_script_b64(profile, name))
+    env.set("TUNNEL_TAIL", render.tunnel_tail(env.get("TUNNEL_TOKEN") or ""))
+    env.set("ACTIVE_PROFILE", name)
+    env.write(ENV_FILE)
+    OVERRIDE_FILE.write_text(render.render_override(profile), encoding="utf-8")
+    LOG_ROOT.mkdir(parents=True, exist_ok=True)
+    env_map = env.as_map()
+    MANIFEST_PATH.write_text(
+        json.dumps(render.build_manifest(profile, name, _ingress_url(env_map), profile.mode), ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    procman.restart_host_services(profile, name, HOME_DIR, env_map.get("MCP_PUBLIC_TOKEN", ""))
+    procman.stop_ingress()
+    procman.start_ingress(_ingress_env(env_map), HOME_DIR, hostos.tempdir() / "rdm-ingress")
+    docker.compose("up", "-d", "--force-recreate", "toolbox", compose_file=COMPOSE_FILE)
+    _emit_agent_artifacts(profile, name, allowed_text)
+    print(f"профиль {name} применён; тулчейны ставятся при старте toolbox")
+    return 0
+
+
+def _status() -> int:
+    result = docker.compose("ps", "--format", "{{.Name}} {{.Status}}", compose_file=COMPOSE_FILE)
+    sys.stdout.write(result.stdout)
+    env_map = envfile.EnvFile.load(ENV_FILE).as_map()
+    print(f"active profile: {env_map.get('ACTIVE_PROFILE', '')}")
+    return 0
+
+
+def _stop_host() -> int:
+    active = envfile.EnvFile.load(ENV_FILE).get("ACTIVE_PROFILE")
+    if active:
+        procman.stop_host_services(active)
+    return 0
+
+
+def _doctor() -> int:
+    from rdm import doctor
+
+    return doctor.run(envfile.EnvFile.load(ENV_FILE).as_map(), compose_file=COMPOSE_FILE)
+
+
+def _watch() -> int:
+    from rdm import watchdog
+
+    watchdog.run(envfile.EnvFile.load(ENV_FILE).as_map(), compose_file=COMPOSE_FILE)
+    return 0
+
+
+def _chat(full: bool) -> int:
+    env_map = envfile.EnvFile.load(ENV_FILE).as_map()
+    print(f"Профиль:    {env_map.get('ACTIVE_PROFILE', '')}")
+    print(f"Проект:     {env_map.get('PROJECT_DIR', '')}")
+    print(f"INGRESS:    {_ingress_url(env_map)}")
+    if not full:
+        print("--- чат-блок (маскированный) ---")
+    print(tokens.chat_block(env_map, _ingress_url(env_map), full))
+    return 0
+
+
+def _issue_tokens() -> int:
+    env = envfile.EnvFile.load(ENV_FILE)
+    tokens.rotate_tokens(env)
+    env.write(ENV_FILE)
+    docker.compose("up", "-d", "--force-recreate", "toolbox", compose_file=COMPOSE_FILE)
+    env_map = env.as_map()
+    active = env_map.get("ACTIVE_PROFILE")
+    if active:
+        profile_path = PROJECTS_DIR / f"{active}.json"
+        if profile_path.exists():
+            profile = _with_runner(profiles.load(profile_path), active)
+            procman.restart_host_services(profile, active, HOME_DIR, env_map.get("MCP_PUBLIC_TOKEN", ""))
+    procman.stop_ingress()
+    procman.start_ingress(_ingress_env(env_map), HOME_DIR, hostos.tempdir() / "rdm-ingress")
+    print(tokens.chat_block(env_map, _ingress_url(env_map), True))
+    return 0
+
+
+def _profile(action: str, target: str) -> int:
+    if action == "show":
+        path = PROJECTS_DIR / f"{target}.json"
+        if not path.exists():
+            print(f"нет профиля {path}", file=sys.stderr)
+            return 1
+        sys.stdout.write(path.read_text(encoding="utf-8"))
+        return 0
+    source = PROJECTS_DIR / f"{target}.ps1"
+    if not source.exists():
+        print(f"нет файла {source}", file=sys.stderr)
+        return 1
+    data = ps_import.parse_profile_ps1(source.read_text(encoding="utf-8"))
+    destination = PROJECTS_DIR / f"{target}.json"
+    destination.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    print(f"{source} -> {destination}")
+    return 0
+
+
+def _ingress(action: str) -> int:
+    env_map = envfile.EnvFile.load(ENV_FILE).as_map()
+    if action == "start":
+        procman.start_ingress(_ingress_env(env_map), HOME_DIR, hostos.tempdir() / "rdm-ingress")
+    else:
+        procman.stop_ingress()
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(prog="devbox")
+    sub = parser.add_subparsers(dest="command")
+    sub.add_parser("status")
+    use = sub.add_parser("use")
+    use.add_argument("name")
+    sub.add_parser("stop-host")
+    sub.add_parser("doctor")
+    sub.add_parser("watch")
+    sub.add_parser("info")
+    sub.add_parser("share")
+    sub.add_parser("issue-tokens")
+    profile = sub.add_parser("profile")
+    profile.add_argument("action", choices=("import", "convert", "show"))
+    profile.add_argument("target")
+    ingress = sub.add_parser("ingress")
+    ingress.add_argument("action", choices=("start", "stop"))
+    args = parser.parse_args(argv)
+
+    if args.command == "use":
+        return apply_use(args.name)
+    if args.command == "stop-host":
+        return _stop_host()
+    if args.command == "doctor":
+        return _doctor()
+    if args.command == "watch":
+        return _watch()
+    if args.command == "info":
+        return _chat(False)
+    if args.command == "share":
+        return _chat(True)
+    if args.command == "issue-tokens":
+        return _issue_tokens()
+    if args.command == "profile":
+        return _profile(args.action, args.target)
+    if args.command == "ingress":
+        return _ingress(args.action)
+    return _status()
