@@ -1,3 +1,14 @@
+<!-- rdk:generated:start -->
+# WhiteBite/remote-devbox-mcp — full documentation
+
+> TODO: one sentence describing what this does and who it is for
+
+This is the concatenated documentation intended for LLM grounding. Regenerate with `rdk fix`.
+
+---
+
+# README
+
 # remote-devbox-mcp — твой комп как удалённый devbox для арена-агента
 
 Агент (например, arena.ai в агентском режиме) не имеет своего железа для
@@ -111,3 +122,8 @@ npm start
 ```bash
 npm start
 ```
+<!-- rdk:generated:end -->
+
+## Hand-written notes
+
+<!-- Everything below the end marker is preserved by `rdk fix`. Put hand-written context here; the block above is regenerated from .discoverability/project.yml. -->

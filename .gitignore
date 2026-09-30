@@ -9,3 +9,7 @@ Thumbs.db
 .DS_Store
 home/bin/
 home/docker-compose.override.yml
+node_modules/
+dist/
+build/
+*.log
