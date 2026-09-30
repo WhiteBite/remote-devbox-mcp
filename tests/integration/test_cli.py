@@ -1,0 +1,122 @@
+from __future__ import annotations
+
+import json
+import subprocess
+
+from rdm import cli
+
+
+def _profile_json(root, **overrides) -> str:
+    data = {
+        "project_dir": str(root / "proj"),
+        "toolchain": "",
+        "git_name": "agent",
+        "git_email": "agent@example.test",
+        "preview_origin": "http://host.docker.internal:8080",
+        "mode": "standard",
+        "host_services": [],
+        "allowed_ports": [1],
+        "deny_mounts": [],
+    }
+    data.update(overrides)
+    return json.dumps(data)
+
+
+def _setup(monkeypatch, tmp_path):
+    projects = tmp_path / "projects"
+    projects.mkdir()
+    log_root = tmp_path / "rdm-host"
+    monkeypatch.setattr(cli, "PROJECTS_DIR", projects)
+    monkeypatch.setattr(cli, "ENV_FILE", tmp_path / ".env")
+    monkeypatch.setattr(cli, "OVERRIDE_FILE", tmp_path / "docker-compose.override.yml")
+    monkeypatch.setattr(cli, "LOG_ROOT", log_root)
+    monkeypatch.setattr(cli, "MANIFEST_PATH", log_root / "rdm-manifest.json")
+    monkeypatch.setattr(cli, "COMPOSE_FILE", str(tmp_path / "docker-compose.yml"))
+    (tmp_path / "proj").mkdir()
+
+    calls: dict[str, list] = {"compose": [], "restart": [], "stop": [], "ingress": [], "docker_run": []}
+
+    def fake_compose(*args, **kwargs):
+        calls["compose"].append(args)
+        return subprocess.CompletedProcess(["docker"], 0, stdout="", stderr="")
+
+    monkeypatch.setattr(cli.docker, "compose", fake_compose)
+    monkeypatch.setattr(cli.docker, "compose_ps", lambda *a, **k: "rdm-toolbox healthy")
+    monkeypatch.setattr(cli.docker, "run", lambda *a, **k: calls["docker_run"].append(a) or subprocess.CompletedProcess(["docker"], 0, stdout="", stderr=""))
+    monkeypatch.setattr(cli.procman, "restart_host_services", lambda *a, **k: calls["restart"].append(a) or [])
+    monkeypatch.setattr(cli.procman, "stop_host_services", lambda *a, **k: calls["stop"].append(a))
+    monkeypatch.setattr(cli.procman, "stop_ingress", lambda *a, **k: calls["ingress"].append("stop"))
+    monkeypatch.setattr(cli.procman, "start_ingress", lambda *a, **k: calls["ingress"].append("start") or 1)
+    return projects, calls
+
+
+def test_use_applies_profile_and_single_restart(monkeypatch, tmp_path):
+    projects, calls = _setup(monkeypatch, tmp_path)
+    (projects / "p1.json").write_text(_profile_json(tmp_path), encoding="utf-8")
+    assert cli.main(["use", "p1"]) == 0
+    assert len(calls["restart"]) == 1
+    assert calls["ingress"] == ["stop", "start"]
+    assert ("up", "-d", "--force-recreate", "toolbox") in calls["compose"]
+    assert (cli.ENV_FILE).read_text(encoding="utf-8").count("ACTIVE_PROFILE=p1") == 1
+
+
+def test_use_rejects_invalid_profile_exit_1(monkeypatch, tmp_path):
+    projects, calls = _setup(monkeypatch, tmp_path)
+    (projects / "bad.json").write_text(_profile_json(tmp_path, project_dir=str(tmp_path / "missing")), encoding="utf-8")
+    assert cli.main(["use", "bad"]) == 1
+    assert calls["restart"] == []
+
+
+def test_use_preserves_env_comments(monkeypatch, tmp_path):
+    projects, _ = _setup(monkeypatch, tmp_path)
+    cli.ENV_FILE.write_text("# keep me\nACTIVE_PROFILE=\n", encoding="utf-8")
+    (projects / "p1.json").write_text(_profile_json(tmp_path), encoding="utf-8")
+    assert cli.main(["use", "p1"]) == 0
+    assert "# keep me" in cli.ENV_FILE.read_text(encoding="utf-8")
+
+
+def test_status_lists_services(monkeypatch, tmp_path, capsys):
+    _, calls = _setup(monkeypatch, tmp_path)
+    assert cli.main(["status"]) == 0
+    assert ("ps", "--format", "{{.Name}} {{.Status}}") in calls["compose"]
+
+
+def test_stop_host_calls_procman(monkeypatch, tmp_path):
+    _, calls = _setup(monkeypatch, tmp_path)
+    cli.ENV_FILE.write_text("ACTIVE_PROFILE=foo\n", encoding="utf-8")
+    assert cli.main(["stop-host"]) == 0
+    assert calls["stop"] == [("foo",)]
+
+
+def test_info_masked_vs_share_full(monkeypatch, tmp_path, capsys):
+    _, _ = _setup(monkeypatch, tmp_path)
+    token = "a" * 64
+    cli.ENV_FILE.write_text(
+        f"MCP_BEARER_TOKEN={token}\nMCP_PUBLIC_TOKEN={'b' * 64}\nINGRESS_TOKEN={'c' * 64}\nPUBLIC_URL=https://x.example\n",
+        encoding="utf-8",
+    )
+    assert cli.main(["info"]) == 0
+    masked = capsys.readouterr().out
+    assert token not in masked and "aaaa...aaaa" in masked
+    assert cli.main(["share"]) == 0
+    full = capsys.readouterr().out
+    assert token in full
+
+
+def test_profile_show_muffin(monkeypatch, tmp_path, capsys):
+    _setup(monkeypatch, tmp_path)
+    monkeypatch.setattr(cli, "PROJECTS_DIR", cli.HOME_DIR.parent / "projects")
+    assert cli.main(["profile", "show", "muffin"]) == 0
+    assert "project_dir" in capsys.readouterr().out
+
+
+def test_issue_tokens_rotates_three(monkeypatch, tmp_path):
+    _, _ = _setup(monkeypatch, tmp_path)
+    cli.ENV_FILE.write_text(
+        "MCP_BEARER_TOKEN=" + "0" * 64 + "\nMCP_PUBLIC_TOKEN=" + "0" * 64 + "\nINGRESS_TOKEN=" + "0" * 64 + "\n",
+        encoding="utf-8",
+    )
+    assert cli.main(["issue-tokens"]) == 0
+    text = cli.ENV_FILE.read_text(encoding="utf-8")
+    assert text.count("0" * 64) == 0
+    assert text.count("MCP_BEARER_TOKEN=") == 1
