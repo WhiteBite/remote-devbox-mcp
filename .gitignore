@@ -13,3 +13,6 @@ node_modules/
 dist/
 build/
 *.log
+.opencode/
+.pytest_cache/
+*.egg-info/

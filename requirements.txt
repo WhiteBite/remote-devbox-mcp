@@ -1,0 +1,3 @@
+# Host core is stdlib-only; psutil is optional (process/toolbox helpers).
+psutil>=5.9.5,<8
+mcp>=1.0

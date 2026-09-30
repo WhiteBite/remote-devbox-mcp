@@ -1,0 +1,11 @@
+[project]
+name = "remote-devbox-mcp"
+version = "0.0.0"
+description = "Turn your own machine into a remote devbox for an agent via Docker and Cloudflare tunnels."
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+
+[tool.pytest.ini_options]
+pythonpath = ["home"]
+testpaths = ["tests"]
+addopts = "-q"

@@ -1,3 +1,5 @@
 # Все текстовые файлы хранятся и чекаутятся с LF:
 # arena/* исполняется в Linux-песочнице агента, docker/* — в Linux-контейнере.
 * text eol=lf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
