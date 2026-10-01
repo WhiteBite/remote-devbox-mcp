@@ -129,3 +129,7 @@ def kill_tree(pid: int) -> None:
             os.kill(pid, signal.SIGKILL)
         except OSError:
             pass
+    try:
+        os.waitpid(pid, os.WNOHANG)
+    except (ChildProcessError, OSError):
+        pass

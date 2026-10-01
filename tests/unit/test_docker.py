@@ -59,6 +59,8 @@ def test_compose_config_raises_on_nonzero(monkeypatch):
 
 
 @pytest.mark.skipif(shutil.which("docker") is None, reason="docker CLI not present")
-def test_compose_config_shape():
+def test_compose_config_shape(monkeypatch, tmp_path):
+    monkeypatch.setenv("MCP_BEARER_TOKEN", "x" * 32)
+    monkeypatch.setenv("PROJECT_DIR", str(tmp_path))
     out = docker.compose_config("home/docker-compose.yml")
     assert "services" in out
