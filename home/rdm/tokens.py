@@ -55,5 +55,5 @@ def chat_block(
         host = show(env_map.get("MCP_PUBLIC_TOKEN", ""))
         lines.append(f"HOST_TOKEN={host}  # runner: MCP_CONF=~/.mcp-runner.conf ./mcp call run_<имя>")
     if ingress_url:
-        lines.append("Реестр эндпоинтов: GET <INGRESS>/p/9000/manifest.json (Bearer INGRESS_TOKEN)")
+        lines.append(f"Реестр эндпоинтов: GET {ingress_url}/p/9000/manifest.json (Bearer INGRESS_TOKEN)")
     return "\n".join(lines)

@@ -62,7 +62,10 @@ def test_chat_block_masks_when_not_full():
     assert lines[2] == "INGRESS=https://x.trycloudflare.com"
     assert lines[3] == "BRIDGE_TOKEN=aaaa...aaaa  # /p/8787/mcp — код: read/edit/write/bash"
     assert lines[4] == "INGRESS_TOKEN=cccc...cccc  # UI и прочие порты (Authorization: Bearer)"
-    assert lines[-1] == "Реестр эндпоинтов: GET <INGRESS>/p/9000/manifest.json (Bearer INGRESS_TOKEN)"
+    assert lines[-1] == (
+        "Реестр эндпоинтов: GET https://x.trycloudflare.com/p/9000/manifest.json"
+        " (Bearer INGRESS_TOKEN)"
+    )
     assert "HOST_TOKEN" not in block
     assert "Профили" not in block
     assert "a" * 32 not in block
