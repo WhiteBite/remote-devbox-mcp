@@ -14,21 +14,6 @@ def _auth() -> list[tuple[str, str]]:
     return [("Authorization", "Bearer tok")]
 
 
-def _read_until(sock, needle: bytes, deadline: float) -> bytes:
-    buf = b""
-    while needle not in buf:
-        if time.monotonic() > deadline:
-            raise AssertionError(f"timeout waiting for {needle!r}; got {buf!r}")
-        try:
-            chunk = sock.recv(65536)
-        except OSError as error:
-            raise AssertionError(f"read failed waiting for {needle!r}: {error}") from None
-        if not chunk:
-            raise AssertionError(f"eof waiting for {needle!r}; got {buf!r}")
-        buf += chunk
-    return buf
-
-
 def test_sse_incremental(tmp_path):
     fake = FakeUpstream(responder)
     server, port = start_ingress(tmp_path, allowed={fake.port})
@@ -37,14 +22,24 @@ def test_sse_incremental(tmp_path):
             sock.settimeout(2.0)
             sock.sendall(request("GET", _url(fake.port, b"/sse"), headers=_auth()))
             started = time.monotonic()
-            head = _read_until(sock, b"\r\n\r\n", started + 5)
-            first = _read_until(sock, b"event-1", started + 5)
-            first_at = time.monotonic()
-            rest = _read_until(sock, b"event-2", started + 5)
-        assert b"\r\n\r\n" in head
-        assert b"event-1" in first
-        assert first_at - started < 0.35
-        assert b"event-2" in rest
+            buf = b""
+            first_at: float | None = None
+            while b"event-2" not in buf:
+                if time.monotonic() > started + 5:
+                    raise AssertionError(f"timeout waiting for event-2; got {buf!r}")
+                try:
+                    chunk = sock.recv(65536)
+                except OSError as error:
+                    raise AssertionError(f"read failed: {error}") from None
+                if not chunk:
+                    raise AssertionError(f"eof; got {buf!r}")
+                buf += chunk
+                if first_at is None and b"event-1" in buf:
+                    first_at = time.monotonic()
+        assert b"\r\n\r\n" in buf
+        assert b"event-1" in buf
+        assert first_at is not None and first_at - started < 0.35
+        assert b"event-2" in buf
     finally:
         fake.close()
         server.shutdown()
