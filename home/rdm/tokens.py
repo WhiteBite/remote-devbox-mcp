@@ -32,7 +32,7 @@ def chat_block(
     ingress_url: str,
     full: bool,
     preview_url: str = "",
-    runner: bool = False,
+    runner_port: int | None = None,
 ) -> str:
     def show(token: str) -> str:
         return token if full else mask(token)
@@ -51,9 +51,10 @@ def chat_block(
     ui_port = env_map.get("UI_PORT")
     if ui_port and ingress_url:
         lines.append(f"UI={ingress_url}/p/{ui_port}/  # открой своим Playwright (Bearer INGRESS_TOKEN)")
-    if runner:
+    if runner_port and ingress_url:
+        lines.append(f"RUNNER_URL={ingress_url}/p/{runner_port}/mcp")
         host = show(env_map.get("MCP_PUBLIC_TOKEN", ""))
-        lines.append(f"HOST_TOKEN={host}  # runner: MCP_CONF=~/.mcp-runner.conf ./mcp call run_<имя>")
+        lines.append(f"HOST_TOKEN={host}  # MCP_TOKEN для RUNNER_URL (runner: run_<имя>)")
     if ingress_url:
         lines.append(f"Реестр эндпоинтов: GET {ingress_url}/p/9000/manifest.json (Bearer INGRESS_TOKEN)")
     return "\n".join(lines)

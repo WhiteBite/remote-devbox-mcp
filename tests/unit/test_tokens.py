@@ -67,6 +67,7 @@ def test_chat_block_masks_when_not_full():
         " (Bearer INGRESS_TOKEN)"
     )
     assert "HOST_TOKEN" not in block
+    assert "RUNNER_URL" not in block
     assert "Профили" not in block
     assert "a" * 32 not in block
 
@@ -81,20 +82,22 @@ def test_chat_block_full_values():
         "INGRESS_TOKEN": ingress,
     }
     block = tokens.chat_block(
-        env_map, "https://y.example.com", full=True, preview_url="https://p.example.com", runner=True
+        env_map, "https://y.example.com", full=True, preview_url="https://p.example.com", runner_port=8796
     )
     assert f"BRIDGE_TOKEN={bearer}" in block
     assert f"HOST_TOKEN={public}" in block
     assert f"INGRESS_TOKEN={ingress}" in block
+    assert "RUNNER_URL=https://y.example.com/p/8796/mcp" in block
     assert "PREVIEW=https://p.example.com" in block
     assert "..." not in block
 
 
-def test_chat_block_includes_host_token_only_with_runner():
+def test_chat_block_includes_runner_only_when_present():
     env_map = {"MCP_PUBLIC_TOKEN": "b" * 32}
     without = tokens.chat_block(env_map, "https://x", full=True)
-    with_runner = tokens.chat_block(env_map, "https://x", full=True, runner=True)
-    assert "HOST_TOKEN" not in without
+    with_runner = tokens.chat_block(env_map, "https://x", full=True, runner_port=8796)
+    assert "HOST_TOKEN" not in without and "RUNNER_URL" not in without
+    assert "RUNNER_URL=https://x/p/8796/mcp" in with_runner
     assert "HOST_TOKEN=" + "b" * 32 in with_runner
 
 

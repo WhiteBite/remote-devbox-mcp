@@ -33,8 +33,10 @@ permission protocol. You call them through a stdlib-only Python client
 - a repository link: `https://github.com/WhiteBite/remote-devbox-mcp`
 - `INGRESS` — the public base URL (e.g. `https://xxxx.trycloudflare.com`)
 - `BRIDGE_TOKEN` — equals `MCP_BEARER_TOKEN`
-- optionally `HOST_TOKEN` (== `MCP_PUBLIC_TOKEN`), present only when the project
-  exposes a runner/host-MCP; used to call its `run_*` commands
+- optionally `RUNNER_URL` (`<INGRESS>/p/<port>/mcp`) and `HOST_TOKEN`
+  (== `MCP_PUBLIC_TOKEN`), present only when the project exposes a runner:
+  write `~/.mcp-runner.conf` with `MCP_URL=RUNNER_URL`, `MCP_TOKEN=HOST_TOKEN`
+  and call its `run_*` commands
 
 If any of these are missing, ask — do not invent them.
 

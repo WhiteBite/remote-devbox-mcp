@@ -79,7 +79,8 @@ EOF
 
 Проекты с host-сборкой (напр. MidasAI: node_modules/.venv принадлежат хост-ОС):
 сборки/тесты/dev-серверы идут через **runner** — третий конфиг
-`~/.mcp-runner.conf` (URL и токен даёт пользователь): `runner_list` покажет
+`~/.mcp-runner.conf`: `MCP_URL=<RUNNER_URL>` (строка из блока) и
+`MCP_TOKEN=<HOST_TOKEN>`; `runner_list` покажет
 объявленные команды, вызов `run_<имя>` с аргументами строго по схеме
 (path-аргументы относительные, без `..`). Bash моста в таких проектах —
 только git и read-only; `pnpm install`/`pip install` в контейнере запрещены
@@ -97,7 +98,8 @@ BRIDGE_TOKEN=<MCP_BEARER_TOKEN из home/.env>  # /p/8787/mcp — код: read/e
 INGRESS_TOKEN=<INGRESS_TOKEN из home/.env>    # UI и прочие порты (Authorization: Bearer)
 UI=<INGRESS>/p/<порт>/                        # UI приложения для playwright (Bearer INGRESS_TOKEN)
 PREVIEW=<preview-URL>                         # если поднят preview-туннель
-HOST_TOKEN=<MCP_PUBLIC_TOKEN из home/.env>    # runner, только если у проекта есть runner-команды
+RUNNER_URL=<INGRESS>/p/<порт раннера>/mcp     # MCP_URL для ~/.mcp-runner.conf (только если есть runner)
+HOST_TOKEN=<MCP_PUBLIC_TOKEN из home/.env>    # MCP_TOKEN для RUNNER_URL
 ```
 
 Реестр эндпоинтов: GET <INGRESS>/p/9000/manifest.json с заголовком Authorization: Bearer <INGRESS_TOKEN> — машиночитаемый список эндпоинтов, портов и команд раннера; не перечисляй порты вручную.
