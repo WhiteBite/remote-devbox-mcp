@@ -2,13 +2,13 @@
 
 ## 0. Ежедневный запуск (ранбук)
 
-Все команды из папки `home\`. Проект = профиль `..\projects\<имя>.ps1`.
+Все команды из папки `home\`. Проект = профиль `..\projects\<имя>.json`.
 
 ```powershell
 cd D:\Sources\WhiteBite\remote-devbox-mcp\home
 
 # применить профиль проекта (рендер .env, host-сервисы, пересоздание toolbox):
-.\devbox.ps1 use muffin
+.\devbox.cmd use muffin
 docker compose up -d
 docker compose ps          # ждём: toolbox healthy, vpn healthy.
                            # Первый старт профиля = установка тулчейнов в
@@ -32,9 +32,9 @@ Git-идентичность агента в контейнере: `GIT_NAME`/`G
 
 Закрыть доступ наружу: `docker compose stop cloudflared-ingress
 cloudflared-preview` (или `down` — весь стек). Host-сервисы профиля:
-`.\devbox.ps1 stop-host`; ingress: `.\devbox.py ingress stop`.
+`.\devbox.cmd stop-host`; ingress: `.\devbox.py ingress stop`.
 
-Смена проекта: `.\devbox.ps1 use <имя>` (туннели выживают, URL не меняется).
+Смена проекта: `.\devbox.cmd use <имя>` (туннели выживают, URL не меняется).
 
 Нужны только Docker Desktop и доступ в интернет. Входящие порты на роутере не
 требуются: туннель соединяется наружу сам.
@@ -119,7 +119,7 @@ docker compose logs cloudflared-ingress | Select-String trycloudflare
 Одна команда:
 
 ```powershell
-.\devbox.ps1 use <имя>     # профиль из ..\projects\<имя>.ps1
+.\devbox.cmd use <имя>     # профиль из ..\projects\<имя>.json
 ```
 
 Профиль задаёт PROJECT_DIR, TOOLCHAIN, GIT_*, PREVIEW_ORIGIN и host-сервисы.
@@ -171,7 +171,7 @@ python -m http.server 8791 --bind 127.0.0.1 --directory <папка со скр�
 
 ## 9. Выдача агенту доступа к проекту
 
-**Смена проекта** — `.\devbox.ps1 use <имя>` (профиль из `..\projects\`).
+**Смена проекта** — `.\devbox.cmd use <имя>` (профиль из `..\projects\`).
 `opencode.json` проекта автоматически экранируется shadow-монтом (воркер не
 поднимает MCP-серверы проекта), тулчейны — спек `TOOLCHAIN` профиля в
 `/opt/tools` (volume, кэш между проектами).
@@ -244,7 +244,7 @@ Ingress rout'ит только порты из `$AllowedPorts` профиля + 
 - `info` — дамп состояния + маскированный чат-блок для агента.
 - `share` — только чат-блок с полными текущими значениями.
 - `issue-tokens` — ротация трёх токенов + рестарт цепи + чат-блок.
-  Каденция: на каждую новую сессию агента; revocation = stop-host + stop-ingress.
+  Каденция: на каждую новую сессию агента; revocation = stop-host + ingress stop.
 - `use` дополнительно: валидация профиля R1–R19 fail-fast; рендер
   `OPENCODE_MCP_PERMISSIONS` из `$Mode` (readonly/standard/full); gitleaks
   скан секретов проекта в фоне (отчёт `%TEMP%\rdm-host\gitleaks-<profile>.json`,
@@ -263,7 +263,7 @@ Quick-туннель даёт новый hostname при каждом перес
 2. В том же туннеле: Public hostname → `devbox.<твой-домен>` → service
    `HTTP` → `host.docker.internal:8799` (дашборд сам создаст CNAME).
 3. В `.env`: `TUNNEL_TOKEN=<токен туннеля>` (длинная строка `eyJ...`),
-   `PUBLIC_URL=https://devbox.<твой-домен>`. Затем `.\devbox.ps1 use <профиль>`
+   `PUBLIC_URL=https://devbox.<твой-домен>`. Затем `.\devbox.cmd use <профиль>`
    (отрендерит `TUNNEL_TAIL` из токена) и
    `docker compose up -d --force-recreate cloudflared-ingress`.
 4. Все эндпоинты навсегда: `https://devbox.<домен>/p/<порт>/...`

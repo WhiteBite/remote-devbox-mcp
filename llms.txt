@@ -7,11 +7,16 @@ This file follows the llms.txt convention: a short, LLM-friendly index of the pr
 
 ## Docs
 
+- [Homepage](https://github.com/WhiteBite/remote-devbox-mcp#readme): project landing page
 - [Issues](https://github.com/WhiteBite/remote-devbox-mcp/issues): roadmap and known gaps
 - [README.md](./README.md): install, run and test instructions
 
 ## Key facts
 
+- Install: `git clone https://github.com/WhiteBite/remote-devbox-mcp; in home/: copy .env.example .env and fill PROJECT_DIR + tokens`
+- Run: `from home/: python devbox.py use <profile>; docker compose up -d; agent side: cd arena && ./mcp check`
+- Test: `python -m pip install -r requirements-dev.txt; python -m pytest`
+- Use cases: agent compiles and runs tests for large projects on your CPU/RAM/build cache; work on private code without uploading it anywhere (only tool calls cross the tunnel); preview a running dev server to the agent through a second tunnel; run Windows-native host commands via runner-MCP with argv-only, validated arguments and an audit log; switch project profiles with one command while the tunnel URL stays the same; read-only audit sessions where mutations are denied by permission mode
 
 ## Optional
 

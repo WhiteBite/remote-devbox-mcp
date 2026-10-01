@@ -1,0 +1,16 @@
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareSourceCode",
+  "name": "WhiteBite/remote-devbox-mcp",
+  "description": "Turn your own Windows+Docker machine into a remote devbox that an external coding agent drives through an outbound Cloudflare tunnel.",
+  "programmingLanguage": "Python",
+  "runtimePlatform": "Windows, Docker",
+  "license": "https://opensource.org/licenses/MIT",
+  "keywords": "mcp-server, devbox, remote, cloudflare-tunnel, coding-agent",
+  "url": "https://github.com/WhiteBite/remote-devbox-mcp#readme",
+  "codeRepository": "https://github.com/WhiteBite/remote-devbox-mcp",
+  "author": "WhiteBite",
+  "sameAs": [
+    "https://github.com/WhiteBite/remote-devbox-mcp"
+  ]
+}

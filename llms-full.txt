@@ -19,6 +19,20 @@ Cloudflare-туннель и правит код, собирает и тести
 Никаких сторонних агентов: на твоём компе — только исполнитель, на стороне
 агента — только тонкий клиент, который его дёргает.
 
+## Быстрый старт / Quickstart
+
+```bash
+git clone https://github.com/WhiteBite/remote-devbox-mcp
+cd remote-devbox-mcp/home
+copy .env.example .env          # заполнить PROJECT_DIR и токены
+python devbox.py use muffin      # применить профиль проекта
+docker compose up -d
+python -m pytest -q               # проверить окружение (200 тестов)
+```
+
+Публичный вход: `docker compose logs cloudflared-ingress | Select-String trycloudflare`.
+Дальше агенту отдаётся `INGRESS` + токены — полный цикл в `ARENA.md`.
+
 ```
 ┌─ home/  → ставится на ТВОЙ комп (Windows + Docker Desktop)
 │   docker-compose.yml             toolbox + встроенный VPN (VLESS) + туннели cloudflared
@@ -59,8 +73,8 @@ Cloudflare-туннель и правит код, собирает и тести
 ## Порядок действий
 
 1. **Ты:** клонируй репозиторий, перейди в `home/`, сделай `.env` из
-   `.env.example` (токены) и выполни `.\devbox.ps1 use <имя>` +
-   `docker compose up -d` (профиль проекта: `..\projects\<имя>.ps1`).
+   `.env.example` (токены) и выполни `.\devbox.cmd use <имя>` +
+   `docker compose up -d` (профиль проекта: `..\projects\<имя>.json`).
 2. **Ты:** возьми публичный URL входа —
    `docker compose logs cloudflared-ingress | Select-String trycloudflare`.
 3. **Ты:** пришли агенту INGRESS-URL и токены и ссылку на репозиторий.
@@ -93,18 +107,23 @@ cd arena && chmod +x mcp && ./mcp check
 и выполни `docker compose up -d`. Остановить всё одной командой:
 `docker compose down`.
 
+## Статус / Status
+
+Активная разработка. Host-часть покрыта pytest-сьютом (unit/integration/e2e), CI гоняет
+`python -m pytest` и rdk-audit. Профиль проекта — `projects/*.json`; ядро — `home/rdm/`.
+
 ## Лицензия
 
 MIT — см. [LICENSE](LICENSE).
 
-## Для кого это
+## Для кого это / Who is it for
 
 Для разработчика с Windows-машиной и Docker Desktop, который хочет, чтобы
 внешний кодинг-агент (arena.ai, Claude, Codex — любой MCP-клиент) собирал,
 тестировал и правил код **на его собственном железе**, а не в одноразовой
 облачной песочнице без доступа к реальному проекту.
 
-## Сценарии
+## Сценарии / Use cases
 
 - Агент билдит и гоняет тесты большого проекта (Java/Gradle, Flutter/web) на
   твоём компе: у него CPU, RAM и кэш сборки, которых нет ни у какой песочницы.
@@ -115,12 +134,12 @@ MIT — см. [LICENSE](LICENSE).
 - Host-MCP для Windows-native стеков: команды профиля (`$RunnerCommands`)
   выполняются на хосте без shell, аргументы валидируются, каждый вызов —
   в аудит-логе.
-- Смена проекта одной командой (`.\devbox.ps1 use <имя>`): профиль задаёт
+- Смена проекта одной командой (`.\devbox.cmd use <имя>`): профиль задаёт
   папку, тулчейны, права; туннель и URL при этом не меняются.
 - Read-only аудит и оценки: режим `readonly` запрещает мутации, агент только
   читает и запускает диагностику.
 
-## Почему так, а не иначе
+## Почему так, а не иначе / Why choose this
 
 - Никакой сторонней исполнительной стороны: на твоём компе только контейнер-
   исполнитель, на стороне агента — тонкий Python-клиент из `arena/` (stdlib,
@@ -139,7 +158,7 @@ MIT — см. [LICENSE](LICENSE).
 
 ```powershell
 copy .env.example .env      # заполнить PROJECT_DIR и токены
-.\devbox.ps1 use muffin     # профиль ..\projects\muffin.ps1
+.\devbox.cmd use muffin     # профиль ..\projects\muffin.json
 docker compose up -d
 docker compose logs cloudflared-ingress | Select-String trycloudflare
 ```

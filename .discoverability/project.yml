@@ -31,9 +31,10 @@ keywords:
     - "remote"
     - "devbox"
     - "mcp"   # 8-20 terms, lowercase with hyphens
+    - "cloudflare-tunnel"
 
 links:
-  homepage:
+  homepage: "https://github.com/WhiteBite/remote-devbox-mcp#readme"
   docs:
   demo:
   issues: "https://github.com/WhiteBite/remote-devbox-mcp/issues"

@@ -13,15 +13,18 @@ python -m pip install -r requirements-dev.txt
 
 # run the test suite (pytest, tests/ with unit/integration/e2e dirs)
 python -m pytest
+
+# lint (ruff config lives in pyproject.toml; there is no compiled build step)
+python -m ruff check home arena tests
 ```
 
 ## Repository map
 
 | Path | Purpose |
 | --- | --- |
-| `home/` | host side: docker-compose stack, `devbox.ps1` orchestration, `host/` proxies |
+| `home/` | host side: `devbox.py` core (`rdm/` package), docker-compose stack, `host/runner-mcp.py` |
 | `arena/` | agent-side Python MCP client (`mcp_client.py`, `mcp` wrapper) |
-| `projects/` | per-project profiles (`muffin.ps1`, `_template.ps1`) |
+| `projects/` | per-project JSON profiles (`muffin.json`, `_template.json`) |
 | `tests/` | pytest suite (unit / integration / e2e) |
 | `.discoverability/project.yml` | source of truth for repo metadata |
 
@@ -35,5 +38,5 @@ python -m pytest
 
 ## Discoverability (RDK)
 
-- `npx @repo-aeo/rdk-cli audit` — Discoverability Score 0-100 and findings; read-only.
+- `npx repo-aeo audit` — Discoverability Score 0-100 and findings; read-only.
 - The rdk-audit workflow fails pull requests below `vars.RDK_MIN_SCORE`.
