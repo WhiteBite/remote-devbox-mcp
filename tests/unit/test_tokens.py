@@ -66,7 +66,7 @@ def test_chat_block_masks_when_not_full():
     assert lines[4] == "BRIDGE_TOKEN=aaaa..." + "a" * 4
     assert lines[5] == "HOST_TOKEN=bbbb..." + "b" * 4
     assert lines[6] == "INGRESS_TOKEN=cccc..." + "c" * 4
-    assert lines[-1] == "ТЗ: /workspace/ARENA_TASK.md"
+    assert lines[-1] == "ТЗ: в чате (или /workspace/ARENA_TASK.md, если есть)"
     assert "a" * 32 not in block
 
 

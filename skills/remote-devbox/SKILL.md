@@ -81,9 +81,10 @@ Mutations (`write/edit/apply_patch/bash/webfetch`) default to
 
 ## Task convention
 
-The spec is `/workspace/ARENA_TASK.md`. Create it from
-`arena/ARENA_TASK.template.md` when you are the one framing the work: goal,
-scope, acceptance criteria, verification procedure, and what not to touch.
+The task normally arrives **in the chat** from the user. If the project has
+`/workspace/ARENA_TASK.md`, read it first, before any plan. To frame work
+yourself, use `arena/ARENA_TASK.template.md` (goal, scope, acceptance criteria,
+verification procedure, what not to touch). Do not invent the task.
 
 ## Exit codes
 
