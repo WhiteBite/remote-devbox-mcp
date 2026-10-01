@@ -255,6 +255,12 @@ Ingress rout'ит только порты из `$AllowedPorts` профиля + 
   refs тулчейнов в `/opt/tools/refs/` для registry.json с refcount;
   эмиссия `/agent/AGENTS.md` (agent-consumable манифест окружения).
 
+**Трей-пульт** (опционально, Windows): `python -m pip install -r requirements-tray.txt`,
+затем `tray.cmd` (или `pythonw home\tray.py`). Даёт статус-иконку (healthy/problems),
+«скопировать блок агенту» одним кликом, старт/стоп по профилям, ротацию токенов,
+открытие INGRESS/Preview/логов, doctor и переключатель watchdog. Логика не дублируется —
+трей вызывает `devbox.py`.
+
 ## 13. Стабильный URL (именованный туннель)
 
 Quick-туннель даёт новый hostname при каждом пересоздании контейнера. Если

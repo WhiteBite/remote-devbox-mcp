@@ -1,0 +1,29 @@
+from __future__ import annotations
+
+import importlib.util
+import pathlib
+import sys
+
+import pytest
+
+REPO = pathlib.Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO / "home"))
+
+
+def _load():
+    spec = importlib.util.spec_from_file_location("rdm_tray", REPO / "home" / "tray.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_tray_imports_without_gui_deps():
+    module = _load()
+    assert isinstance(module._profiles(), list)
+    assert set(module.COLORS) == {"ok", "bad", "unknown"}
+
+
+def test_tray_icon_render():
+    pytest.importorskip("PIL")
+    module = _load()
+    assert module._icon_rgb("ok").size == (64, 64)

@@ -153,3 +153,27 @@ def test_preview_sets_origin(monkeypatch, tmp_path):
     assert cli.main(["preview", "http://host.docker.internal:8080"]) == 0
     assert "PREVIEW_ORIGIN=http://host.docker.internal:8080" in cli.ENV_FILE.read_text(encoding="utf-8")
     assert any("cloudflared-preview" in args for args in calls["compose"])
+
+
+def test_block_and_url_subcommands(monkeypatch, tmp_path, capsys):
+    _setup(monkeypatch, tmp_path)
+    cli.ENV_FILE.write_text(
+        "PUBLIC_URL=https://devbox.example.test\n"
+        "MCP_BEARER_TOKEN=" + "a" * 64 + "\n"
+        "MCP_PUBLIC_TOKEN=" + "b" * 64 + "\n"
+        "INGRESS_TOKEN=" + "c" * 64 + "\n",
+        encoding="utf-8",
+    )
+    assert cli.main(["block", "--masked"]) == 0
+    assert "BRIDGE_TOKEN=" in capsys.readouterr().out
+    assert cli.main(["url"]) == 0
+    assert capsys.readouterr().out.strip() == "https://devbox.example.test"
+
+
+def test_down_stops_host_ingress_and_tunnels(monkeypatch, tmp_path):
+    _, calls = _setup(monkeypatch, tmp_path)
+    cli.ENV_FILE.write_text("ACTIVE_PROFILE=p1\n", encoding="utf-8")
+    assert cli.main(["down"]) == 0
+    assert calls["stop"] == [("p1",)]
+    assert "stop" in calls["ingress"]
+    assert any("cloudflared-ingress" in args for args in calls["compose"])

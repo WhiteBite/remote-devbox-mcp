@@ -367,6 +367,28 @@ def _ingress(action: str) -> int:
     return 0
 
 
+def _block(masked: bool) -> int:
+    env_map = envfile.EnvFile.load(ENV_FILE).as_map()
+    print(tokens.chat_block(env_map, _ingress_url(env_map), not masked, _preview_url(env_map), _available_profiles()))
+    return 0
+
+
+def _url(preview: bool) -> int:
+    env_map = envfile.EnvFile.load(ENV_FILE).as_map()
+    print(_preview_url(env_map) if preview else _ingress_url(env_map))
+    return 0
+
+
+def _down() -> int:
+    active = envfile.EnvFile.load(ENV_FILE).get("ACTIVE_PROFILE")
+    if active:
+        procman.stop_host_services(active)
+    procman.stop_ingress()
+    docker.compose("stop", "cloudflared-ingress", "cloudflared-preview", compose_file=COMPOSE_FILE)
+    print("host-сервисы и ingress остановлены; туннели остановлены (стек оставлен)")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="devbox")
     sub = parser.add_subparsers(dest="command")
@@ -389,6 +411,11 @@ def main(argv: list[str] | None = None) -> int:
     profile.add_argument("target")
     ingress = sub.add_parser("ingress")
     ingress.add_argument("action", choices=("start", "stop"))
+    block = sub.add_parser("block")
+    block.add_argument("--masked", action="store_true")
+    url = sub.add_parser("url")
+    url.add_argument("--preview", action="store_true")
+    sub.add_parser("down")
     args = parser.parse_args(argv)
 
     if args.command == "use":
@@ -413,4 +440,10 @@ def main(argv: list[str] | None = None) -> int:
         return _profile(args.action, args.target)
     if args.command == "ingress":
         return _ingress(args.action)
+    if args.command == "block":
+        return _block(args.masked)
+    if args.command == "url":
+        return _url(args.preview)
+    if args.command == "down":
+        return _down()
     return _status()
