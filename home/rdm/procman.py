@@ -14,6 +14,7 @@ DEFAULT_PROXY_ARGV = [sys.executable, "-m", "rdm.proxy", "--mode", "target"]
 INGRESS_ARGV = [sys.executable, "-m", "rdm.proxy", "--mode", "ingress"]
 INGRESS_PORT = 8799
 _PROXY_MARKER = "rdm.proxy"
+_RUNNER_MARKER = "runner-mcp.py"
 
 
 def _pids_path(profile_name: str) -> pathlib.Path:
@@ -62,6 +63,15 @@ def _owned(pid: int, recorded: float | None, marker: str) -> bool:
     return recorded is not None and hostos.create_time(pid) == recorded
 
 
+def _free_port(port: int) -> None:
+    """Снять с порта осиротевший наш процесс: иначе новый не забиндится и умрёт молча."""
+    pid = hostos.find_pid_by_port(port)
+    if pid is None:
+        return
+    if hostos.cmdline_matches(pid, _RUNNER_MARKER) or hostos.cmdline_matches(pid, _PROXY_MARKER):
+        hostos.kill_tree(pid)
+
+
 def stop_host_services(profile_name: str) -> None:
     path = _pids_path(profile_name)
     for pid, recorded, marker in _read_entries(path):
@@ -86,6 +96,8 @@ def restart_host_services(
         argv = _argv(svc.cmd)
         marker = " ".join(argv)
         bearer = svc.auth == "bearer"
+        for busy_port in ([svc.port, svc.port + 1] if bearer else [svc.port]):
+            _free_port(busy_port)
         env = {**os.environ, "MCP_HTTP_PORT": str(svc.port + 1)} if bearer else None
         try:
             pid = hostos.spawn(

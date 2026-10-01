@@ -120,6 +120,25 @@ def test_restart_uses_single_path(monkeypatch, tmp_path):
     procman.stop_host_services("once")
 
 
+def test_restart_frees_port_held_by_orphan_runner(monkeypatch, tmp_path):
+    _isolate_tempdir(monkeypatch, tmp_path)
+    port = _ephemeral_port()
+    orphan_code = (
+        "import socket,time;s=socket.socket();"
+        "s.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1);"
+        f"s.bind(('127.0.0.1',{port}));s.listen();time.sleep(60)"
+    )
+    orphan = hostos.spawn([sys.executable, "-c", orphan_code, "runner-mcp.py"])
+    try:
+        assert _wait_until(lambda: _can_connect(port))
+        profile = _sleep_profile(tmp_path, port, "")
+        procman.restart_host_services(profile, "orphan", HOME_DIR, "token")
+        assert _wait_until(lambda: not _alive(orphan))
+        procman.stop_host_services("orphan")
+    finally:
+        hostos.kill_tree(orphan)
+
+
 def test_missing_pidfile_is_noop(monkeypatch, tmp_path):
     _isolate_tempdir(monkeypatch, tmp_path)
     assert procman.stop_host_services("never-started") is None
