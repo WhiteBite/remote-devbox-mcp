@@ -53,6 +53,16 @@ If any of these are missing, ask — do not invent them.
 4. Read `arena/AGENT_INSTRUCTIONS.md` (full rules) and `arena/SANDBOX_FACTS.md`
    (measured facts about your sandbox). The task comes from the user in the chat.
 
+## Two configs, two tokens (do not mix — 401 means you did)
+
+- `~/.remote-devbox-mcp.conf` → `MCP_URL=<INGRESS>/p/8787/mcp`,
+  `MCP_TOKEN=<BRIDGE_TOKEN>` — file tools (`read/edit/write/bash`).
+  Default conf: used WITHOUT `MCP_CONF`.
+- `~/.mcp-runner.conf` → `MCP_URL=<RUNNER_URL>`, `MCP_TOKEN=<HOST_TOKEN>` —
+  only the runner's `run_*` commands, always via `MCP_CONF=~/.mcp-runner.conf`.
+  The tokens are NOT interchangeable: a 401 on one endpoint means you sent the
+  other conf's token.
+
 ## Client commands
 
 ```bash
