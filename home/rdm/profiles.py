@@ -60,6 +60,7 @@ class Profile:
     git_email: str = ""
     preview_origin: str = ""
     mode: str = "standard"
+    ui_port: int | None = None
     host_services: tuple[HostService, ...] = ()
     runner_commands: tuple[RunnerCommand, ...] = ()
     runner_port: int | None = None
@@ -75,6 +76,7 @@ _TOP_KEYS = {
     "gitname": "git_name",
     "gitemail": "git_email",
     "previeworigin": "preview_origin",
+    "uiport": "ui_port",
     "mode": "mode",
     "hostservices": "host_services",
     "runnercommands": "runner_commands",
@@ -203,6 +205,7 @@ def _build(values: Mapping[str, object]) -> Profile:
         git_email=_str(values, "git_email"),
         preview_origin=_str(values, "preview_origin"),
         mode=_str(values, "mode", "standard"),
+        ui_port=_opt_int(values, "ui_port"),
         host_services=tuple(_host_service(item) for item in _seq(values, "host_services")),
         runner_commands=tuple(_runner(item) for item in _seq(values, "runner_commands")),
         runner_port=_opt_int(values, "runner_port"),

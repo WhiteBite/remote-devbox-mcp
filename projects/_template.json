@@ -4,6 +4,7 @@
   "git_name": "WhiteBite",
   "git_email": "ad.lord9000@yandex.ru",
   "preview_origin": "http://toolbox:8788",
+  "ui_port": null,
   "mode": "standard",
   "host_services": [],
   "runner_commands": [],

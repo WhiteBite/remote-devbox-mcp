@@ -100,6 +100,8 @@ never a success.
 ## Verify UI (Playwright)
 
 Your playwright/chromium runs in your sandbox; the app runs on the devbox.
+The hand-off block prints `UI=<INGRESS>/p/<port>/` — the ready URL for the active
+project's app; open that with your Playwright and the bearer header.
 Reach it over the tunnel — two ways:
 
 1. Ingress path with the bearer token (APIs and plain static):

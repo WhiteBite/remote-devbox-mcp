@@ -6,6 +6,8 @@ $GitName = 'WhiteBite'
 $GitEmail = 'ad.lord9000@yandex.ru'
 # куда смотрит preview-туннель: виджетбук живёт на хосте (supervisor, :8080)
 $PreviewOrigin = 'http://host.docker.internal:8080'
+# UI-порт приложения для агента (ingress /p/<порт>/)
+$UiPort = 8080
 # host-сервисы, отдаваемые наружу через ingress (/p/<Port>/...):
 #   Auth='bearer' → сервис слушает Port+1 без авторизации, auth-proxy на Port
 #   Auth=''       → сервис на Port, авторизует ingress своим INGRESS_TOKEN

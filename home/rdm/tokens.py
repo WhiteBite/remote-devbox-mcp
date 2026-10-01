@@ -48,6 +48,9 @@ def chat_block(
     ]
     if preview_url:
         lines.append(f"PREVIEW={preview_url}   # UI для playwright (root URL, без токена)")
+    ui_port = env_map.get("UI_PORT")
+    if ui_port and ingress_url:
+        lines.append(f"UI={ingress_url}/p/{ui_port}/   # открой своим Playwright (Bearer INGRESS_TOKEN)")
     lines += [
         "Эндпоинты и порты: GET <INGRESS>/p/9000/manifest.json (Bearer INGRESS_TOKEN)",
         "ТЗ: /workspace/ARENA_TASK.md",

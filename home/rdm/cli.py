@@ -187,6 +187,10 @@ def apply_use(name: str) -> int:
         env.set("PREVIEW_ORIGIN", profile.preview_origin)
     else:
         env.remove("PREVIEW_ORIGIN")
+    if profile.ui_port:
+        env.set("UI_PORT", str(profile.ui_port))
+    else:
+        env.remove("UI_PORT")
     bearer_ports = [service.port for service in profile.host_services if service.auth == "bearer"]
     self_authed = {BRIDGE_PORT, *bearer_ports}
     env.set("SELF_AUTHED_PORTS", ",".join(str(port) for port in sorted(self_authed)))
@@ -292,8 +296,11 @@ def _start(name: str | None, with_preview: bool) -> int:
         procman.stop_ingress()
         procman.start_ingress(_ingress_env(env_map), HOME_DIR, hostos.tempdir() / "rdm-ingress")
     env_map = envfile.EnvFile.load(ENV_FILE).as_map()
-    if with_preview:
-        docker.compose("--profile", "preview", "up", "-d", compose_file=COMPOSE_FILE)
+    if not env_map.get("PUBLIC_PREVIEW_URL"):
+        if with_preview:
+            docker.compose("--profile", "preview", "up", "-d", compose_file=COMPOSE_FILE)
+        else:
+            docker.compose("stop", "cloudflared-preview", compose_file=COMPOSE_FILE)
     print()
     print("=== Скопируй агенту (arena.ai и любой агентский сайт) ===")
     print(tokens.chat_block(env_map, _ingress_url(env_map), True, _preview_url(env_map), _available_profiles()))

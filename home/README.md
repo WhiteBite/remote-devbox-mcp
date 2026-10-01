@@ -122,7 +122,8 @@ docker compose logs cloudflared-ingress | Select-String trycloudflare
 .\devbox.cmd use <имя>     # профиль из ..\projects\<имя>.json
 ```
 
-Профиль задаёт PROJECT_DIR, TOOLCHAIN, GIT_*, PREVIEW_ORIGIN и host-сервисы.
+Профиль задаёт PROJECT_DIR, TOOLCHAIN, GIT_*, PREVIEW_ORIGIN, UI-порт приложения
+(`ui_port`) и host-сервисы; блок `start` печатает готовый `UI=<INGRESS>/p/<порт>/`.
 Туннели выживают, URL не меняется; тулчейны берутся из кэша `/opt/tools`,
  недостающие ставятся один раз. Языковой сервер выбирается по расширению
 (`jdtls` для `.java`, `dart` для `.dart`) — при наличии тулчейна в спеке.

@@ -166,3 +166,8 @@ def test_envfile_get_strips_render_preserves(tmp_path):
     env = EnvFile.load(path)
     assert env.get("KEY") == "a b"
     assert env.render() == "KEY=  a b  \n"
+
+
+def test_profile_ui_port():
+    repo = pathlib.Path(__file__).resolve().parents[2]
+    assert load(repo / "projects" / "muffin.json").ui_port == 8080

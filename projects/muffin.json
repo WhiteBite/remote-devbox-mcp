@@ -4,6 +4,7 @@
   "git_name": "WhiteBite",
   "git_email": "ad.lord9000@yandex.ru",
   "preview_origin": "http://host.docker.internal:8080",
+  "ui_port": 8080,
   "host_services": [
     {
       "port": 8792,

@@ -99,6 +99,7 @@ INGRESS=https://<актуальный>.trycloudflare.com   # или PUBLIC_URL �
 BRIDGE_TOKEN=<MCP_BEARER_TOKEN из home/.env>
 HOST_TOKEN=<MCP_PUBLIC_TOKEN из home/.env>       # если в ТЗ есть host-MCP
 INGRESS_TOKEN=<INGRESS_TOKEN из home/.env>
+UI=<INGRESS>/p/<порт>/                           # UI приложения для playwright (Bearer INGRESS_TOKEN)
 PREVIEW=<preview-URL>                            # если поднят preview-туннель
 ТЗ: /workspace/ARENA_TASK.md
 ```

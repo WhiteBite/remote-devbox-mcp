@@ -192,3 +192,11 @@ def test_health_reflects_stack(monkeypatch, tmp_path):
     assert cli.main(["health"]) == 0
     monkeypatch.setattr(cli.docker, "compose_ps", lambda *a, **k: "rdm-toolbox starting")
     assert cli.main(["health"]) == 1
+
+
+def test_start_preview_skipped_with_named_preview(monkeypatch, tmp_path):
+    projects, calls = _setup(monkeypatch, tmp_path)
+    cli.ENV_FILE.write_text("PUBLIC_PREVIEW_URL=https://preview.example.test\n", encoding="utf-8")
+    (projects / "p1.json").write_text(_profile_json(tmp_path), encoding="utf-8")
+    assert cli.main(["start", "p1", "--preview"]) == 0
+    assert not any("--profile" in args for args in calls["compose"])

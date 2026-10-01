@@ -93,3 +93,8 @@ def test_chat_block_marks_active_profile():
     )
     assert "midasai (активный)" in block
     assert "muffin" in block
+
+
+def test_chat_block_includes_ui_url():
+    block = tokens.chat_block({"UI_PORT": "8080"}, "https://ing", full=True)
+    assert "UI=https://ing/p/8080/" in block
