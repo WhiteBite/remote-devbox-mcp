@@ -32,6 +32,7 @@ def chat_block(
     ingress_url: str,
     full: bool,
     preview_url: str = "",
+    profiles: list[str] | None = None,
 ) -> str:
     def show(token: str) -> str:
         return token if full else mask(token)
@@ -51,4 +52,6 @@ def chat_block(
         "Эндпоинты и порты: GET <INGRESS>/p/9000/manifest.json (Bearer INGRESS_TOKEN)",
         "ТЗ: /workspace/ARENA_TASK.md",
     ]
+    if profiles:
+        lines.append(f"Профили: {', '.join(profiles)}   # смена проекта: devbox.py start <имя>")
     return "\n".join(lines)

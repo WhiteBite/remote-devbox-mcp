@@ -85,27 +85,33 @@ def build_manifest(
 
 
 def render_agents_md(
-    profile: Profile, profile_name: str, toolchain: str, mode: str, allowed_ports: str
+    profile: Profile,
+    profile_name: str,
+    toolchain: str,
+    mode: str,
+    allowed_ports: str,
+    available_profiles: list[str] | None = None,
 ) -> str:
     runner_lines = [
         f"- run_{command.name.replace(':', '_').replace('-', '_')}: {command.description}"
         for command in profile.runner_commands
     ]
     script_lines = [f"- run_script_{script.name}: {script.description}" for script in profile.scripts]
-    return "\n".join(
-        [
-            f"<!-- auto-generated: devbox.py use {profile_name} -->",
-            "## Environment",
-            f"- profile: {profile_name}; project: {profile.project_dir}",
-            f"- toolchain: {toolchain}",
-            f"- mode: {mode}; allowed ports: {allowed_ports}",
-            "## Runner commands",
-            "\n".join(runner_lines) or "- (нет)",
-            "## Scripts",
-            "\n".join(script_lines) or "- (нет)",
-            "",
-        ]
-    )
+    parts = [
+        f"<!-- auto-generated: devbox.py use {profile_name} -->",
+        "## Environment",
+        f"- profile: {profile_name}; project: {profile.project_dir}",
+        f"- toolchain: {toolchain}",
+        f"- mode: {mode}; allowed ports: {allowed_ports}",
+        "## Runner commands",
+        "\n".join(runner_lines) or "- (нет)",
+        "## Scripts",
+        "\n".join(script_lines) or "- (нет)",
+    ]
+    if available_profiles is not None:
+        parts += ["## Projects", ", ".join(available_profiles) or "- (нет)"]
+    parts.append("")
+    return "\n".join(parts)
 
 
 def tunnel_tail(tunnel_token: str) -> str:

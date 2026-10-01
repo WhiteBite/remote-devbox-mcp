@@ -164,3 +164,9 @@ def test_agents_md_empty_sections():
 
 def test_toolchain_ref():
     assert toolchain_ref(PROFILE) == "java21 flutter:3.44.9"
+
+
+def test_agents_md_projects_section():
+    text = render_agents_md(PROFILE, "muffin", "java21", "standard", "8080", ["muffin", "midasai"])
+    assert "## Projects" in text
+    assert "muffin, midasai" in text

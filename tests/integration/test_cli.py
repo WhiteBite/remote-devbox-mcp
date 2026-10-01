@@ -138,6 +138,7 @@ def test_start_prints_handoff_block(monkeypatch, tmp_path, capsys):
     assert "Репозиторий: https://github.com/WhiteBite/remote-devbox-mcp" in out
     assert "Загрузи скилл:" in out
     assert "INGRESS=" in out and "BRIDGE_TOKEN=" in out
+    assert "Профили:" in out
 
 
 def test_start_with_preview_starts_preview_profile(monkeypatch, tmp_path):
