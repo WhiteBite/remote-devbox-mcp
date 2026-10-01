@@ -213,8 +213,9 @@ class _Handler(socketserver.BaseRequestHandler):
     ) -> bool:
         host_header = f"{host}:{port}".encode()
         forward = upstream.filter_forward_headers(pairs, host_header, self.client_address[0], b"https")
-        connection = upstream.open_connection(host, port, CONNECT_TIMEOUT)
+        connection: http.client.HTTPConnection | None = None
         try:
+            connection = upstream.open_connection(host, port, CONNECT_TIMEOUT)
             upstream.send_head(connection, method, path, forward)
             upstream.send_body(connection, body)
             response = connection.getresponse()
@@ -223,7 +224,8 @@ class _Handler(socketserver.BaseRequestHandler):
             self._simple(502)
             return False
         finally:
-            connection.close()
+            if connection is not None:
+                connection.close()
 
     def _forward_websocket(
         self,

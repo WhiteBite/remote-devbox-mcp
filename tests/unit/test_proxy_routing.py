@@ -1,6 +1,47 @@
 from __future__ import annotations
 
-from tests.proxy_fakes import FakeUpstream, raw_request, request, responder, start_ingress
+import time
+
+from tests.proxy_fakes import FakeUpstream, raw_request, request, responder, start_ingress, start_target
+
+
+def _chunk(data: bytes) -> bytes:
+    return f"{len(data):x}\r\n".encode() + data + b"\r\n"
+
+
+def test_connect_timeout_does_not_cut_slow_streams(monkeypatch, tmp_path):
+    from rdm.proxy import server as proxy_server
+
+    monkeypatch.setattr(proxy_server, "CONNECT_TIMEOUT", 0.3)
+
+    def slow_chunked(conn, method, path, pairs, body):
+        conn.sendall(
+            b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n"
+            b"Transfer-Encoding: chunked\r\n\r\n"
+        )
+        conn.sendall(_chunk(b"data: one\n\n"))
+        time.sleep(0.8)
+        conn.sendall(_chunk(b"data: two\n\n"))
+        conn.sendall(b"0\r\n\r\n")
+
+    fake = FakeUpstream(slow_chunked)
+    server, port = start_target(tmp_path, target_port=fake.port)
+    try:
+        out = raw_request(
+            port,
+            request(
+                "POST",
+                "/mcp",
+                headers=[("Authorization", "Bearer tok"), ("Content-Length", "2")],
+                body=b"{}",
+            ),
+        )
+        assert b"data: one" in out
+        assert b"data: two" in out
+        assert out.endswith(b"0\r\n\r\n")
+    finally:
+        fake.close()
+        server.shutdown()
 
 
 def _url(port: int, rest: bytes = b"/ok") -> str:

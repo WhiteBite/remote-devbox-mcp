@@ -26,8 +26,16 @@ def filter_forward_headers(
     return out
 
 
+# read-таймаут отдельный от connect: долгие ответы (SSE тулов, до 900 с) не должны резаться
+READ_TIMEOUT = 1900.0
+
+
 def open_connection(host: str, port: int, timeout: float) -> http.client.HTTPConnection:
-    return http.client.HTTPConnection(host, port, timeout=timeout)
+    connection = http.client.HTTPConnection(host, port, timeout=timeout)
+    connection.connect()
+    if connection.sock is not None:
+        connection.sock.settimeout(READ_TIMEOUT)
+    return connection
 
 
 def open_raw(host: str, port: int, timeout: float) -> socket.socket:
