@@ -7,7 +7,7 @@ import threading
 import time
 from pathlib import Path
 
-from rdm.proxy.server import build_ingress_server
+from rdm.proxy.server import build_ingress_server, build_target_server
 
 
 def raw_request(port: int, raw: bytes, timeout: float = 10.0) -> bytes:
@@ -48,6 +48,19 @@ def start_ingress(
 ) -> tuple[object, int]:
     server = build_ingress_server(
         "127.0.0.1", 0, token, set(self_authed), set(allowed), manifest_path, tmp_path / "access.log"
+    )
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server, int(server.server_address[1])
+
+
+def start_target(
+    tmp_path: Path,
+    token: str = "tok",
+    target_host: str = "127.0.0.1",
+    target_port: int = 0,
+) -> tuple[object, int]:
+    server = build_target_server(
+        "127.0.0.1", 0, token, target_host, target_port, tmp_path / "access.log"
     )
     threading.Thread(target=server.serve_forever, daemon=True).start()
     return server, int(server.server_address[1])
