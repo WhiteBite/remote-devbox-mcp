@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import http.client
 import json
 import os
 import subprocess
@@ -77,7 +78,7 @@ class HttpTransport:
 
     def __init__(self, url: str, token: str | None = None,
                  header: str = "Authorization", bearer: bool = True,
-                 timeout: float = 120.0, retries: int = 4):
+                 timeout: float = 120.0, retries: int = 6):
         self.url = url
         self.token = token
         self.header = header
@@ -107,7 +108,7 @@ class HttpTransport:
         data = json.dumps(payload).encode()
         for attempt in range(self.retries + 1):
             if attempt:
-                pause = min(2 ** attempt, 12)
+                pause = min(2 ** attempt, 30)
                 print(f"[retry {attempt}/{self.retries}] через {pause} с",
                       file=sys.stderr)
                 time.sleep(pause)
@@ -139,6 +140,14 @@ class HttpTransport:
                     continue
                 raise RuntimeError(
                     self._redact(f"нет соединения: {e.reason}")) from None
+            except (OSError, http.client.HTTPException) as e:
+                # обрыв тела ответа: запрос мог уже выполниться, слепой повтор опасен
+                raise RuntimeError(
+                    self._redact(
+                        f"соединение оборвалось в середине ответа ({e!r}); "
+                        "запрос МОГ выполниться — проверь состояние перед повтором"
+                    )
+                ) from None
 
             if not body.strip():
                 return None                       # это было уведомление
@@ -477,7 +486,9 @@ def build_client(args) -> MCPClient:
         token = args.token if args.token is not None else os.environ.get("MCP_TOKEN")
         header = args.header or os.environ.get("MCP_HEADER", "Authorization")
         bearer = not args.no_bearer
-        t = HttpTransport(url, token, header, bearer, args.timeout, args.retries)
+        retries = args.retries if args.retries is not None else int(
+            os.environ.get("MCP_RETRIES", "6"))
+        t = HttpTransport(url, token, header, bearer, args.timeout, retries)
     return MCPClient(t)
 
 
@@ -502,8 +513,8 @@ def main():
     p.add_argument("--header", help="имя заголовка авторизации (по умолчанию Authorization)")
     p.add_argument("--no-bearer", action="store_true", help="не добавлять префикс 'Bearer '")
     p.add_argument("--timeout", type=float, default=120.0)
-    p.add_argument("--retries", type=int, default=4,
-                   help="повторы при ошибках края туннеля (502/520/521/523/524/530) и обрыве соединения")
+    p.add_argument("--retries", type=int, default=None,
+                   help="повторы при ошибках края туннеля (502/520/521/523/524/530) и обрыве; по умолчанию 6 или MCP_RETRIES")
     p.add_argument("--stdio", dest="command_stdio", nargs="+",
                    help="вместо HTTP: команда локального MCP-сервера")
     p.add_argument("--cwd", help="рабочая директория для stdio-сервера")

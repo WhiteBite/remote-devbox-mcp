@@ -1,3 +1,4 @@
+import argparse
 import importlib.util
 import io
 import os
@@ -132,3 +133,42 @@ def test_retryable_status_retries(monkeypatch):
     assert len(calls) == 2
     t.send({"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {}})
     assert len(calls) == 3
+
+
+def test_midbody_failure_is_clean_runtime_error(monkeypatch):
+    mod = load_client()
+
+    class BrokenResponse(FakeResponse):
+        def read(self):
+            raise mod.http.client.IncompleteRead(b"")
+
+    monkeypatch.setattr(urllib.request, "urlopen", lambda req, timeout=None: BrokenResponse(b""))
+    t = mod.HttpTransport("http://devbox/mcp", retries=2)
+    with pytest.raises(RuntimeError) as err:
+        t.send({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {}})
+    assert "мог выполниться" in str(err.value).lower()
+
+
+def _retries_args(retries):
+    return argparse.Namespace(
+        command_stdio=None, url="http://x/mcp", token="t", header=None,
+        no_bearer=False, timeout=5.0, retries=retries,
+    )
+
+
+def test_mcp_retries_env_default(monkeypatch):
+    mod = load_client()
+    monkeypatch.setenv("MCP_RETRIES", "9")
+    assert mod.build_client(_retries_args(None)).t.retries == 9
+
+
+def test_retries_flag_overrides_env(monkeypatch):
+    mod = load_client()
+    monkeypatch.setenv("MCP_RETRIES", "9")
+    assert mod.build_client(_retries_args(3)).t.retries == 3
+
+
+def test_retries_default_is_six(monkeypatch):
+    mod = load_client()
+    monkeypatch.delenv("MCP_RETRIES", raising=False)
+    assert mod.build_client(_retries_args(None)).t.retries == 6
