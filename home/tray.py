@@ -31,6 +31,7 @@ COLORS = {"ok": (34, 197, 94), "bad": (239, 68, 68), "unknown": (148, 163, 184)}
 
 _stop = threading.Event()
 _watch: subprocess.Popen[str] | None = None
+_status_text = "проверка…"
 
 
 def _devbox(*args: str, timeout: int = 240) -> subprocess.CompletedProcess[str]:
@@ -93,6 +94,25 @@ def _profiles() -> list[str]:
         return sorted(p.stem for p in PROJECTS.glob("*.json") if not p.stem.startswith("_"))
     except OSError:
         return []
+
+
+def _ui_port() -> str:
+    return envfile.EnvFile.load(ENV_FILE).as_map().get("UI_PORT", "")
+
+
+def _profile_label(name: str):
+    def label(icon) -> str:
+        return f"{name} ✓ (активный)" if name == _active() else name
+
+    return label
+
+
+def _open_ui(icon, item) -> None:
+    port = _ui_port()
+    if port:
+        webbrowser.open(f"http://127.0.0.1:{port}/")
+    else:
+        _notify(icon, "у профиля не задан ui_port (см. projects/<имя>.json)")
 
 
 def _icon_rgb(kind: str):
@@ -238,14 +258,15 @@ def _quit(icon, item) -> None:
 
 
 def _status_loop(icon) -> None:
+    global _status_text
     while not _stop.is_set():
         try:
             code = _devbox("health", timeout=30).returncode
         except Exception:
             code = 1
         icon.icon = _icon_rgb("ok" if code == 0 else "bad")
-        label = "healthy" if code == 0 else "problems"
-        icon.title = f"remote-devbox — {_active() or 'нет профиля'} ({label})"
+        _status_text = "healthy" if code == 0 else "problems"
+        icon.title = f"remote-devbox — {_active() or 'нет профиля'} ({_status_text})"
         _stop.wait(STATUS_INTERVAL)
 
 
@@ -262,18 +283,19 @@ def _build_menu():
     profiles = _profiles()
     start_menu = pystray.Menu(
         *(
-            [pystray.MenuItem(p, _start_action(p)) for p in profiles]
+            [pystray.MenuItem(_profile_label(p), _start_action(p)) for p in profiles]
             or [pystray.MenuItem("(нет профилей)", None, enabled=False)]
         )
     )
     return pystray.Menu(
-        pystray.MenuItem(lambda i: f"remote-devbox — {_active() or 'нет профиля'}", None, enabled=False),
+        pystray.MenuItem(lambda i: f"remote-devbox — {_active() or 'нет профиля'} · {_status_text}", None, enabled=False),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("Отдать проект агенту (запуск + блок)", _deliver_current, default=True),
         pystray.MenuItem("Другой профиль", start_menu),
         pystray.MenuItem("Скопировать блок ещё раз", lambda i, it: _copy_block(i)),
         pystray.MenuItem("Скопировать маскированный", lambda i, it: _copy_block(i, full=False)),
         pystray.Menu.SEPARATOR,
+        pystray.MenuItem("Открыть UI приложения (локально)", _open_ui),
         pystray.MenuItem("Остановить всё", lambda i, it: _stop_all(i)),
         pystray.MenuItem("Обновить токены", lambda i, it: _rotate(i)),
         pystray.Menu.SEPARATOR,
