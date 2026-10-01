@@ -3,7 +3,7 @@
   "toolchain": "",
   "git_name": "WhiteBite",
   "git_email": "ad.lord9000@yandex.ru",
-  "preview_origin": "http://host.docker.internal:35204",
+  "preview_origin": "http://host.docker.internal:35205",
   "ui_port": 35205,
   "runner_commands": [
     {
@@ -49,6 +49,17 @@
       "description": "vitest workspace (опц. путь файла)"
     },
     {
+      "name": "test:memory",
+      "cmd": [
+        "npx",
+        "vitest",
+        "run",
+        "--root",
+        "packages/memory/ui"
+      ],
+      "description": "vitest packages/memory/ui (Memory UI)"
+    },
+    {
       "name": "test:backend",
       "cmd": [
         "backend/.venv/Scripts/python.exe",
@@ -73,7 +84,7 @@
         "start-dev.ps1"
       ],
       "background": true,
-      "port": 35204,
+      "port": 35205,
       "description": "backend+web dev-серверы (tree-kill только через dev:stop)"
     },
     {
