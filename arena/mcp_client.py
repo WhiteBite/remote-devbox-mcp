@@ -208,7 +208,7 @@ class StdioTransport:
 def save_job_state(job: dict, tool: str) -> None:
     os.makedirs(STATE_DIR, exist_ok=True)
     try:
-        with open(JOBS_FILE, "r", encoding="utf-8") as f:
+        with open(JOBS_FILE, encoding="utf-8") as f:
             jobs = json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
         jobs = {}
@@ -223,7 +223,7 @@ def save_job_state(job: dict, tool: str) -> None:
 
 def load_job_states() -> dict:
     try:
-        with open(JOBS_FILE, "r", encoding="utf-8") as f:
+        with open(JOBS_FILE, encoding="utf-8") as f:
             return json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
         return {}
