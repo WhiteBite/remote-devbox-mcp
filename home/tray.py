@@ -114,13 +114,16 @@ def _notify(icon, message: str) -> None:
         pass
 
 
-def _copy_block(icon, full: bool = True) -> None:
+def _copy_block_silent(full: bool = True) -> bool:
     result = _devbox("block", *([] if full else ["--masked"]))
-    text = result.stdout.strip()
-    if _clipboard(text):
-        _notify(icon, "блок агенту скопирован в буфер")
+    return _clipboard(result.stdout.strip())
+
+
+def _copy_block(icon, full: bool = True) -> None:
+    if _copy_block_silent(full):
+        _notify(icon, "блок агенту в буфере")
     else:
-        _notify(icon, "не удалось положить в буфер")
+        _notify(icon, "не удалось скопировать блок")
 
 
 def _background(icon, work) -> None:
@@ -134,15 +137,28 @@ def _background(icon, work) -> None:
 
 
 def _start(icon, profile: str) -> None:
+    if not profile:
+        _notify(icon, "нет активного профиля — открой «Другой профиль»")
+        return
+
     def work() -> None:
+        _notify(icon, f"поднимаю {profile}… (может занять минуту)")
         result = _devbox("start", profile, "--preview", timeout=600)
-        if result.returncode != 0:
-            _notify(icon, f"start {profile}: ошибка (код {result.returncode})")
-            return
-        _clipboard(result.stdout.strip())
-        _notify(icon, f"профиль {profile} поднят; блок скопирован")
+        copied = _copy_block_silent(True)
+        healthy = _devbox("health", timeout=30).returncode == 0
+        if result.returncode == 0 and healthy and copied:
+            _notify(icon, f"готово: {profile} поднят, блок агенту в буфере")
+        elif result.returncode != 0:
+            line = (result.stderr.strip().splitlines() or ["без вывода"])[-1]
+            _notify(icon, f"{profile}: не поднялся — {line[:150]}")
+        else:
+            _notify(icon, f"{profile}: стек не healthy — проверь логи/доктора")
 
     _background(icon, work)
+
+
+def _deliver_current(icon, item) -> None:
+    _start(icon, _active())
 
 
 def _stop_all(icon) -> None:
@@ -204,14 +220,14 @@ def _toggle_watch(icon, item) -> None:
     if _watch is not None and _watch.poll() is None:
         _watch.terminate()
         _watch = None
-        _notify(icon, "watchdog выключен")
+        _notify(icon, "авто-восстановление выключено")
         return
     _watch = subprocess.Popen(
         [sys.executable, str(DEVBOX), "watch"],
         cwd=str(HOME),
         creationflags=CREATE_NO_WINDOW,
     )
-    _notify(icon, "watchdog включён")
+    _notify(icon, "авто-восстановление включено (watchdog)")
 
 
 def _quit(icon, item) -> None:
@@ -253,17 +269,16 @@ def _build_menu():
     return pystray.Menu(
         pystray.MenuItem(lambda i: f"remote-devbox — {_active() or 'нет профиля'}", None, enabled=False),
         pystray.Menu.SEPARATOR,
-        pystray.MenuItem("Скопировать блок агенту", lambda i, it: _copy_block(i), default=True),
+        pystray.MenuItem("Отдать проект агенту (запуск + блок)", _deliver_current, default=True),
+        pystray.MenuItem("Другой профиль", start_menu),
+        pystray.MenuItem("Скопировать блок ещё раз", lambda i, it: _copy_block(i)),
         pystray.MenuItem("Скопировать маскированный", lambda i, it: _copy_block(i, full=False)),
         pystray.Menu.SEPARATOR,
-        pystray.MenuItem("Запустить", start_menu),
-        pystray.MenuItem("Перезапустить текущий", lambda i, it: _start(i, _active())),
-        pystray.MenuItem("Остановить (стек + host)", lambda i, it: _stop_all(i)),
-        pystray.Menu.SEPARATOR,
-        pystray.MenuItem("Ротация токенов + блок", lambda i, it: _rotate(i)),
+        pystray.MenuItem("Остановить всё", lambda i, it: _stop_all(i)),
+        pystray.MenuItem("Обновить токены", lambda i, it: _rotate(i)),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("Открыть INGRESS", _open_url(False)),
-        pystray.MenuItem("Открыть Preview", _open_url(True)),
+        pystray.MenuItem("Открыть Preview (UI приложения)", _open_url(True)),
         pystray.MenuItem(
             "Логи",
             pystray.Menu(
@@ -273,9 +288,9 @@ def _build_menu():
             ),
         ),
         pystray.Menu.SEPARATOR,
-        pystray.MenuItem("Doctor", lambda i, it: _doctor(i)),
+        pystray.MenuItem("Проверка (doctor)", lambda i, it: _doctor(i)),
         pystray.MenuItem(
-            lambda i: "Watch: вкл" if _watch is not None and _watch.poll() is None else "Watch: выкл",
+            lambda i: "Авто-восстановление: вкл" if _watch is not None and _watch.poll() is None else "Авто-восстановление: выкл",
             _toggle_watch,
         ),
         pystray.Menu.SEPARATOR,
