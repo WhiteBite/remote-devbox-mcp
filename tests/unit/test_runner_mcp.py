@@ -1,6 +1,7 @@
 import hashlib
 import importlib
 import json
+import os
 import shutil
 
 import pytest
@@ -17,6 +18,7 @@ def _rehash(entry):
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Windows cmd shim resolution")
 def test_cmd_shim_uses_cmd_exe_argv_not_joined_string(monkeypatch):
     main = _main()
     fake = "C:\\Tools\\npm.cmd"
@@ -73,7 +75,8 @@ def test_audit_chain_links(tmp_path):
 def test_build_argv_path_arg_rejected():
     main = _main()
     spec = {"cmd": ["tool"], "args": {"target": {"type": "path"}}}
-    for value in ["../escape.txt", "C:\\abs\\path.txt"]:
+    absolute = "C:\\abs\\path.txt" if os.name == "nt" else "/abs/path.txt"
+    for value in ["../escape.txt", absolute]:
         with pytest.raises(ValueError):
             main._build_argv(spec, {"target": value})
 
