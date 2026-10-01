@@ -1,2 +1,5 @@
 @echo off
-start "" pythonw "%~dp0home\tray.py"
+setlocal
+set "PYW=pythonw"
+where pythonw >nul 2>nul || set "PYW=python"
+start "" %PYW% "%~dp0home\tray.py"

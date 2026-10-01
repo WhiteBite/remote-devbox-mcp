@@ -215,18 +215,24 @@ def _status_loop(icon) -> None:
         _stop.wait(STATUS_INTERVAL)
 
 
-def main() -> None:
+def _start_action(profile: str):
+    def action(icon, item) -> None:
+        _start(icon, profile)
+
+    return action
+
+
+def _build_menu():
     import pystray
 
-    icon = pystray.Icon("remote-devbox", _icon_rgb("unknown"), "remote-devbox")
     profiles = _profiles()
     start_menu = pystray.Menu(
         *(
-            [pystray.MenuItem(p, lambda i, it, name=p: _start(i, name)) for p in profiles]
+            [pystray.MenuItem(p, _start_action(p)) for p in profiles]
             or [pystray.MenuItem("(нет профилей)", None, enabled=False)]
         )
     )
-    icon.menu = pystray.Menu(
+    return pystray.Menu(
         pystray.MenuItem(lambda i: f"remote-devbox — {_active() or 'нет профиля'}", None, enabled=False),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("Скопировать блок агенту", lambda i, it: _copy_block(i), default=True),
@@ -257,9 +263,22 @@ def main() -> None:
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("Выход", _quit),
     )
+
+
+def main() -> None:
+    import pystray
+
+    icon = pystray.Icon("remote-devbox", _icon_rgb("unknown"), "remote-devbox")
+    icon.menu = _build_menu()
     threading.Thread(target=_status_loop, args=(icon,), daemon=True).start()
     icon.run()
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception:
+        import traceback
+
+        crash = pathlib.Path(os.environ.get("TEMP", "/tmp")) / "rdm-tray.log"
+        crash.write_text(traceback.format_exc(), encoding="utf-8")

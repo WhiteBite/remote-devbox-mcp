@@ -27,3 +27,9 @@ def test_tray_icon_render():
     pytest.importorskip("PIL")
     module = _load()
     assert module._icon_rgb("ok").size == (64, 64)
+
+
+def test_tray_builds_menu():
+    pytest.importorskip("pystray")
+    module = _load()
+    assert len(list(module._build_menu().items)) > 0
