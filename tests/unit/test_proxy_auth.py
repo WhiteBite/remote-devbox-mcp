@@ -1,4 +1,3 @@
-import pytest
 
 from rdm.proxy.auth import check_token, constant_time_equal
 

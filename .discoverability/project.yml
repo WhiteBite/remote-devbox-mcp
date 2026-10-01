@@ -6,7 +6,7 @@ project:
   name: "WhiteBite/remote-devbox-mcp"
   one_liner: "Turn your own Windows+Docker machine into a remote devbox that an external coding agent drives through an outbound Cloudflare tunnel."   # 1 sentence, shown as the GitHub description
   description: "Turn your own Windows+Docker machine into a remote devbox that an external coding agent drives through an outbound Cloudflare tunnel."
-  category: "mcp-server"   # library | app | template | research | tool | dataset | mcp-server
+  category: "mcp-server"   # library | app | template | research | tool | dataset | mcp-server | docs | other
   copyright_holder: "WhiteBite"   # name on the LICENSE copyright line; seeded from the git owner
 
 audiences:

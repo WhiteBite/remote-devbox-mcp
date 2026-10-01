@@ -13,6 +13,7 @@ DENY_ARG = [
 ]
 SECRETISH = re.compile(
     r"(token|key|secret|password|passwd|bearer)\s*[=:]\s*\S+|^[A-Fa-f0-9]{32,}$", re.I)
+CMD_UNSAFE = re.compile(r"[%!\r\n]")
 
 
 def _redact_argv(argv: Iterable[str]) -> list[str]:
@@ -25,3 +26,9 @@ def _check_args(values: Iterable[object]) -> None:
         for pat in DENY_ARG:
             if re.search(pat, s, re.I):
                 raise ValueError(f"аргумент отклонён политикой безопасности: {s!r}")
+
+
+def _check_cmd_shim(args: Iterable[str]) -> None:
+    for a in args:
+        if CMD_UNSAFE.search(a):
+            raise ValueError(f"аргумент небезопасен для cmd-шима: {a!r}")

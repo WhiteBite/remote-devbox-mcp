@@ -10,21 +10,28 @@ from rdm.profiles import Profile
 _BRIDGE_PORT = 8787
 
 
-def render_override(profile: Profile) -> str:
+def render_override(profile: Profile, dir_mounts: frozenset[str] | set[str] = frozenset()) -> str:
     lines = [
         "services:",
         "  toolbox:",
         "    volumes:",
         "      - ./docker/workspace-empty:/workspace/.opencode:ro",
     ]
-    lines.extend(f"      - /dev/null:/workspace/{mount}:ro" for mount in profile.deny_mounts)
+    lines.extend(
+        f"      - /dev/null:/workspace/{mount}:ro"
+        for mount in profile.deny_mounts
+        if mount not in dir_mounts
+    )
+    if dir_mounts:
+        lines.append("    tmpfs:")
+        lines.extend(f"      - /workspace/{mount}" for mount in sorted(dir_mounts))
     return "\n".join(lines) + "\n"
 
 
 def build_setup_script(profile: Profile, profile_name: str) -> str:
     parts = [f"# generated: devbox.py use {profile_name}\n"]
     for index, setup in enumerate(profile.setup_cmds, 1):
-        digest = hashlib.md5(f"{setup.cmd}{setup.marker}{profile_name}".encode("utf-8")).hexdigest()
+        digest = hashlib.md5(f"{setup.cmd}{setup.marker}{profile_name}".encode()).hexdigest()
         marker = f"/opt/tools/.setup-{index}-{digest}"
         on_fail = "exit 1" if setup.required else f"echo '[setup] WARN: cmd {index} failed, continue'"
         parts.append(f"if [ ! -f {marker} ]; then\n  {setup.cmd} || {on_fail}\n  touch {marker}\nfi\n")
@@ -36,23 +43,35 @@ def setup_script_b64(profile: Profile, profile_name: str) -> str:
 
 
 def build_manifest(
-    profile: Profile, profile_name: str, ingress_url: str, mode: str
+    profile: Profile,
+    profile_name: str,
+    ingress_url: str,
+    mode: str,
+    allowed_ports: list[int] | None = None,
+    self_authed: frozenset[int] | set[int] = frozenset(),
 ) -> dict[str, object]:
+    ports = list(profile.allowed_ports) if allowed_ports is None else list(allowed_ports)
     endpoints: list[dict[str, object]] = [
         {"name": "bridge", "port": _BRIDGE_PORT, "auth": "bearer", "path": f"/p/{_BRIDGE_PORT}/mcp"}
     ]
     for service in profile.host_services:
+        if service.port in self_authed:
+            auth = "self"
+        elif service.auth == "bearer":
+            auth = "bearer"
+        else:
+            auth = "ingress"
         endpoints.append(
-            {"name": f"host-{service.port}", "port": service.port, "auth": "bearer", "path": f"/p/{service.port}/mcp"}
+            {"name": f"host-{service.port}", "port": service.port, "auth": auth, "path": f"/p/{service.port}/mcp"}
         )
-    for port in profile.allowed_ports:
+    for port in ports:
         endpoints.append({"name": f"allowed-{port}", "port": port, "auth": "ingress", "path": f"/p/{port}"})
     return {
         "profile": profile_name,
         "project": profile.project_dir,
         "ingress_url": ingress_url,
         "endpoints": endpoints,
-        "allowed_ports": list(profile.allowed_ports),
+        "allowed_ports": ports,
         "runner_commands": [command.name for command in profile.runner_commands],
         "scripts": [script.name for script in profile.scripts],
         "preview_origin": profile.preview_origin,

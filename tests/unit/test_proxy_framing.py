@@ -1,5 +1,4 @@
 import pytest
-
 from rdm.proxy import framing
 from rdm.proxy.framing import (
     MAX_BODY,

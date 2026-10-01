@@ -59,6 +59,10 @@ def _runner_json(command: profiles.RunnerCommand) -> dict[str, object]:
     }
 
 
+def _script_json(script: profiles.Script) -> dict[str, object]:
+    return {"name": script.name, "cmd": list(script.cmd), "description": script.description}
+
+
 def _with_runner(profile: profiles.Profile, name: str) -> profiles.Profile:
     if not profile.runner_commands:
         os.environ.pop("RUNNER_CONFIG", None)
@@ -73,6 +77,7 @@ def _with_runner(profile: profiles.Profile, name: str) -> profiles.Profile:
                 "profile": name,
                 "cwd": profile.project_dir,
                 "commands": [_runner_json(command) for command in profile.runner_commands],
+                "scripts": [_script_json(script) for script in profile.scripts],
             },
             ensure_ascii=False,
         ),
@@ -166,11 +171,13 @@ def apply_use(name: str) -> int:
     else:
         env.remove("PREVIEW_ORIGIN")
     bearer_ports = [service.port for service in profile.host_services if service.auth == "bearer"]
-    env.set("SELF_AUTHED_PORTS", ",".join(str(port) for port in sorted({BRIDGE_PORT, *bearer_ports})))
+    self_authed = {BRIDGE_PORT, *bearer_ports}
+    env.set("SELF_AUTHED_PORTS", ",".join(str(port) for port in sorted(self_authed)))
     allowed = set(profile.allowed_ports)
     allowed |= {service.port for service in profile.host_services if service.auth != "bearer"}
     allowed |= {command.port for command in profile.runner_commands if command.port}
-    allowed_text = ",".join(str(port) for port in sorted(allowed))
+    allowed_sorted = sorted(allowed)
+    allowed_text = ",".join(str(port) for port in allowed_sorted)
     env.set("ALLOWED_PORTS", allowed_text)
     permission = _permissions(profile.mode)
     if permission:
@@ -181,11 +188,20 @@ def apply_use(name: str) -> int:
     env.set("TUNNEL_TAIL", render.tunnel_tail(env.get("TUNNEL_TOKEN") or ""))
     env.set("ACTIVE_PROFILE", name)
     env.write(ENV_FILE)
-    OVERRIDE_FILE.write_text(render.render_override(profile), encoding="utf-8")
+    dir_mounts = frozenset(
+        mount
+        for mount in profile.deny_mounts
+        if (pathlib.Path(profile.project_dir) / mount).is_dir()
+    )
+    OVERRIDE_FILE.write_text(render.render_override(profile, dir_mounts), encoding="utf-8")
     LOG_ROOT.mkdir(parents=True, exist_ok=True)
     env_map = env.as_map()
     MANIFEST_PATH.write_text(
-        json.dumps(render.build_manifest(profile, name, _ingress_url(env_map), profile.mode), ensure_ascii=False, indent=2),
+        json.dumps(
+            render.build_manifest(profile, name, _ingress_url(env_map), profile.mode, allowed_sorted, self_authed),
+            ensure_ascii=False,
+            indent=2,
+        ),
         encoding="utf-8",
     )
     procman.restart_host_services(profile, name, HOME_DIR, env_map.get("MCP_PUBLIC_TOKEN", ""))

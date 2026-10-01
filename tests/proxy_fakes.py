@@ -17,7 +17,7 @@ def raw_request(port: int, raw: bytes, timeout: float = 10.0) -> bytes:
         while True:
             try:
                 data = sock.recv(65536)
-            except (socket.timeout, OSError):
+            except (TimeoutError, OSError):
                 break
             if not data:
                 break

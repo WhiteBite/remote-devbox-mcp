@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import pathlib
 import re
+import secrets
 import socket
 import urllib.error
 import urllib.request
@@ -80,6 +81,7 @@ def run(env_map: dict[str, str], compose_file: str | None = None, prober=None) -
     probe = prober or _probe
     report = _Report()
     report.check("docker engine", docker.run("info").returncode == 0, "Docker Desktop не запущен")
+    report.check("psutil", hostos.psutil is not None, "python -m pip install psutil")
     keys = ("MCP_BEARER_TOKEN", "MCP_PUBLIC_TOKEN", "INGRESS_TOKEN", "PROJECT_DIR")
     report.check(".env keys", all(env_map.get(key) for key in keys), "заполни токены и PROJECT_DIR в home/.env")
     report.check(
@@ -116,7 +118,7 @@ def run(env_map: dict[str, str], compose_file: str | None = None, prober=None) -
         )
         report.check(
             "ingress auth 401",
-            probe(f"{url}/p/{_BRIDGE_PORT}/mcp", "wrong-token-wrong-token") == 401,
+            probe(f"{url}/p/{_BRIDGE_PORT}/mcp", "wrong-" + secrets.token_hex(8)) == 401,
             "проверь MCP_BEARER_TOKEN/INGRESS_TOKEN",
         )
         report.check(

@@ -9,9 +9,9 @@ from __future__ import annotations
 import json
 import os
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Mapping
 
 
 @dataclass(frozen=True, slots=True)
@@ -135,7 +135,11 @@ def _opt_int(values: Mapping[str, object], key: str) -> int | None:
 
 def _seq(values: Mapping[str, object], key: str) -> list[object]:
     value = values.get(key, ())
-    return list(value) if isinstance(value, (list, tuple)) else [value]
+    if value is None:
+        return []
+    if not isinstance(value, (list, tuple)):
+        raise ValueError(f"{key}: ожидался список")
+    return list(value)
 
 
 def _cmd(values: Mapping[str, object]) -> tuple[str, ...]:
@@ -235,6 +239,10 @@ def validate(profile: Profile) -> list[str]:
             ports.append(service.port)
         if not service.cmd:
             problems.append(f"R6: HostService[{i}]: Cmd непустой")
+        if any(op in service.cmd for op in ("&&", "||", ";", "|")):
+            problems.append(
+                f"WARN R18: HostService[{i}]: Cmd содержит shell-оператор; host-сервисы запускаются argv-only"
+            )
     if len(ports) != len(set(ports)):
         problems.append("R7: дубликат порта в HostServices")
 

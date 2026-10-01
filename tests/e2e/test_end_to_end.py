@@ -38,9 +38,9 @@ def test_entrypoint_profile_import_roundtrip(tmp_path):
     )
     project = tmp_path / "sample.json"
     result = subprocess.run(
-        [sys.executable, "-c", "import sys; sys.path.insert(0, r'{0}'); from rdm import cli, ps_import; "
-         "import pathlib, json; d = ps_import.parse_profile_ps1(pathlib.Path(r'{1}').read_text(encoding='utf-8')); "
-         "pathlib.Path(r'{2}').write_text(json.dumps(d), encoding='utf-8')".format(str(HOME), str(source), str(project))],
+        [sys.executable, "-c", f"import sys; sys.path.insert(0, r'{str(HOME)}'); from rdm import cli, ps_import; "
+         f"import pathlib, json; d = ps_import.parse_profile_ps1(pathlib.Path(r'{str(source)}').read_text(encoding='utf-8')); "
+         f"pathlib.Path(r'{str(project)}').write_text(json.dumps(d), encoding='utf-8')"],
         capture_output=True,
         text=True,
         timeout=60,

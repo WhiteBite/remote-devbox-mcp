@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """runner-mcp — host-MCP для команд проекта, объявленных в профиле devbox.
 
-Конфиг: JSON-путь в env RUNNER_CONFIG (рендерит home/devbox.ps1 use <имя>
+Конфиг: JSON-путь в env RUNNER_CONFIG (рендерит home/devbox.py use <имя>
 из поля $RunnerCommands профиля). Каждая команда = argv-массив; аргументы
-агента подставляются ТОЛЬКО как элементы argv (никакого shell=True),
-type=path валидируется на выход за cwd. Background-команды детачатся,
+агента подставляются ТОЛЬКО как элементы argv (shell=False); для .cmd/.bat
+шимов Windows (npm/npx) запуск идёт через `cmd.exe /c` с отдельной валидацией
+аргументов на cmd-опасные символы (% ! перевод строки), .exe запускаются
+напрямую. type=path валидируется на выход за cwd. Background-команды детачатся,
 pid пишется в %TEMP%\\rdm-runner\\<profile>-<name>.pid. Каждый вызов
 логируется в %TEMP%\\rdm-runner\\audit.log.
 
@@ -24,7 +26,7 @@ from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 
 from rdm.runner.audit import _audit
-from rdm.runner.policy import _check_args, _redact_argv
+from rdm.runner.policy import _check_args, _check_cmd_shim, _redact_argv
 
 
 @dataclass(frozen=True)
@@ -114,7 +116,10 @@ def _make_tool(name: str, spec: dict, ctx: _Ctx):
         _check_args(present.values())
         argv = _build_argv(spec, present)
         _audit({"tool": name, "argv": _redact_argv(argv)}, ctx.run_dir)
-        argv = _resolve(argv)
+        resolved = _resolve(argv)
+        if resolved[:2] == ["cmd", "/c"]:
+            _check_cmd_shim(argv[1:])
+        argv = resolved
         env = _child_env(spec)
         if spec.get("background"):
             pidfile = ctx.run_dir / f"{ctx.profile}-{name}.pid"

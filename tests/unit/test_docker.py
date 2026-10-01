@@ -2,7 +2,6 @@ import shutil
 import subprocess
 
 import pytest
-
 from rdm import docker
 
 

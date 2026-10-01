@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import json
 import os
+import pathlib
 import socket
 
 import pytest
-
-from rdm import docker, hostos, procman, tokens
+from rdm import cli, docker, hostos, procman, render, tokens
+from rdm.envfile import EnvFile
+from rdm.profiles import HostService, Profile, RunnerCommand, Script, load, validate
 from rdm.proxy.__main__ import _ports
+from rdm.runner.policy import _check_cmd_shim
+
 from tests.proxy_fakes import FakeUpstream, raw_request, request, responder, start_ingress
 
 
@@ -102,3 +107,62 @@ def test_stop_ingress_uses_identity_guard(monkeypatch, tmp_path):
     (directory / "pids.txt").write_text("4242|111.0|rdm.proxy\n", encoding="utf-8")
     procman.stop_ingress()
     assert killed == []
+
+
+def test_override_directory_mount_uses_tmpfs():
+    profile = Profile(deny_mounts=("apps/backend/.env", "secrets_dir"))
+    text = render.render_override(profile, {"secrets_dir"})
+    assert "- /dev/null:/workspace/apps/backend/.env:ro" in text
+    assert "- /workspace/secrets_dir" in text
+    assert "/dev/null:/workspace/secrets_dir" not in text
+
+
+def test_cmd_shim_rejects_cmd_unsafe_arg():
+    with pytest.raises(ValueError):
+        _check_cmd_shim(["a%b"])
+    _check_cmd_shim(["safe", "arg-1"])
+
+
+def test_manifest_uses_computed_allowlist():
+    profile = Profile(host_services=(HostService(port=8792, auth="bearer"),), allowed_ports=(8765,))
+    manifest = render.build_manifest(profile, "p", "https://x", "standard", [8765, 8796], {8787, 8792, 8796})
+    assert manifest["allowed_ports"] == [8765, 8796]
+    auth = {entry["port"]: entry["auth"] for entry in manifest["endpoints"]}
+    assert auth[8792] == "self"
+    assert auth[8796] == "ingress"
+
+
+def test_validate_warns_host_shell_operator():
+    profile = Profile(host_services=(HostService(port=80, auth="", cmd="a && b"),))
+    assert any(problem.startswith("WARN R18") for problem in validate(profile))
+
+
+def test_with_runner_includes_scripts(monkeypatch, tmp_path):
+    monkeypatch.setattr(cli, "LOG_ROOT", tmp_path)
+    profile = Profile(
+        runner_commands=(RunnerCommand(name="t", cmd=("npm", "test"), description="d"),),
+        scripts=(Script(name="shots", cmd=("python", "x.py"), description="s"),),
+        runner_port=8796,
+    )
+    try:
+        cli._with_runner(profile, "p")
+        config = json.loads(pathlib.Path(os.environ["RUNNER_CONFIG"]).read_text(encoding="utf-8"))
+    finally:
+        os.environ.pop("RUNNER_CONFIG", None)
+        os.environ.pop("RUNNER_PORT", None)
+    assert config["scripts"] == [{"name": "shots", "cmd": ["python", "x.py"], "description": "s"}]
+
+
+def test_profile_rejects_wrong_shape(tmp_path):
+    path = tmp_path / "p.json"
+    path.write_text('{"host_services": {"port": 1}}', encoding="utf-8")
+    with pytest.raises(ValueError):
+        load(path)
+
+
+def test_envfile_get_strips_render_preserves(tmp_path):
+    path = tmp_path / ".env"
+    path.write_bytes(b"KEY=  a b  \n")
+    env = EnvFile.load(path)
+    assert env.get("KEY") == "a b"
+    assert env.render() == "KEY=  a b  \n"

@@ -12,6 +12,8 @@ from rdm.doctor import _HOME, _ingress_url, _probe
 _DEFAULT_COMPOSE = str(_HOME / "docker-compose.yml")
 _BRIDGE_PORT = 8787
 _PROJECTS = _HOME.parent / "projects"
+START_DELAY = 15.0
+RECREATE_DELAY = 30.0
 
 
 def _host_services_dead(active: str) -> bool:
@@ -49,6 +51,8 @@ def run(
     active = env_map.get("ACTIVE_PROFILE", "")
     fails = 0
     count = 0
+    if iterations is None:
+        time.sleep(START_DELAY)
     while iterations is None or count < iterations:
         count += 1
         try:
@@ -59,6 +63,8 @@ def run(
                 _log(log_path, "tunnel flap: recreate ingress")
                 docker.compose("up", "-d", "--force-recreate", "cloudflared-ingress", compose_file=compose_file)
                 fails = 0
+                if iterations is None:
+                    time.sleep(RECREATE_DELAY)
             if active and _host_services_dead(active):
                 _log(log_path, "host services dead: restart")
                 profile_path = _PROJECTS / f"{active}.json"

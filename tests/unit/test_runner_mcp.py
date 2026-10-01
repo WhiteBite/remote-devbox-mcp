@@ -4,7 +4,6 @@ import json
 import shutil
 
 import pytest
-
 from rdm.runner.audit import _audit
 from rdm.runner.policy import _check_args, _redact_argv
 
