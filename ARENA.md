@@ -64,6 +64,10 @@ EOF
    через host-MCP, если ТЗ его указывает; скриншоты до/после своим playwright
    (порты без своей авторизации требуют заголовок
    `Authorization: Bearer <INGRESS_TOKEN>`).
+   Для UI: открой приложение своим playwright по `<INGRESS>/p/<порт>/` с
+   `extraHTTPHeaders={"Authorization": "Bearer <INGRESS_TOKEN>"}`, либо по
+   `PREVIEW`-URL (root, без токена) — детали и оговорки в
+   `skills/remote-devbox/SKILL.md`.
 4. Отчёт: git diff через bash моста, результаты тестов, скриншоты через
    present_file, отступления от ТЗ — явно.
 

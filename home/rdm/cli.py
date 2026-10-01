@@ -48,6 +48,15 @@ def _ingress_url(env_map: dict[str, str]) -> str:
     return matches[-1] if matches else ""
 
 
+def _preview_url(env_map: dict[str, str]) -> str:
+    try:
+        logs = docker.compose("logs", "cloudflared-preview", compose_file=COMPOSE_FILE).stdout
+    except OSError:
+        return ""
+    matches = _TRYCLOUDFLARE.findall(logs or "")
+    return matches[-1] if matches else ""
+
+
 def _runner_json(command: profiles.RunnerCommand) -> dict[str, object]:
     return {
         "name": command.name,
@@ -260,7 +269,42 @@ def _chat(full: bool) -> int:
     print(f"Preview:    {env_map.get('PREVIEW_ORIGIN', '')}")
     if not full:
         print("--- чат-блок (маскированный) ---")
-    print(tokens.chat_block(env_map, _ingress_url(env_map), full))
+    print(tokens.chat_block(env_map, _ingress_url(env_map), full, _preview_url(env_map)))
+    return 0
+
+
+def _start(name: str | None, with_preview: bool) -> int:
+    if name:
+        rc = apply_use(name)
+        if rc:
+            return rc
+    else:
+        docker.compose("up", "-d", compose_file=COMPOSE_FILE)
+        env_map = envfile.EnvFile.load(ENV_FILE).as_map()
+        procman.stop_ingress()
+        procman.start_ingress(_ingress_env(env_map), HOME_DIR, hostos.tempdir() / "rdm-ingress")
+    env_map = envfile.EnvFile.load(ENV_FILE).as_map()
+    if with_preview:
+        docker.compose("--profile", "preview", "up", "-d", compose_file=COMPOSE_FILE)
+    print()
+    print("=== Скопируй агенту (arena.ai и любой агентский сайт) ===")
+    print(tokens.chat_block(env_map, _ingress_url(env_map), True, _preview_url(env_map)))
+    print("=== Затем напиши задачу. ===")
+    return 0
+
+
+def _preview(origin: str | None) -> int:
+    env = envfile.EnvFile.load(ENV_FILE)
+    if origin:
+        env.set("PREVIEW_ORIGIN", origin)
+        env.write(ENV_FILE)
+    env_map = env.as_map()
+    if not env_map.get("PREVIEW_ORIGIN"):
+        print("укажи origin: devbox.py preview http://host.docker.internal:<port>", file=sys.stderr)
+        return 1
+    docker.compose("--profile", "preview", "up", "-d", "--force-recreate", "cloudflared-preview", compose_file=COMPOSE_FILE)
+    url = _preview_url(env_map)
+    print(f"PREVIEW={url}" if url else "preview поднимается; повтори `devbox.py preview` через пару секунд")
     return 0
 
 
@@ -282,7 +326,7 @@ def _issue_tokens() -> int:
                 procman.restart_host_services(profile, active, HOME_DIR, env_map.get("MCP_PUBLIC_TOKEN", ""))
     procman.stop_ingress()
     procman.start_ingress(_ingress_env(env_map), HOME_DIR, hostos.tempdir() / "rdm-ingress")
-    print(tokens.chat_block(env_map, _ingress_url(env_map), True))
+    print(tokens.chat_block(env_map, _ingress_url(env_map), True, _preview_url(env_map)))
     return 0
 
 
@@ -318,6 +362,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="devbox")
     sub = parser.add_subparsers(dest="command")
     sub.add_parser("status")
+    start = sub.add_parser("start")
+    start.add_argument("name", nargs="?", default=None)
+    start.add_argument("--preview", action="store_true")
+    preview = sub.add_parser("preview")
+    preview.add_argument("origin", nargs="?", default=None)
     use = sub.add_parser("use")
     use.add_argument("name")
     sub.add_parser("stop-host")
@@ -335,6 +384,10 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "use":
         return apply_use(args.name)
+    if args.command == "start":
+        return _start(args.name, args.preview)
+    if args.command == "preview":
+        return _preview(args.origin)
     if args.command == "stop-host":
         return _stop_host()
     if args.command == "doctor":

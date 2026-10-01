@@ -53,19 +53,20 @@ def test_chat_block_masks_when_not_full():
     }
     block = tokens.chat_block(env_map, "https://x.trycloudflare.com", full=False)
     lines = block.splitlines()
-    assert lines[0] == (
+    assert lines[0] == "Репозиторий: https://github.com/WhiteBite/remote-devbox-mcp"
+    assert lines[1] == (
+        "Загрузи скилл: "
+        "https://github.com/WhiteBite/remote-devbox-mcp/blob/main/skills/remote-devbox/SKILL.md"
+    )
+    assert lines[2] == (
         "Работай по инструкции: "
         "https://github.com/WhiteBite/remote-devbox-mcp/blob/main/ARENA.md"
     )
-    assert lines[1] == "INGRESS=https://x.trycloudflare.com"
-    assert lines[2] == "BRIDGE_TOKEN=aaaa..." + "a" * 4
-    assert lines[3] == "HOST_TOKEN=bbbb..." + "b" * 4
-    assert lines[4] == "INGRESS_TOKEN=cccc..." + "c" * 4
-    assert lines[5] == (
-        "Эндпоинты и порты: GET <INGRESS>/p/9000/manifest.json "
-        "(Bearer INGRESS_TOKEN)"
-    )
-    assert lines[6] == "ТЗ: /workspace/ARENA_TASK.md"
+    assert lines[3] == "INGRESS=https://x.trycloudflare.com"
+    assert lines[4] == "BRIDGE_TOKEN=aaaa..." + "a" * 4
+    assert lines[5] == "HOST_TOKEN=bbbb..." + "b" * 4
+    assert lines[6] == "INGRESS_TOKEN=cccc..." + "c" * 4
+    assert lines[-1] == "ТЗ: /workspace/ARENA_TASK.md"
     assert "a" * 32 not in block
 
 
@@ -78,8 +79,9 @@ def test_chat_block_full_values():
         "MCP_PUBLIC_TOKEN": public,
         "INGRESS_TOKEN": ingress,
     }
-    block = tokens.chat_block(env_map, "https://y.example.com", full=True)
+    block = tokens.chat_block(env_map, "https://y.example.com", full=True, preview_url="https://p.example.com")
     assert f"BRIDGE_TOKEN={bearer}" in block
     assert f"HOST_TOKEN={public}" in block
     assert f"INGRESS_TOKEN={ingress}" in block
+    assert "PREVIEW=https://p.example.com" in block
     assert "..." not in block

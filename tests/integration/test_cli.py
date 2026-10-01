@@ -128,3 +128,27 @@ def test_issue_tokens_rotates_three(monkeypatch, tmp_path):
     text = cli.ENV_FILE.read_text(encoding="utf-8")
     assert text.count("0" * 64) == 0
     assert text.count("MCP_BEARER_TOKEN=") == 1
+
+
+def test_start_prints_handoff_block(monkeypatch, tmp_path, capsys):
+    projects, calls = _setup(monkeypatch, tmp_path)
+    (projects / "p1.json").write_text(_profile_json(tmp_path), encoding="utf-8")
+    assert cli.main(["start", "p1"]) == 0
+    out = capsys.readouterr().out
+    assert "Репозиторий: https://github.com/WhiteBite/remote-devbox-mcp" in out
+    assert "Загрузи скилл:" in out
+    assert "INGRESS=" in out and "BRIDGE_TOKEN=" in out
+
+
+def test_start_with_preview_starts_preview_profile(monkeypatch, tmp_path):
+    projects, calls = _setup(monkeypatch, tmp_path)
+    (projects / "p1.json").write_text(_profile_json(tmp_path), encoding="utf-8")
+    assert cli.main(["start", "p1", "--preview"]) == 0
+    assert any("--profile" in args and "preview" in args for args in calls["compose"])
+
+
+def test_preview_sets_origin(monkeypatch, tmp_path):
+    _, calls = _setup(monkeypatch, tmp_path)
+    assert cli.main(["preview", "http://host.docker.internal:8080"]) == 0
+    assert "PREVIEW_ORIGIN=http://host.docker.internal:8080" in cli.ENV_FILE.read_text(encoding="utf-8")
+    assert any("cloudflared-preview" in args for args in calls["compose"])

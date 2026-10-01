@@ -97,6 +97,38 @@ never a success.
 - **Don't** install packages inside the container for host-build projects
   (MidasAI etc.) — use the runner there instead.
 
+## Verify UI (Playwright)
+
+Your playwright/chromium runs in your sandbox; the app runs on the devbox.
+Reach it over the tunnel — two ways:
+
+1. Ingress path with the bearer token (APIs and plain static):
+
+   ```python
+   ctx = browser.new_context(
+       extraHTTPHeaders={"Authorization": f"Bearer {INGRESS_TOKEN}"}
+   )
+   page = ctx.new_page()
+   page.goto(f"{INGRESS}/p/{PORT}/", wait_until="networkidle")
+   page.screenshot(path="shots/ui.png")
+   ```
+
+   `PORT` must be in the profile's allowlist (otherwise 403). Absolute asset
+   paths (`/assets/...`) lose the `/p/<port>` prefix — use option 2.
+2. `PREVIEW` URL (root, no token) — best for SPA/dev servers with absolute
+   asset paths and for `flutter run -d web-server`: `page.goto(PREVIEW)`.
+
+Ask the user to expose the dev server:
+`python devbox.py preview http://host.docker.internal:<port>` (host app) or a
+container origin; the starter `devbox.py start --preview` prints the URL.
+
+Notes:
+- HMR WebSockets are not proxied (Upgrade → 501); screenshots and behavior
+  still work, live-reload does not.
+- Electron/desktop windows are not reachable over HTTP — ask the user for a
+  screenshot or to expose the app's remote-debugging port.
+- Keep screenshots in `/agent` and show them with `present_file`.
+
 ## Troubleshooting
 
 | Symptom | Action |
