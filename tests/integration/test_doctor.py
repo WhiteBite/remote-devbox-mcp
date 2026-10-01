@@ -54,7 +54,7 @@ def _wire(monkeypatch, tmp_path, *, healthy=True):
     monkeypatch.setattr(doctor, "_first_pid", lambda path: 12345)
     monkeypatch.setattr(hostos, "cmdline_matches", lambda pid, marker: True)
     monkeypatch.setattr(doctor.docker, "run", lambda *a, **k: subprocess.CompletedProcess(["docker"], 0, stdout="", stderr=""))
-    monkeypatch.setattr(doctor.docker, "compose_ps", lambda *a, **k: "rdm-toolbox healthy" if healthy else "rdm-toolbox starting")
+    monkeypatch.setattr(doctor.docker, "compose", lambda *a, **k: subprocess.CompletedProcess(["docker"], 0, stdout="healthy" if healthy else "starting", stderr=""))
 
 
 def test_doctor_fails_when_env_keys_missing(monkeypatch, tmp_path, capsys):

@@ -68,6 +68,13 @@ def test_use_rejects_invalid_profile_exit_1(monkeypatch, tmp_path):
     assert calls["restart"] == []
 
 
+def test_use_rejects_malformed_json_exit_1(monkeypatch, tmp_path):
+    projects, calls = _setup(monkeypatch, tmp_path)
+    (projects / "broken.json").write_text("{ not json", encoding="utf-8")
+    assert cli.main(["use", "broken"]) == 1
+    assert calls["restart"] == []
+
+
 def test_use_preserves_env_comments(monkeypatch, tmp_path):
     projects, _ = _setup(monkeypatch, tmp_path)
     cli.ENV_FILE.write_text("# keep me\nACTIVE_PROFILE=\n", encoding="utf-8")

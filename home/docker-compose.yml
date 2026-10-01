@@ -39,6 +39,7 @@ services:
       # правила разрешений OpenCode; рендерит devbox.ps1 из $Mode профиля
       # (readonly/standard/full); пусто = клиент отвечает на запросы сам (--auto).
       OPENCODE_MCP_PERMISSIONS: "${OPENCODE_MCP_PERMISSIONS:-}"
+      SETUP_SCRIPT_B64: "${SETUP_SCRIPT_B64:-}"
     volumes:
       - "${PROJECT_DIR:?укажи папку проекта в .env}:/workspace"
       # shadow-монт: воркер не видит opencode.json проекта и не пытается поднять

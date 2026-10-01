@@ -1,5 +1,6 @@
 import os
 import pathlib
+import shutil
 import signal
 import subprocess
 import sys
@@ -59,7 +60,7 @@ def find_pid_by_port(port: int) -> int | None:
 
 
 def cmdline_matches(pid: int, marker: str) -> bool:
-    if psutil is None:
+    if psutil is None or not marker:
         return False
     try:
         cmdline = psutil.Process(pid).cmdline()
@@ -77,6 +78,17 @@ def create_time(pid: int) -> float | None:
         return None
 
 
+def _resolve(argv: list[str]) -> list[str]:
+    exe = argv[0]
+    if not os.path.isabs(exe):
+        found = shutil.which(exe)
+        if found:
+            exe = found
+    if os.name == "nt" and exe.lower().endswith((".cmd", ".bat")):
+        return ["cmd", "/c", exe, *argv[1:]]
+    return [exe, *argv[1:]]
+
+
 def spawn(
     argv: list[str],
     *,
@@ -89,7 +101,7 @@ def spawn(
     stderr = open(stderr_path, "ab") if stderr_path is not None else subprocess.DEVNULL
     try:
         proc = subprocess.Popen(
-            argv,
+            _resolve(list(argv)),
             cwd=cwd,
             stdout=stdout,
             stderr=stderr,

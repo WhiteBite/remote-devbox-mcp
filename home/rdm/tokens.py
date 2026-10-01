@@ -34,9 +34,9 @@ def chat_block(env_map: dict[str, str], ingress_url: str, full: bool) -> str:
     lines = [
         f"Работай по инструкции: {_INSTRUCTION_URL}",
         f"INGRESS={ingress_url}",
-        f"BRIDGE_TOKEN={show(env_map['MCP_BEARER_TOKEN'])}",
-        f"HOST_TOKEN={show(env_map['MCP_PUBLIC_TOKEN'])}",
-        f"INGRESS_TOKEN={show(env_map['INGRESS_TOKEN'])}",
+        f"BRIDGE_TOKEN={show(env_map.get('MCP_BEARER_TOKEN', ''))}",
+        f"HOST_TOKEN={show(env_map.get('MCP_PUBLIC_TOKEN', ''))}",
+        f"INGRESS_TOKEN={show(env_map.get('INGRESS_TOKEN', ''))}",
         "Эндпоинты и порты: GET <INGRESS>/p/9000/manifest.json (Bearer INGRESS_TOKEN)",
         "ТЗ: /workspace/ARENA_TASK.md",
     ]

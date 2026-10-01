@@ -51,22 +51,26 @@ def run(
     count = 0
     while iterations is None or count < iterations:
         count += 1
-        url = _ingress_url(env_map)
-        code = probe(f"{url}/p/{_BRIDGE_PORT}/healthz", env_map.get("MCP_BEARER_TOKEN")) if url else 0
-        fails = fails + 1 if code != 200 else 0
-        if fails >= 3:
-            _log(log_path, "tunnel flap: recreate ingress")
-            docker.compose("up", "-d", "--force-recreate", "cloudflared-ingress", compose_file=compose_file)
-            fails = 0
-        if active and _host_services_dead(active):
-            _log(log_path, "host services dead: restart")
-            profile_path = _PROJECTS / f"{active}.json"
-            if profile_path.exists():
-                procman.restart_host_services(
-                    profiles.load(profile_path), active, _HOME, env_map.get("MCP_PUBLIC_TOKEN", "")
-                )
-        if "healthy" not in docker.compose_ps(compose_file):
-            _log(log_path, "toolbox unhealthy: up -d")
-            docker.compose("up", "-d", "toolbox", compose_file=compose_file)
+        try:
+            url = _ingress_url(env_map)
+            code = probe(f"{url}/p/{_BRIDGE_PORT}/healthz", env_map.get("MCP_BEARER_TOKEN")) if url else 0
+            fails = fails + 1 if code != 200 else 0
+            if fails >= 3:
+                _log(log_path, "tunnel flap: recreate ingress")
+                docker.compose("up", "-d", "--force-recreate", "cloudflared-ingress", compose_file=compose_file)
+                fails = 0
+            if active and _host_services_dead(active):
+                _log(log_path, "host services dead: restart")
+                profile_path = _PROJECTS / f"{active}.json"
+                if profile_path.exists():
+                    from rdm import cli as _cli
+
+                    profile = _cli._with_runner(profiles.load(profile_path), active)
+                    procman.restart_host_services(profile, active, _HOME, env_map.get("MCP_PUBLIC_TOKEN", ""))
+            if "healthy" not in docker.compose_ps(compose_file):
+                _log(log_path, "toolbox unhealthy: up -d")
+                docker.compose("up", "-d", "toolbox", compose_file=compose_file)
+        except (OSError, ValueError) as error:
+            _log(log_path, f"watchdog error: {error}")
         if iterations is None:
             time.sleep(interval)

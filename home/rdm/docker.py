@@ -12,14 +12,17 @@ def compose(
     cwd: str | None = None,
     timeout: int = 120,
 ) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["docker", "compose", "-f", compose_file, *args],
-        cwd=cwd,
-        timeout=timeout,
-        capture_output=True,
-        text=True,
-        shell=False,
-    )
+    try:
+        return subprocess.run(
+            ["docker", "compose", "-f", compose_file, *args],
+            cwd=cwd,
+            timeout=timeout,
+            capture_output=True,
+            text=True,
+            shell=False,
+        )
+    except FileNotFoundError:
+        return subprocess.CompletedProcess(["docker"], 127, "", "docker not found")
 
 
 def compose_ps(compose_file: str, fmt: str = "{{.Name}} {{.Status}}") -> str:
@@ -35,11 +38,14 @@ def compose_config(compose_file: str = _DEFAULT_COMPOSE_FILE) -> str:
 
 
 def run(*args: str, input: str | None = None, timeout: int = 120) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["docker", *args],
-        input=input,
-        timeout=timeout,
-        capture_output=True,
-        text=True,
-        shell=False,
-    )
+    try:
+        return subprocess.run(
+            ["docker", *args],
+            input=input,
+            timeout=timeout,
+            capture_output=True,
+            text=True,
+            shell=False,
+        )
+    except FileNotFoundError:
+        return subprocess.CompletedProcess(["docker"], 127, "", "docker not found")

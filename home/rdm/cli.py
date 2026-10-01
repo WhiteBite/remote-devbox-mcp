@@ -61,6 +61,8 @@ def _runner_json(command: profiles.RunnerCommand) -> dict[str, object]:
 
 def _with_runner(profile: profiles.Profile, name: str) -> profiles.Profile:
     if not profile.runner_commands:
+        os.environ.pop("RUNNER_CONFIG", None)
+        os.environ.pop("RUNNER_PORT", None)
         return profile
     port = profile.runner_port or DEFAULT_RUNNER_PORT
     LOG_ROOT.mkdir(parents=True, exist_ok=True)
@@ -136,7 +138,11 @@ def apply_use(name: str) -> int:
     if not path.exists():
         print(f"нет профиля {path}", file=sys.stderr)
         return 1
-    profile = profiles.load(path)
+    try:
+        profile = profiles.load(path)
+    except (ValueError, OSError) as error:
+        print(f"profile error: {error}", file=sys.stderr)
+        return 1
     problems = profiles.validate(profile)
     for problem in problems:
         if problem.startswith("WARN"):
@@ -196,7 +202,12 @@ def _status() -> int:
     result = docker.compose("ps", "--format", "{{.Name}} {{.Status}}", compose_file=COMPOSE_FILE)
     sys.stdout.write(result.stdout)
     env_map = envfile.EnvFile.load(ENV_FILE).as_map()
-    print(f"active profile: {env_map.get('ACTIVE_PROFILE', '')}")
+    active = env_map.get("ACTIVE_PROFILE", "")
+    print(f"active profile: {active}")
+    pids = hostos.tempdir() / "rdm-host" / f"{active}-pids.txt"
+    if pids.exists():
+        for line in pids.read_text(encoding="utf-8").splitlines():
+            print(f"host pid: {line}")
     return 0
 
 
@@ -204,6 +215,8 @@ def _stop_host() -> int:
     active = envfile.EnvFile.load(ENV_FILE).get("ACTIVE_PROFILE")
     if active:
         procman.stop_host_services(active)
+    else:
+        print("ACTIVE_PROFILE не задан")
     return 0
 
 
@@ -224,7 +237,11 @@ def _chat(full: bool) -> int:
     env_map = envfile.EnvFile.load(ENV_FILE).as_map()
     print(f"Профиль:    {env_map.get('ACTIVE_PROFILE', '')}")
     print(f"Проект:     {env_map.get('PROJECT_DIR', '')}")
+    print(f"Тулчейны:   {env_map.get('TOOLCHAIN', '')}")
+    print(f"Git:        {env_map.get('GIT_NAME', '')} <{env_map.get('GIT_EMAIL', '')}>")
     print(f"INGRESS:    {_ingress_url(env_map)}")
+    print(f"Порты:      self-authed {env_map.get('SELF_AUTHED_PORTS', '')}; allowed {env_map.get('ALLOWED_PORTS', '')}")
+    print(f"Preview:    {env_map.get('PREVIEW_ORIGIN', '')}")
     if not full:
         print("--- чат-блок (маскированный) ---")
     print(tokens.chat_block(env_map, _ingress_url(env_map), full))
@@ -241,8 +258,12 @@ def _issue_tokens() -> int:
     if active:
         profile_path = PROJECTS_DIR / f"{active}.json"
         if profile_path.exists():
-            profile = _with_runner(profiles.load(profile_path), active)
-            procman.restart_host_services(profile, active, HOME_DIR, env_map.get("MCP_PUBLIC_TOKEN", ""))
+            try:
+                profile = _with_runner(profiles.load(profile_path), active)
+            except (ValueError, OSError) as error:
+                print(f"profile error: {error}", file=sys.stderr)
+            else:
+                procman.restart_host_services(profile, active, HOME_DIR, env_map.get("MCP_PUBLIC_TOKEN", ""))
     procman.stop_ingress()
     procman.start_ingress(_ingress_env(env_map), HOME_DIR, hostos.tempdir() / "rdm-ingress")
     print(tokens.chat_block(env_map, _ingress_url(env_map), True))

@@ -161,5 +161,7 @@ def responder(conn, method: bytes, path: bytes, pairs: list[tuple[bytes, bytes]]
             + b"\r\nConnection: close\r\n\r\n"
             + body
         )
+    elif path.endswith(b"/truncated"):
+        conn.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 10\r\nConnection: close\r\n\r\nabc")
     else:
         conn.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok")

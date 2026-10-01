@@ -36,18 +36,18 @@ class Config:
     target_port: int = 0
 
 
-def _read_body(sock, carry: bytes, length: int) -> tuple[bytes, bytes]:
+def _read_body(sock, carry: bytes, length: int) -> tuple[bytes, bytes, bool]:
     body = carry[:length]
     carry = carry[length:]
     while len(body) < length:
         try:
             chunk = sock.recv(min(65536, length - len(body)))
         except OSError:
-            break
+            return body, b"", False
         if not chunk:
-            break
+            return body, b"", False
         body += chunk
-    return body, carry
+    return body, carry, True
 
 
 class ProxyServer(socketserver.ThreadingTCPServer):
@@ -153,7 +153,10 @@ class _Handler(socketserver.BaseRequestHandler):
                     sock.sendall(b"HTTP/1.1 100 Continue\r\n\r\n")
                 except OSError:
                     return False
-            body, carry = _read_body(sock, carry, decision.content_length)
+            body, carry, complete = _read_body(sock, carry, decision.content_length)
+            if not complete:
+                self._simple(400)
+                return False
         else:
             body = b""
         self._carry = carry
@@ -261,7 +264,8 @@ class _Handler(socketserver.BaseRequestHandler):
                 if response.chunked:
                     self._stream_chunked(sock, response)
                 elif response.length is not None:
-                    self._stream_length(sock, response)
+                    if self._stream_length(sock, response) != response.length:
+                        return False
                 else:
                     self._stream_eof(sock, response)
         except OSError:
@@ -269,14 +273,17 @@ class _Handler(socketserver.BaseRequestHandler):
         return not close
 
     @staticmethod
-    def _stream_length(sock, response) -> None:
+    def _stream_length(sock, response) -> int:
         remaining = response.length or 0
+        sent = 0
         while remaining > 0:
             chunk = response.read1(min(65536, remaining))
             if not chunk:
                 break
             sock.sendall(chunk)
+            sent += len(chunk)
             remaining -= len(chunk)
+        return sent
 
     @staticmethod
     def _stream_chunked(sock, response) -> None:

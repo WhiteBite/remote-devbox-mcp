@@ -94,10 +94,11 @@ def run(env_map: dict[str, str], compose_file: str | None = None, prober=None) -
         problems = [p for p in profiles.validate(profiles.load(profile_path)) if not p.startswith("WARN")]
         report.check("profile validation", not problems, "; ".join(problems))
     report.check("override yml", (_HOME / "docker-compose.override.yml").exists(), "devbox.py use <имя>")
-    statuses = docker.compose_ps(compose_file)
-    report.check("toolbox healthy", "healthy" in statuses, "docker compose up -d toolbox")
+    toolbox = docker.compose("ps", "toolbox", "--format", "{{.Status}}", compose_file=compose_file).stdout
+    report.check("toolbox healthy", "healthy" in toolbox, "docker compose up -d toolbox")
     if env_map.get("VLESS_SUB_URL"):
-        report.check("vpn healthy", "healthy" in statuses, "docker compose logs vpn")
+        vpn = docker.compose("ps", "vpn", "--format", "{{.Status}}", compose_file=compose_file).stdout
+        report.check("vpn healthy", "healthy" in vpn, "docker compose logs vpn")
     ingress_pid = _first_pid(hostos.tempdir() / "rdm-ingress" / "pids.txt")
     report.check(
         "ingress pid",

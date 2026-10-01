@@ -10,7 +10,16 @@ from rdm.proxy.server import serve_ingress, serve_target
 
 
 def _ports(value: str) -> set[int]:
-    return {int(part) for part in value.split(",") if part.strip()}
+    ports: set[int] = set()
+    for part in value.split(","):
+        token = part.strip()
+        if not token:
+            continue
+        try:
+            ports.add(int(token))
+        except ValueError:
+            sys.exit(f"некорректный порт: {token!r}")
+    return ports
 
 
 def main() -> None:

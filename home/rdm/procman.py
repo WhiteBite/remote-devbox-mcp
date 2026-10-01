@@ -87,13 +87,17 @@ def restart_host_services(
         marker = " ".join(argv)
         bearer = svc.auth == "bearer"
         env = {**os.environ, "MCP_HTTP_PORT": str(svc.port + 1)} if bearer else None
-        pid = hostos.spawn(
-            argv,
-            cwd=svc.cwd or None,
-            stdout_path=log_dir / f"{profile_name}-svc{svc.port}.out",
-            stderr_path=log_dir / f"{profile_name}-svc{svc.port}.err",
-            env=env,
-        )
+        try:
+            pid = hostos.spawn(
+                argv,
+                cwd=svc.cwd or None,
+                stdout_path=log_dir / f"{profile_name}-svc{svc.port}.out",
+                stderr_path=log_dir / f"{profile_name}-svc{svc.port}.err",
+                env=env,
+            )
+        except OSError as error:
+            report.append(f"host :{svc.port} FAILED: {error}")
+            continue
         entries.append((pid, hostos.create_time(pid), marker))
         if bearer:
             proxy = proxy_argv if proxy_argv is not None else DEFAULT_PROXY_ARGV
@@ -104,13 +108,17 @@ def restart_host_services(
                 "TARGET_PORT": str(svc.port + 1),
                 "TARGET_HOST": "127.0.0.1",
             }
-            proxy_pid = hostos.spawn(
-                proxy,
-                cwd=host_dir,
-                stdout_path=log_dir / f"{profile_name}-pxy{svc.port}.out",
-                stderr_path=log_dir / f"{profile_name}-pxy{svc.port}.err",
-                env=proxy_env,
-            )
+            try:
+                proxy_pid = hostos.spawn(
+                    proxy,
+                    cwd=host_dir,
+                    stdout_path=log_dir / f"{profile_name}-pxy{svc.port}.out",
+                    stderr_path=log_dir / f"{profile_name}-pxy{svc.port}.err",
+                    env=proxy_env,
+                )
+            except OSError as error:
+                report.append(f"host :{svc.port} pid {pid} proxy FAILED: {error}")
+                continue
             entries.append((proxy_pid, hostos.create_time(proxy_pid), " ".join(proxy)))
             report.append(f"host :{svc.port} pid {pid} proxy pid {proxy_pid}")
         else:
@@ -142,7 +150,7 @@ def start_ingress(
 
 def stop_ingress() -> None:
     path = _ingress_dir(None) / "pids.txt"
-    for pid, _, _ in _read_entries(path):
-        if hostos.cmdline_matches(pid, _PROXY_MARKER):
+    for pid, recorded, _ in _read_entries(path):
+        if _owned(pid, recorded, _PROXY_MARKER):
             hostos.kill_tree(pid)
     path.unlink(missing_ok=True)
