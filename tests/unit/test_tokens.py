@@ -85,3 +85,11 @@ def test_chat_block_full_values():
     assert f"INGRESS_TOKEN={ingress}" in block
     assert "PREVIEW=https://p.example.com" in block
     assert "..." not in block
+
+
+def test_chat_block_marks_active_profile():
+    block = tokens.chat_block(
+        {"ACTIVE_PROFILE": "midasai"}, "https://x", full=True, profiles=["muffin", "midasai"]
+    )
+    assert "midasai (активный)" in block
+    assert "muffin" in block

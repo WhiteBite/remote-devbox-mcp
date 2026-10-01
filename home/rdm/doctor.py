@@ -4,18 +4,16 @@ from __future__ import annotations
 
 import json
 import pathlib
-import re
 import secrets
 import socket
 import urllib.error
 import urllib.request
 
-from rdm import docker, hostos, profiles
+from rdm import docker, hostos, profiles, tunnels
 
 _HOME = pathlib.Path(__file__).resolve().parent.parent
 _PROJECTS = _HOME.parent / "projects"
 _DEFAULT_COMPOSE = str(_HOME / "docker-compose.yml")
-_TRYCLOUDFLARE = re.compile(r"https://[a-z0-9-]+\.trycloudflare\.com")
 _BRIDGE_PORT = 8787
 _INGRESS_PORT = 8799
 
@@ -48,8 +46,7 @@ def _ingress_url(env_map: dict[str, str]) -> str:
         logs = docker.compose("logs", "cloudflared-ingress").stdout
     except OSError:
         return ""
-    matches = _TRYCLOUDFLARE.findall(logs or "")
-    return matches[-1] if matches else ""
+    return tunnels.from_logs(logs)
 
 
 def _first_pid(path: pathlib.Path) -> int | None:

@@ -53,5 +53,7 @@ def chat_block(
         "ТЗ: /workspace/ARENA_TASK.md",
     ]
     if profiles:
-        lines.append(f"Профили: {', '.join(profiles)}   # смена проекта: devbox.py start <имя>")
+        active = env_map.get("ACTIVE_PROFILE", "")
+        names = [f"{p} (активный)" if p == active else p for p in profiles]
+        lines.append(f"Профили: {', '.join(names)}   # смена проекта: devbox.py start <имя>")
     return "\n".join(lines)

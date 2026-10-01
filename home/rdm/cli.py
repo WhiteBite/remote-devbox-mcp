@@ -7,10 +7,9 @@ import dataclasses
 import json
 import os
 import pathlib
-import re
 import sys
 
-from rdm import docker, envfile, hostos, procman, profiles, ps_import, render, tokens
+from rdm import docker, envfile, hostos, procman, profiles, ps_import, render, tokens, tunnels
 
 HOME_DIR = pathlib.Path(__file__).resolve().parent.parent
 PROJECTS_DIR = HOME_DIR.parent / "projects"
@@ -22,7 +21,6 @@ MANIFEST_PATH = LOG_ROOT / "rdm-manifest.json"
 BRIDGE_PORT = 8787
 INGRESS_PORT = 8799
 DEFAULT_RUNNER_PORT = 8796
-_TRYCLOUDFLARE = re.compile(r"https://[a-z0-9-]+\.trycloudflare\.com")
 
 _READONLY = '{"write":"deny","edit":"deny","apply_patch":"deny","bash":"deny"}'
 _FULL = '{"write":"allow","edit":"allow","apply_patch":"allow","bash":"allow"}'
@@ -44,17 +42,18 @@ def _ingress_url(env_map: dict[str, str]) -> str:
         logs = docker.compose("logs", "cloudflared-ingress", compose_file=COMPOSE_FILE).stdout
     except OSError:
         return ""
-    matches = _TRYCLOUDFLARE.findall(logs or "")
-    return matches[-1] if matches else ""
+    return tunnels.from_logs(logs)
 
 
 def _preview_url(env_map: dict[str, str]) -> str:
+    public = env_map.get("PUBLIC_PREVIEW_URL")
+    if public:
+        return public
     try:
         logs = docker.compose("logs", "cloudflared-preview", compose_file=COMPOSE_FILE).stdout
     except OSError:
         return ""
-    matches = _TRYCLOUDFLARE.findall(logs or "")
-    return matches[-1] if matches else ""
+    return tunnels.from_logs(logs)
 
 
 def _available_profiles() -> list[str]:

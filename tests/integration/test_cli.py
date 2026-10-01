@@ -170,6 +170,13 @@ def test_block_and_url_subcommands(monkeypatch, tmp_path, capsys):
     assert capsys.readouterr().out.strip() == "https://devbox.example.test"
 
 
+def test_preview_url_prefers_named_tunnel(monkeypatch, tmp_path, capsys):
+    _setup(monkeypatch, tmp_path)
+    cli.ENV_FILE.write_text("PUBLIC_PREVIEW_URL=https://preview.example.test\n", encoding="utf-8")
+    assert cli.main(["url", "--preview"]) == 0
+    assert capsys.readouterr().out.strip() == "https://preview.example.test"
+
+
 def test_down_stops_host_ingress_and_tunnels(monkeypatch, tmp_path):
     _, calls = _setup(monkeypatch, tmp_path)
     cli.ENV_FILE.write_text("ACTIVE_PROFILE=p1\n", encoding="utf-8")
