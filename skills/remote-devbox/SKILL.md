@@ -49,8 +49,7 @@ If any of these are missing, ask — do not invent them.
    A single `530` is normal (tunnel reconnecting); on persistent `530/1033`
    wait 2-3 min, retry once, then stop and report to the user.
 4. Read `arena/AGENT_INSTRUCTIONS.md` (full rules) and `arena/SANDBOX_FACTS.md`
-   (measured facts about your sandbox). The task spec lives in the project at
-   `/workspace/ARENA_TASK.md`.
+   (measured facts about your sandbox). The task comes from the user in the chat.
 
 ## Client commands
 
@@ -81,10 +80,9 @@ Mutations (`write/edit/apply_patch/bash/webfetch`) default to
 
 ## Task convention
 
-The task normally arrives **in the chat** from the user. If the project has
-`/workspace/ARENA_TASK.md`, read it first, before any plan. To frame work
-yourself, use `arena/ARENA_TASK.template.md` (goal, scope, acceptance criteria,
-verification procedure, what not to touch). Do not invent the task.
+The task arrives **in the chat** from the user. Read it before any plan; never
+invent it. Expect: goal, scope, acceptance criteria, verification procedure,
+what not to touch.
 
 ## Exit codes
 

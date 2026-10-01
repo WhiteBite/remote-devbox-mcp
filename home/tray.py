@@ -203,12 +203,12 @@ def _start(icon, profile: str) -> None:
         return
 
     def work() -> None:
-        _notify(icon, f"поднимаю {profile}… (может занять минуту)")
+        _notify(icon, f"поднимаю стек {profile}… (может занять минуту)")
         result = _devbox("start", profile, "--preview", timeout=600)
         copied = _copy_block_silent(True)
         healthy = _devbox("health", timeout=30).returncode == 0
         if result.returncode == 0 and healthy and copied:
-            _notify(icon, f"готово: {profile} поднят, блок агенту в буфере")
+            _notify(icon, f"готово: стек {profile} поднят, блок агенту в буфере")
         elif result.returncode != 0:
             line = (result.stderr.strip().splitlines() or ["без вывода"])[-1]
             _notify(icon, f"{profile}: не поднялся — {line[:150]}")
@@ -216,10 +216,6 @@ def _start(icon, profile: str) -> None:
             _notify(icon, f"{profile}: стек не healthy — проверь логи/доктора")
 
     _background(icon, work)
-
-
-def _deliver_current(icon, item) -> None:
-    _start(icon, _active())
 
 
 def _stop_all(icon) -> None:
@@ -331,7 +327,8 @@ def _build_menu():
     return pystray.Menu(
         pystray.MenuItem(lambda i: f"remote-devbox — {_active() or 'нет профиля'} · {_status_text}", None, enabled=False),
         pystray.Menu.SEPARATOR,
-        pystray.MenuItem("Отдать проект агенту (запуск + блок)", _deliver_current, default=True),
+        pystray.MenuItem("Скопировать блок агенту", lambda i, it: _copy_block(i), default=True),
+        pystray.MenuItem("Поднять стек (если не поднят)", lambda i, it: _start(i, _active())),
         pystray.MenuItem("Другой профиль", start_menu),
         pystray.MenuItem("Скопировать блок ещё раз", lambda i, it: _copy_block(i)),
         pystray.MenuItem("Скопировать маскированный", lambda i, it: _copy_block(i, full=False)),

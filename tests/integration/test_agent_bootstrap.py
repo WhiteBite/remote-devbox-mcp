@@ -15,7 +15,6 @@ REQUIRED = [
     "arena/mcp_client.py",
     "arena/mcp",
     "arena/mcp.conf.example",
-    "arena/ARENA_TASK.template.md",
     "skills/remote-devbox/SKILL.md",
 ]
 
@@ -37,12 +36,6 @@ def test_entrypoints_link_the_skill():
     for rel in ("README.md", "ARENA.md"):
         text = (REPO / rel).read_text(encoding="utf-8")
         assert "skills/remote-devbox/SKILL.md" in text
-
-
-def test_task_template_has_sections():
-    text = (REPO / "arena/ARENA_TASK.template.md").read_text(encoding="utf-8")
-    for heading in ("## Цель", "## Scope", "## Критерии приёмки", "## Процедура проверки", "## Что не трогать"):
-        assert heading in text
 
 
 def test_mcp_client_is_stdlib_only():

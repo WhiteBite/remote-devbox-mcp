@@ -53,7 +53,7 @@ def chat_block(
         lines.append(f"UI={ingress_url}/p/{ui_port}/   # открой своим Playwright (Bearer INGRESS_TOKEN)")
     lines += [
         "Эндпоинты и порты: GET <INGRESS>/p/9000/manifest.json (Bearer INGRESS_TOKEN)",
-        "ТЗ: в чате (или /workspace/ARENA_TASK.md, если есть)",
+        "Задача: в чате",
     ]
     if profiles:
         active = env_map.get("ACTIVE_PROFILE", "")
