@@ -23,5 +23,5 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: npx --yes repo-aeo@^0.2.0 audit --format github-comment --online --out rdk-comment.md
-      - run: npx --yes repo-aeo@^0.2.0 audit --format json --online --out rdk-report.json --min-score "${{ github.event.inputs.min_score || vars.RDK_MIN_SCORE || 0 }}"
+      - run: npx --yes repo-aeo@^0.3.0 audit --format github-comment --online --out rdk-comment.md
+      - run: npx --yes repo-aeo@^0.3.0 audit --format json --online --out rdk-report.json --min-score "${{ github.event.inputs.min_score || vars.RDK_MIN_SCORE || 0 }}"
