@@ -10,6 +10,7 @@ from __future__ import annotations
 import ctypes
 import os
 import pathlib
+import socket
 import subprocess
 import sys
 import threading
@@ -113,6 +114,17 @@ def _open_ui(icon, item) -> None:
         webbrowser.open(f"http://127.0.0.1:{port}/")
     else:
         _notify(icon, "у профиля не задан ui_port (см. projects/<имя>.json)")
+
+
+def _ui_listening() -> str:
+    port = _ui_port()
+    if not port.isdigit():
+        return "n/a"
+    try:
+        with socket.create_connection(("127.0.0.1", int(port)), timeout=1):
+            return "up"
+    except OSError:
+        return "down"
 
 
 def _icon_rgb(kind: str):
@@ -265,7 +277,7 @@ def _status_loop(icon) -> None:
         except Exception:
             code = 1
         icon.icon = _icon_rgb("ok" if code == 0 else "bad")
-        _status_text = "healthy" if code == 0 else "problems"
+        _status_text = f"stack {'healthy' if code == 0 else 'problems'}, UI {_ui_listening()}"
         icon.title = f"remote-devbox — {_active() or 'нет профиля'} ({_status_text})"
         _stop.wait(STATUS_INTERVAL)
 
