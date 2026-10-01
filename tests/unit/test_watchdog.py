@@ -13,7 +13,7 @@ def _wire(monkeypatch, tmp_path, dead=False):
     calls: dict[str, list] = {"compose": [], "restart": []}
     monkeypatch.setattr(watchdog, "_PROJECTS", projects)
     monkeypatch.setattr(watchdog, "_ingress_url", lambda env_map: "https://x")
-    monkeypatch.setattr(watchdog, "_host_services_dead", lambda active: dead)
+    monkeypatch.setattr(watchdog.procman, "host_services_dead", lambda active: dead)
     monkeypatch.setattr(watchdog.docker, "compose", lambda *a, **k: calls["compose"].append(a) or subprocess.CompletedProcess(["docker"], 0, stdout="", stderr=""))
     monkeypatch.setattr(watchdog.docker, "compose_ps", lambda *a, **k: "rdm-toolbox healthy")
     monkeypatch.setattr(watchdog.procman, "restart_host_services", lambda *a, **k: calls["restart"].append(a) or [])

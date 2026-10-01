@@ -139,6 +139,19 @@ def test_restart_frees_port_held_by_orphan_runner(monkeypatch, tmp_path):
         hostos.kill_tree(orphan)
 
 
+def test_host_services_dead_uses_create_time_fallback(monkeypatch, tmp_path):
+    _isolate_tempdir(monkeypatch, tmp_path)
+    pid = hostos.spawn([sys.executable, "-c", SLEEP_60])
+    path = _pids_file("ct")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"{pid}|{hostos.create_time(pid)}|marker-that-never-matches\n", encoding="utf-8")
+    try:
+        assert not procman.host_services_dead("ct")
+    finally:
+        hostos.kill_tree(pid)
+    assert _wait_until(lambda: procman.host_services_dead("ct"))
+
+
 def test_missing_pidfile_is_noop(monkeypatch, tmp_path):
     _isolate_tempdir(monkeypatch, tmp_path)
     assert procman.stop_host_services("never-started") is None

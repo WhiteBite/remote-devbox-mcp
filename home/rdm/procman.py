@@ -80,6 +80,14 @@ def stop_host_services(profile_name: str) -> None:
     path.unlink(missing_ok=True)
 
 
+def host_services_dead(profile_name: str) -> bool:
+    path = _pids_path(profile_name)
+    for pid, recorded, marker in _read_entries(path):
+        if not _owned(pid, recorded, marker):
+            return True
+    return False
+
+
 def restart_host_services(
     profile: Profile,
     profile_name: str,

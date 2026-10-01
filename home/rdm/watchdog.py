@@ -16,22 +16,6 @@ START_DELAY = 15.0
 RECREATE_DELAY = 30.0
 
 
-def _host_services_dead(active: str) -> bool:
-    path = hostos.tempdir() / "rdm-host" / f"{active}-pids.txt"
-    try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-    except FileNotFoundError:
-        return False
-    for line in lines:
-        fields = line.split("|", 2)
-        if not fields or not fields[0].isdigit():
-            continue
-        marker = fields[2] if len(fields) > 2 else ""
-        if not hostos.cmdline_matches(int(fields[0]), marker):
-            return True
-    return False
-
-
 def _log(path: pathlib.Path, message: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "a", encoding="utf-8") as handle:
@@ -65,7 +49,7 @@ def run(
                 fails = 0
                 if iterations is None:
                     time.sleep(RECREATE_DELAY)
-            if active and _host_services_dead(active):
+            if active and procman.host_services_dead(active):
                 _log(log_path, "host services dead: restart")
                 profile_path = _PROJECTS / f"{active}.json"
                 if profile_path.exists():
