@@ -105,6 +105,32 @@ def _emit_agent_artifacts(profile: profiles.Profile, name: str, allowed: str) ->
     )
 
 
+def _start_gitleaks(profile: profiles.Profile, name: str) -> None:
+    if os.environ.get("SKIP_GITLEAKS"):
+        return
+    LOG_ROOT.mkdir(parents=True, exist_ok=True)
+    source = profile.project_dir.replace("\\", "/")
+    config = str(HOME_DIR / "docker" / "gitleaks.toml").replace("\\", "/")
+    out = str(LOG_ROOT).replace("\\", "/")
+    argv = [
+        "docker", "run", "--rm",
+        "-v", f"{source}:/src:ro",
+        "-v", f"{config}:/cfg.toml:ro",
+        "-v", f"{out}:/out",
+        "zricethezav/gitleaks", "detect", "--source", "/src", "--no-git",
+        "--config", "/cfg.toml", "--report-format", "json",
+        "--report-path", f"/out/gitleaks-{name}.json", "--exit-code", "0",
+    ]
+    try:
+        hostos.spawn(
+            argv,
+            stdout_path=LOG_ROOT / f"gitleaks-{name}.out",
+            stderr_path=LOG_ROOT / f"gitleaks-{name}.err",
+        )
+    except OSError:
+        pass
+
+
 def apply_use(name: str) -> int:
     path = PROJECTS_DIR / f"{name}.json"
     if not path.exists():
@@ -161,6 +187,7 @@ def apply_use(name: str) -> int:
     procman.start_ingress(_ingress_env(env_map), HOME_DIR, hostos.tempdir() / "rdm-ingress")
     docker.compose("up", "-d", "--force-recreate", "toolbox", compose_file=COMPOSE_FILE)
     _emit_agent_artifacts(profile, name, allowed_text)
+    _start_gitleaks(profile, name)
     print(f"профиль {name} применён; тулчейны ставятся при старте toolbox")
     return 0
 

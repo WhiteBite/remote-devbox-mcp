@@ -72,7 +72,7 @@ def test_setup_script_is_lf_and_marked():
     first = hashlib.md5(b"echo onemuffin").hexdigest()
     second = hashlib.md5(b"echo twom2muffin").hexdigest()
     assert script == (
-        "# generated: devbox.ps1 use muffin\n"
+        "# generated: devbox.py use muffin\n"
         f"if [ ! -f /opt/tools/.setup-1-{first} ]; then\n"
         "  echo one || echo '[setup] WARN: cmd 1 failed, continue'\n"
         f"  touch /opt/tools/.setup-1-{first}\n"
@@ -140,7 +140,7 @@ def test_agents_md_sections():
     text = render_agents_md(PROFILE, "muffin", "java21 flutter:3.44.9", "standard", "8765,8080")
 
     assert text == (
-        "<!-- auto-generated: devbox.ps1 use muffin -->\n"
+        "<!-- auto-generated: devbox.py use muffin -->\n"
         "## Environment\n"
         "- profile: muffin; project: d:/Sources/StartUp/Muffin\n"
         "- toolchain: java21 flutter:3.44.9\n"

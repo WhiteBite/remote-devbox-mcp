@@ -34,7 +34,7 @@ def _setup(monkeypatch, tmp_path):
     monkeypatch.setattr(cli, "COMPOSE_FILE", str(tmp_path / "docker-compose.yml"))
     (tmp_path / "proj").mkdir()
 
-    calls: dict[str, list] = {"compose": [], "restart": [], "stop": [], "ingress": [], "docker_run": []}
+    calls: dict[str, list] = {"compose": [], "restart": [], "stop": [], "ingress": [], "docker_run": [], "gitleaks": []}
 
     def fake_compose(*args, **kwargs):
         calls["compose"].append(args)
@@ -47,6 +47,7 @@ def _setup(monkeypatch, tmp_path):
     monkeypatch.setattr(cli.procman, "stop_host_services", lambda *a, **k: calls["stop"].append(a))
     monkeypatch.setattr(cli.procman, "stop_ingress", lambda *a, **k: calls["ingress"].append("stop"))
     monkeypatch.setattr(cli.procman, "start_ingress", lambda *a, **k: calls["ingress"].append("start") or 1)
+    monkeypatch.setattr(cli, "_start_gitleaks", lambda *a, **k: calls["gitleaks"].append(a))
     return projects, calls
 
 

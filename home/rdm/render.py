@@ -22,7 +22,7 @@ def render_override(profile: Profile) -> str:
 
 
 def build_setup_script(profile: Profile, profile_name: str) -> str:
-    parts = [f"# generated: devbox.ps1 use {profile_name}\n"]
+    parts = [f"# generated: devbox.py use {profile_name}\n"]
     for index, setup in enumerate(profile.setup_cmds, 1):
         digest = hashlib.md5(f"{setup.cmd}{setup.marker}{profile_name}".encode("utf-8")).hexdigest()
         marker = f"/opt/tools/.setup-{index}-{digest}"
@@ -75,7 +75,7 @@ def render_agents_md(
     script_lines = [f"- run_script_{script.name}: {script.description}" for script in profile.scripts]
     return "\n".join(
         [
-            f"<!-- auto-generated: devbox.ps1 use {profile_name} -->",
+            f"<!-- auto-generated: devbox.py use {profile_name} -->",
             "## Environment",
             f"- profile: {profile_name}; project: {profile.project_dir}",
             f"- toolchain: {toolchain}",
