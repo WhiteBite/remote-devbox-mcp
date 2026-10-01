@@ -5,10 +5,11 @@ from rdm.ps_import import parse_profile_ps1
 
 REPO = Path(__file__).resolve().parents[2]
 PROJECTS = REPO / "projects"
+FIXTURES = REPO / "tests" / "fixtures"
 
 
 def test_ps_import_muffin_roundtrip():
-    parsed = parse_profile_ps1((PROJECTS / "muffin.ps1").read_text(encoding="utf-8"))
+    parsed = parse_profile_ps1((FIXTURES / "muffin.ps1").read_text(encoding="utf-8"))
     expected = json.loads((PROJECTS / "muffin.json").read_text(encoding="utf-8"))
 
     assert parsed == expected

@@ -33,6 +33,8 @@ MCP_TOKEN=<тот же, что MCP_BEARER_TOKEN в .env>
 MCP_TIMEOUT=300
 ```
 
+Каталог состояния (джобы, картинки) — `<tmp>/rdm-arena`, переопределяется `RDM_ARENA_STATE_DIR`.
+
 ## Чем агент пользуется
 
 ```bash

@@ -43,10 +43,11 @@ quickstart:
     - "Python 3.10+"
     - "Docker Desktop (Windows)"
   install: "git clone https://github.com/WhiteBite/remote-devbox-mcp; in home/: copy .env.example .env and fill PROJECT_DIR + tokens"
-  run: "from home/: .\\devbox.ps1 use <profile>; docker compose up -d; agent side: cd arena && ./mcp check"
+  run: "from home/: python devbox.py use <profile>; docker compose up -d; agent side: cd arena && ./mcp check"
   test: "python -m pip install -r requirements-dev.txt; python -m pytest"
 
 artifacts:
+  has_npm_package: false
   has_docs_site: false
 
 differentiators:

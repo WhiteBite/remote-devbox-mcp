@@ -444,15 +444,21 @@ def print_tools(tools: list[dict]):
 # Адаптивные ожидания
 # ──────────────────────────────────────────────────────────────────────
 
+_WAIT_MIN = 30
+_WAIT_MAX = 50
+_POLLS_MIN = 20
+_POLLS_SAFETY = 1.5
+
+
 def resolve_wait(s: str) -> int:
     if s == "auto":
-        return min(50, max(30, int(os.environ.get("JOB_TIMEOUT_SECONDS", "1800")) // 40))
+        return min(_WAIT_MAX, max(_WAIT_MIN, int(os.environ.get("JOB_TIMEOUT_SECONDS", "1800")) // 40))
     return int(s)
 
 
 def resolve_polls(s: str, wait: int) -> int:
     if s == "auto":
-        return max(20, int(int(os.environ.get("JOB_TIMEOUT_SECONDS", "1800")) / wait * 1.5))
+        return max(_POLLS_MIN, int(int(os.environ.get("JOB_TIMEOUT_SECONDS", "1800")) / wait * _POLLS_SAFETY))
     return int(s)
 
 
