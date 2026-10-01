@@ -86,6 +86,35 @@ def _clipboard(text: str) -> bool:
     return True
 
 
+def _clipboard_read() -> str:
+    if sys.platform != "win32":
+        return ""
+    from ctypes import wintypes
+
+    cf_unicodetext = 13
+    kernel32, user32 = ctypes.windll.kernel32, ctypes.windll.user32
+    user32.GetClipboardData.restype = wintypes.HANDLE
+    user32.GetClipboardData.argtypes = [wintypes.UINT]
+    kernel32.GlobalLock.restype = ctypes.c_void_p
+    kernel32.GlobalLock.argtypes = [wintypes.HGLOBAL]
+    kernel32.GlobalUnlock.argtypes = [wintypes.HGLOBAL]
+    if not user32.OpenClipboard(None):
+        return ""
+    try:
+        handle = user32.GetClipboardData(cf_unicodetext)
+        if not handle:
+            return ""
+        ptr = kernel32.GlobalLock(handle)
+        if not ptr:
+            return ""
+        try:
+            return ctypes.wstring_at(ptr)
+        finally:
+            kernel32.GlobalUnlock(handle)
+    finally:
+        user32.CloseClipboard()
+
+
 def _active() -> str:
     return envfile.EnvFile.load(ENV_FILE).as_map().get("ACTIVE_PROFILE", "")
 

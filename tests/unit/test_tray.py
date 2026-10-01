@@ -39,4 +39,8 @@ def test_tray_clipboard_does_not_crash():
     module = _load()
     if sys.platform != "win32":
         pytest.skip("clipboard is Windows-only")
-    assert module._clipboard("rdm clipboard regression") in (True, False)
+    previous = module._clipboard_read()
+    try:
+        assert module._clipboard("rdm clipboard regression") in (True, False)
+    finally:
+        module._clipboard(previous)

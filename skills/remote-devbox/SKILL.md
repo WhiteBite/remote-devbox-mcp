@@ -16,6 +16,11 @@ description: >-
 Turn the user's machine into your build/test host. You keep the brain; their
 machine only executes tools (no LLM, no agent on their side).
 
+One devbox runs exactly **one project at a time**: only the active profile's
+folder is mounted at `/workspace`. The `Профили:` line in the hand-off is a list
+for switching (the user runs `devbox.py start <name>`) — you cannot work on two
+projects simultaneously, and you never see other projects' files.
+
 ## What you get
 
 A bridge exposing OpenCode-native tools over the tunnel:
