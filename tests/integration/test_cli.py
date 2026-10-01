@@ -200,3 +200,15 @@ def test_start_preview_skipped_with_named_preview(monkeypatch, tmp_path):
     (projects / "p1.json").write_text(_profile_json(tmp_path), encoding="utf-8")
     assert cli.main(["start", "p1", "--preview"]) == 0
     assert not any("--profile" in args for args in calls["compose"])
+
+
+def test_allow_opens_port_and_sets_ui(monkeypatch, tmp_path):
+    projects, calls = _setup(monkeypatch, tmp_path)
+    cli.ENV_FILE.write_text("ACTIVE_PROFILE=p1\n", encoding="utf-8")
+    (projects / "p1.json").write_text(_profile_json(tmp_path), encoding="utf-8")
+    assert cli.main(["allow", "12345", "--ui"]) == 0
+    data = json.loads((projects / "p1.json").read_text(encoding="utf-8"))
+    assert 12345 in data["allowed_ports"]
+    assert data["ui_port"] == 12345
+    assert "12345" in cli.ENV_FILE.read_text(encoding="utf-8")
+    assert "start" in calls["ingress"]

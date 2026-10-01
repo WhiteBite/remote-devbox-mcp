@@ -401,6 +401,50 @@ def _health() -> int:
     return 0 if ("healthy" in statuses and _ingress_url(env_map)) else 1
 
 
+def _allow(port: int, ui: bool) -> int:
+    env = envfile.EnvFile.load(ENV_FILE)
+    active = env.get("ACTIVE_PROFILE")
+    if not active:
+        print("нет активного профиля", file=sys.stderr)
+        return 1
+    path = PROJECTS_DIR / f"{active}.json"
+    if not path.exists():
+        print(f"нет профиля {path}", file=sys.stderr)
+        return 1
+    data = json.loads(path.read_text(encoding="utf-8"))
+    allowed = {int(p) for p in (data.get("allowed_ports") or [])}
+    allowed.add(port)
+    data["allowed_ports"] = sorted(allowed)
+    if ui:
+        data["ui_port"] = port
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    profile = profiles.load(path)
+    bearer_ports = [service.port for service in profile.host_services if service.auth == "bearer"]
+    self_authed = {BRIDGE_PORT, *bearer_ports}
+    allowed_all = set(profile.allowed_ports)
+    allowed_all |= {service.port for service in profile.host_services if service.auth != "bearer"}
+    allowed_all |= {command.port for command in profile.runner_commands if command.port}
+    env.set("SELF_AUTHED_PORTS", ",".join(str(p) for p in sorted(self_authed)))
+    env.set("ALLOWED_PORTS", ",".join(str(p) for p in sorted(allowed_all)))
+    if ui:
+        env.set("UI_PORT", str(port))
+    env.write(ENV_FILE)
+    LOG_ROOT.mkdir(parents=True, exist_ok=True)
+    env_map = env.as_map()
+    MANIFEST_PATH.write_text(
+        json.dumps(
+            render.build_manifest(profile, active, _ingress_url(env_map), profile.mode, sorted(allowed_all), self_authed),
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    procman.stop_ingress()
+    procman.start_ingress(_ingress_env(env_map), HOME_DIR, hostos.tempdir() / "rdm-ingress")
+    print(f"{active}: порт {port} открыт" + (" как UI" if ui else ""))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="devbox")
     sub = parser.add_subparsers(dest="command")
@@ -429,6 +473,9 @@ def main(argv: list[str] | None = None) -> int:
     url.add_argument("--preview", action="store_true")
     sub.add_parser("down")
     sub.add_parser("health")
+    allow = sub.add_parser("allow")
+    allow.add_argument("port", type=int)
+    allow.add_argument("--ui", action="store_true")
     args = parser.parse_args(argv)
 
     if args.command == "use":
@@ -461,4 +508,6 @@ def main(argv: list[str] | None = None) -> int:
         return _down()
     if args.command == "health":
         return _health()
+    if args.command == "allow":
+        return _allow(args.port, args.ui)
     return _status()

@@ -242,6 +242,7 @@ Ingress rout'ит только порты из `$AllowedPorts` профиля + 
 - `start [<имя>] [--preview]` — поднять всё и напечатать готовый блок для агента
   (репо + скилл + INGRESS + токены + PREVIEW); `--preview` поднимает preview-туннель.
 - `preview <origin>` — вывести dev-сервер root-URL без токена (для playwright).
+- `allow <порт> [--ui]` — открыть порт агентy через ingress (добавляет в `allowed_ports` профиля и перезапускает ingress); `--ui` ещё и делает его UI-портом (`UI=` в блоке).
 - `doctor` — проверка всей цепи PASS/FAIL с хинтами; exit-code для скриптов.
 - `watch` — watchdog-цикл: флап туннеля → auto-recreate ingress, смерть
   host-сервисов/раннера → рестарт с бэкoff; логи `%TEMP%\rdm-watchdog\`.
