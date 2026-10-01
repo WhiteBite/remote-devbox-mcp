@@ -91,18 +91,16 @@ EOF
 
 ```
 Репозиторий: https://github.com/WhiteBite/remote-devbox-mcp
-Загрузи скилл: https://github.com/WhiteBite/remote-devbox-mcp/blob/main/skills/remote-devbox/SKILL.md
-Работай по инструкции: https://github.com/WhiteBite/remote-devbox-mcp/blob/main/ARENA.md
+Скилл + инструкция: https://github.com/WhiteBite/remote-devbox-mcp/blob/main/skills/remote-devbox/SKILL.md , https://github.com/WhiteBite/remote-devbox-mcp/blob/main/ARENA.md
 INGRESS=https://<актуальный>.trycloudflare.com   # или PUBLIC_URL при именованном туннеле
-BRIDGE_TOKEN=<MCP_BEARER_TOKEN из home/.env>
-HOST_TOKEN=<MCP_PUBLIC_TOKEN из home/.env>       # если в ТЗ есть host-MCP
-INGRESS_TOKEN=<INGRESS_TOKEN из home/.env>
-UI=<INGRESS>/p/<порт>/                           # UI приложения для playwright (Bearer INGRESS_TOKEN)
-PREVIEW=<preview-URL>                            # если поднят preview-туннель
-Задача: в чате
+BRIDGE_TOKEN=<MCP_BEARER_TOKEN из home/.env>  # /p/8787/mcp — код: read/edit/write/bash
+INGRESS_TOKEN=<INGRESS_TOKEN из home/.env>    # UI и прочие порты (Authorization: Bearer)
+UI=<INGRESS>/p/<порт>/                        # UI приложения для playwright (Bearer INGRESS_TOKEN)
+PREVIEW=<preview-URL>                         # если поднят preview-туннель
+HOST_TOKEN=<MCP_PUBLIC_TOKEN из home/.env>    # runner, только если у проекта есть runner-команды
 ```
 
-Эндпоинты и порты: GET <INGRESS>/p/9000/manifest.json с заголовком Authorization: Bearer <INGRESS_TOKEN> — машиночитаемый список эндпоинтов, портов и команд раннера; не перечисляй порты вручную.
+Реестр эндпоинтов: GET <INGRESS>/p/9000/manifest.json с заголовком Authorization: Bearer <INGRESS_TOKEN> — машиночитаемый список эндпоинтов, портов и команд раннера; не перечисляй порты вручную.
 
 Актуальный INGRESS: `docker compose logs cloudflared-ingress | Select-String trycloudflare`
 из папки `home\` на машине пользователя.

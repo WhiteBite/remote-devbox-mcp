@@ -17,9 +17,9 @@ Turn the user's machine into your build/test host. You keep the brain; their
 machine only executes tools (no LLM, no agent on their side).
 
 One devbox runs exactly **one project at a time**: only the active profile's
-folder is mounted at `/workspace`. The `Профили:` line in the hand-off is a list
-for switching (the user runs `devbox.py start <name>`) — you cannot work on two
-projects simultaneously, and you never see other projects' files.
+folder is mounted at `/workspace`. You work on that single project, you never
+see other projects' files, and you do not switch projects — that is the user's
+host-side action.
 
 ## What you get
 
@@ -33,8 +33,8 @@ permission protocol. You call them through a stdlib-only Python client
 - a repository link: `https://github.com/WhiteBite/remote-devbox-mcp`
 - `INGRESS` — the public base URL (e.g. `https://xxxx.trycloudflare.com`)
 - `BRIDGE_TOKEN` — equals `MCP_BEARER_TOKEN`
-- optionally `HOST_TOKEN` (== `MCP_PUBLIC_TOKEN`) and extra endpoints for
-  host-MCP / runner-MCP
+- optionally `HOST_TOKEN` (== `MCP_PUBLIC_TOKEN`), present only when the project
+  exposes a runner/host-MCP; used to call its `run_*` commands
 
 If any of these are missing, ask — do not invent them.
 

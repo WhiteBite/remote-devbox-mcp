@@ -55,18 +55,16 @@ def test_chat_block_masks_when_not_full():
     lines = block.splitlines()
     assert lines[0] == "Репозиторий: https://github.com/WhiteBite/remote-devbox-mcp"
     assert lines[1] == (
-        "Загрузи скилл: "
+        "Скилл + инструкция: "
         "https://github.com/WhiteBite/remote-devbox-mcp/blob/main/skills/remote-devbox/SKILL.md"
+        " , https://github.com/WhiteBite/remote-devbox-mcp/blob/main/ARENA.md"
     )
-    assert lines[2] == (
-        "Работай по инструкции: "
-        "https://github.com/WhiteBite/remote-devbox-mcp/blob/main/ARENA.md"
-    )
-    assert lines[3] == "INGRESS=https://x.trycloudflare.com"
-    assert lines[4] == "BRIDGE_TOKEN=aaaa..." + "a" * 4
-    assert lines[5] == "HOST_TOKEN=bbbb..." + "b" * 4
-    assert lines[6] == "INGRESS_TOKEN=cccc..." + "c" * 4
-    assert lines[-1] == "Задача: в чате"
+    assert lines[2] == "INGRESS=https://x.trycloudflare.com"
+    assert lines[3] == "BRIDGE_TOKEN=aaaa...aaaa  # /p/8787/mcp — код: read/edit/write/bash"
+    assert lines[4] == "INGRESS_TOKEN=cccc...cccc  # UI и прочие порты (Authorization: Bearer)"
+    assert lines[-1] == "Реестр эндпоинтов: GET <INGRESS>/p/9000/manifest.json (Bearer INGRESS_TOKEN)"
+    assert "HOST_TOKEN" not in block
+    assert "Профили" not in block
     assert "a" * 32 not in block
 
 
@@ -79,7 +77,9 @@ def test_chat_block_full_values():
         "MCP_PUBLIC_TOKEN": public,
         "INGRESS_TOKEN": ingress,
     }
-    block = tokens.chat_block(env_map, "https://y.example.com", full=True, preview_url="https://p.example.com")
+    block = tokens.chat_block(
+        env_map, "https://y.example.com", full=True, preview_url="https://p.example.com", runner=True
+    )
     assert f"BRIDGE_TOKEN={bearer}" in block
     assert f"HOST_TOKEN={public}" in block
     assert f"INGRESS_TOKEN={ingress}" in block
@@ -87,12 +87,12 @@ def test_chat_block_full_values():
     assert "..." not in block
 
 
-def test_chat_block_marks_active_profile():
-    block = tokens.chat_block(
-        {"ACTIVE_PROFILE": "midasai"}, "https://x", full=True, profiles=["muffin", "midasai"]
-    )
-    assert "midasai (активный)" in block
-    assert "muffin" in block
+def test_chat_block_includes_host_token_only_with_runner():
+    env_map = {"MCP_PUBLIC_TOKEN": "b" * 32}
+    without = tokens.chat_block(env_map, "https://x", full=True)
+    with_runner = tokens.chat_block(env_map, "https://x", full=True, runner=True)
+    assert "HOST_TOKEN" not in without
+    assert "HOST_TOKEN=" + "b" * 32 in with_runner
 
 
 def test_chat_block_includes_ui_url():

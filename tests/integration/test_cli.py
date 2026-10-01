@@ -136,9 +136,9 @@ def test_start_prints_handoff_block(monkeypatch, tmp_path, capsys):
     assert cli.main(["start", "p1"]) == 0
     out = capsys.readouterr().out
     assert "Репозиторий: https://github.com/WhiteBite/remote-devbox-mcp" in out
-    assert "Загрузи скилл:" in out
+    assert "Скилл + инструкция:" in out
     assert "INGRESS=" in out and "BRIDGE_TOKEN=" in out
-    assert "Профили:" in out
+    assert "(хост) профили:" in out
 
 
 def test_start_with_preview_starts_preview_profile(monkeypatch, tmp_path):

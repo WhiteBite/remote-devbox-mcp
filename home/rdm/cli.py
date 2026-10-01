@@ -65,6 +65,17 @@ def _available_profiles() -> list[str]:
         return []
 
 
+def _active_runner(env_map: dict[str, str]) -> bool:
+    name = env_map.get("ACTIVE_PROFILE")
+    path = PROJECTS_DIR / f"{name}.json" if name else None
+    if not path or not path.exists():
+        return False
+    try:
+        return bool(profiles.load(path).runner_commands)
+    except (ValueError, OSError):
+        return False
+
+
 def _runner_json(command: profiles.RunnerCommand) -> dict[str, object]:
     return {
         "name": command.name,
@@ -281,9 +292,10 @@ def _chat(full: bool) -> int:
     print(f"INGRESS:    {_ingress_url(env_map)}")
     print(f"Порты:      self-authed {env_map.get('SELF_AUTHED_PORTS', '')}; allowed {env_map.get('ALLOWED_PORTS', '')}")
     print(f"Preview:    {env_map.get('PREVIEW_ORIGIN', '')}")
+    print(f"Профили:    {', '.join(_available_profiles())}")
     if not full:
         print("--- чат-блок (маскированный) ---")
-    print(tokens.chat_block(env_map, _ingress_url(env_map), full, _preview_url(env_map), _available_profiles()))
+    print(tokens.chat_block(env_map, _ingress_url(env_map), full, _preview_url(env_map), _active_runner(env_map)))
     return 0
 
 
@@ -305,8 +317,9 @@ def _start(name: str | None, with_preview: bool) -> int:
             docker.compose("stop", "cloudflared-preview", compose_file=COMPOSE_FILE)
     print()
     print("=== Скопируй агенту (arena.ai и любой агентский сайт) ===")
-    print(tokens.chat_block(env_map, _ingress_url(env_map), True, _preview_url(env_map), _available_profiles()))
+    print(tokens.chat_block(env_map, _ingress_url(env_map), True, _preview_url(env_map), _active_runner(env_map)))
     print("=== Затем напиши задачу. ===")
+    print(f"(хост) профили: {', '.join(_available_profiles())}")
     return 0
 
 
@@ -343,7 +356,7 @@ def _issue_tokens() -> int:
                 procman.restart_host_services(profile, active, HOME_DIR, env_map.get("MCP_PUBLIC_TOKEN", ""))
     procman.stop_ingress()
     procman.start_ingress(_ingress_env(env_map), HOME_DIR, hostos.tempdir() / "rdm-ingress")
-    print(tokens.chat_block(env_map, _ingress_url(env_map), True, _preview_url(env_map), _available_profiles()))
+    print(tokens.chat_block(env_map, _ingress_url(env_map), True, _preview_url(env_map), _active_runner(env_map)))
     return 0
 
 
@@ -377,7 +390,7 @@ def _ingress(action: str) -> int:
 
 def _block(masked: bool) -> int:
     env_map = envfile.EnvFile.load(ENV_FILE).as_map()
-    print(tokens.chat_block(env_map, _ingress_url(env_map), not masked, _preview_url(env_map), _available_profiles()))
+    print(tokens.chat_block(env_map, _ingress_url(env_map), not masked, _preview_url(env_map), _active_runner(env_map)))
     return 0
 
 

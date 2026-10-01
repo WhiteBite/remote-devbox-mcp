@@ -32,31 +32,28 @@ def chat_block(
     ingress_url: str,
     full: bool,
     preview_url: str = "",
-    profiles: list[str] | None = None,
+    runner: bool = False,
 ) -> str:
     def show(token: str) -> str:
         return token if full else mask(token)
 
+    bridge = show(env_map.get("MCP_BEARER_TOKEN", ""))
+    ingress_token = show(env_map.get("INGRESS_TOKEN", ""))
     lines = [
         f"Репозиторий: {_REPO_URL}",
-        f"Загрузи скилл: {_SKILL_URL}",
-        f"Работай по инструкции: {_INSTRUCTION_URL}",
+        f"Скилл + инструкция: {_SKILL_URL} , {_INSTRUCTION_URL}",
         f"INGRESS={ingress_url}",
-        f"BRIDGE_TOKEN={show(env_map.get('MCP_BEARER_TOKEN', ''))}",
-        f"HOST_TOKEN={show(env_map.get('MCP_PUBLIC_TOKEN', ''))}",
-        f"INGRESS_TOKEN={show(env_map.get('INGRESS_TOKEN', ''))}",
+        f"BRIDGE_TOKEN={bridge}  # /p/8787/mcp — код: read/edit/write/bash",
+        f"INGRESS_TOKEN={ingress_token}  # UI и прочие порты (Authorization: Bearer)",
     ]
     if preview_url:
-        lines.append(f"PREVIEW={preview_url}   # UI для playwright (root URL, без токена)")
+        lines.append(f"PREVIEW={preview_url}  # UI для playwright (root URL, без токена)")
     ui_port = env_map.get("UI_PORT")
     if ui_port and ingress_url:
-        lines.append(f"UI={ingress_url}/p/{ui_port}/   # открой своим Playwright (Bearer INGRESS_TOKEN)")
-    lines += [
-        "Эндпоинты и порты: GET <INGRESS>/p/9000/manifest.json (Bearer INGRESS_TOKEN)",
-        "Задача: в чате",
-    ]
-    if profiles:
-        active = env_map.get("ACTIVE_PROFILE", "")
-        names = [f"{p} (активный)" if p == active else p for p in profiles]
-        lines.append(f"Профили: {', '.join(names)}   # смена проекта: devbox.py start <имя>")
+        lines.append(f"UI={ingress_url}/p/{ui_port}/  # открой своим Playwright (Bearer INGRESS_TOKEN)")
+    if runner:
+        host = show(env_map.get("MCP_PUBLIC_TOKEN", ""))
+        lines.append(f"HOST_TOKEN={host}  # runner: MCP_CONF=~/.mcp-runner.conf ./mcp call run_<имя>")
+    if ingress_url:
+        lines.append("Реестр эндпоинтов: GET <INGRESS>/p/9000/manifest.json (Bearer INGRESS_TOKEN)")
     return "\n".join(lines)
