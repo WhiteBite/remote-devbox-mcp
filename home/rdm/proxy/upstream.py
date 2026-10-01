@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import http.client
+import socket
 
 from rdm.proxy import framing
 
@@ -27,6 +28,25 @@ def filter_forward_headers(
 
 def open_connection(host: str, port: int, timeout: float) -> http.client.HTTPConnection:
     return http.client.HTTPConnection(host, port, timeout=timeout)
+
+
+def open_raw(host: str, port: int, timeout: float) -> socket.socket:
+    return socket.create_connection((host, port), timeout=timeout)
+
+
+def filter_upgrade_headers(
+    pairs: list[tuple[bytes, bytes]],
+    host_header: bytes,
+    client_ip: str | None,
+    proto: bytes,
+) -> list[tuple[bytes, bytes]]:
+    drop = {b"host", b"x-forwarded-host"}
+    out = [(name, value) for name, value in pairs if name not in drop]
+    out.append((b"host", host_header))
+    if client_ip:
+        out.append((b"x-forwarded-for", client_ip.encode("latin-1")))
+    out.append((b"x-forwarded-proto", proto))
+    return out
 
 
 def send_head(

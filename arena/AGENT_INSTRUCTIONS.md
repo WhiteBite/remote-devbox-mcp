@@ -173,10 +173,10 @@ flutter run -d web-server --web-hostname 0.0.0.0 --web-port 8788   # headless-с
        > /tmp/widgetbook.log 2>&1 &
    ```
    Готовность жду по логу (`is being served at`), проверяю curl'ом изнутри.
-2. Прошу пользователя отдать порт 8788 наружу и прислать preview-URL:
-   быстрый вариант — `docker compose --profile preview up -d` (второй
-   trycloudflare-URL без токена), постоянный — именованный туннель
-   (`TUNNEL_TOKEN` + `PUBLIC_URL` в `home/.env`).
+2. Прошу пользователя отдать порт 8788 наружу: `python devbox.py preview
+   http://host.docker.internal:8788` (или `devbox.py start <профиль> --preview`)
+   — он пришлёт `PREVIEW`-URL (root, без токена). Для портов из allowlist
+   годится и `<INGRESS>/p/<порт>/` с заголовком `Authorization: Bearer <INGRESS_TOKEN>`.
 3. Открываю preview-URL своим playwright (из своей песочницы), скриншоты
    сохраняю в PNG и смотрю своим `read_file` — он реально показывает
    изображения. После проверки прошу пользователя выключить preview-туннель.

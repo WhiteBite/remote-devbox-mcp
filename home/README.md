@@ -7,9 +7,9 @@
 ```powershell
 cd D:\Sources\WhiteBite\remote-devbox-mcp\home
 
-# применить профиль проекта (рендер .env, host-сервисы, пересоздание toolbox):
-.\devbox.cmd use muffin
-docker compose up -d
+# применяет профиль, поднимает стек и ingress, печатает готовый блок агенту:
+.\devbox.cmd start muffin
+# пошагово вместо одной команды: .\devbox.cmd use muffin -> docker compose up -d -> .\devbox.py ingress start
 docker compose ps          # ждём: toolbox healthy, vpn healthy.
                            # Первый старт профиля = установка тулчейнов в
                            # /opt/tools (несколько минут), дальше — кэш
@@ -236,8 +236,11 @@ Ingress rout'ит только порты из `$AllowedPorts` профиля + 
 
 Стоп: `devbox.py ingress stop` (только записанный pid, сверяя cmdline).
 
-## 12. Эксплуатация: doctor/watch/info/share/issue-tokens
+## 12. Эксплуатация: start/preview/doctor/watch/info/share/issue-tokens
 
+- `start [<имя>] [--preview]` — поднять всё и напечатать готовый блок для агента
+  (репо + скилл + INGRESS + токены + PREVIEW); `--preview` поднимает preview-туннель.
+- `preview <origin>` — вывести dev-сервер root-URL без токена (для playwright).
 - `doctor` — проверка всей цепи PASS/FAIL с хинтами; exit-code для скриптов.
 - `watch` — watchdog-цикл: флап туннеля → auto-recreate ingress, смерть
   host-сервисов/раннера → рестарт с бэкoff; логи `%TEMP%\rdm-watchdog\`.

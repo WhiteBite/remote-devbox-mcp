@@ -123,10 +123,15 @@ Ask the user to expose the dev server:
 container origin; the starter `devbox.py start --preview` prints the URL.
 
 Notes:
-- HMR WebSockets are not proxied (Upgrade → 501); screenshots and behavior
-  still work, live-reload does not.
-- Electron/desktop windows are not reachable over HTTP — ask the user for a
-  screenshot or to expose the app's remote-debugging port.
+- WebSockets are proxied: the bridge forwards the upgrade and, on upstream
+  `101`, pipes bytes both ways — HMR/live-reload works through the same URL.
+- Electron/desktop: run the app with `--remote-debugging-port=<p>
+  --remote-allow-origins=*`, expose port `<p>` (allowlist), then drive it with
+  Playwright `connect_over_cdp`. `GET <INGRESS>/p/<p>/json/version` returns
+  `webSocketDebuggerUrl` pointing at `127.0.0.1` — rewrite its host to the
+  tunnel and scheme to `wss`:
+  `connect_over_cdp(f"wss://<tunnel-host>/p/<p>/devtools/browser/<uuid>",
+  headers={"Authorization": f"Bearer {INGRESS_TOKEN}"})`.
 - Keep screenshots in `/agent` and show them with `present_file`.
 
 ## Troubleshooting

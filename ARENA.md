@@ -92,10 +92,14 @@ EOF
 ## Приложение. Шаблон передачи задачи (для пользователя)
 
 ```
+Репозиторий: https://github.com/WhiteBite/remote-devbox-mcp
+Загрузи скилл: https://github.com/WhiteBite/remote-devbox-mcp/blob/main/skills/remote-devbox/SKILL.md
 Работай по инструкции: https://github.com/WhiteBite/remote-devbox-mcp/blob/main/ARENA.md
-INGRESS=https://<актуальный>.trycloudflare.com
+INGRESS=https://<актуальный>.trycloudflare.com   # или PUBLIC_URL при именованном туннеле
 BRIDGE_TOKEN=<MCP_BEARER_TOKEN из home/.env>
-HOST_TOKEN=<MCP_PUBLIC_TOKEN из home/.env>   # если в ТЗ есть host-MCP
+HOST_TOKEN=<MCP_PUBLIC_TOKEN из home/.env>       # если в ТЗ есть host-MCP
+INGRESS_TOKEN=<INGRESS_TOKEN из home/.env>
+PREVIEW=<preview-URL>                            # если поднят preview-туннель
 ТЗ: /workspace/ARENA_TASK.md
 ```
 

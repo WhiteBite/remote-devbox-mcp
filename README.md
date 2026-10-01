@@ -13,10 +13,9 @@ Cloudflare-туннель и правит код, собирает и тести
 ```bash
 git clone https://github.com/WhiteBite/remote-devbox-mcp
 cd remote-devbox-mcp/home
-copy .env.example .env          # заполнить PROJECT_DIR и токены
-python devbox.py use muffin      # применить профиль проекта
-docker compose up -d
-python -m pytest -q               # проверить окружение (200 тестов)
+copy .env.example .env           # заполнить PROJECT_DIR и токены
+python devbox.py start muffin     # профиль + стек + ingress + блок для агента
+python -m pytest -q               # проверить окружение
 ```
 
 Публичный вход: `docker compose logs cloudflared-ingress | Select-String trycloudflare`.

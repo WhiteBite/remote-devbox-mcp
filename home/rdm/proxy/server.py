@@ -24,6 +24,12 @@ def _reason(code: int) -> str:
         return "Unknown"
 
 
+def _is_websocket(pairs: list[tuple[bytes, bytes]]) -> bool:
+    if b"upgrade" not in framing.connection_tokens(pairs):
+        return False
+    return any(name == b"upgrade" and b"websocket" in value.lower() for name, value in pairs)
+
+
 @dataclass(frozen=True)
 class Config:
     mode: str
@@ -123,9 +129,6 @@ class _Handler(socketserver.BaseRequestHandler):
             except framing.FramingRejected as rejected:
                 self._simple(rejected.decision.status)
                 return
-            if any(name == b"upgrade" for name, _ in pairs):
-                self._simple(501)
-                return
             tokens = framing.connection_tokens(pairs)
             request_close = b"close" in tokens or (
                 version == "HTTP/1.0" and b"keep-alive" not in tokens
@@ -193,6 +196,8 @@ class _Handler(socketserver.BaseRequestHandler):
             host, port, path = server.config.target_host, server.config.target_port, target_bytes
 
         access_log.log(server.config.access_log_path, port, method, target, "forward")
+        if _is_websocket(pairs):
+            return self._forward_websocket(sock, method, path, pairs, host, port)
         return self._forward(sock, method, path, pairs, body, host, port, request_close)
 
     def _forward(
@@ -219,6 +224,104 @@ class _Handler(socketserver.BaseRequestHandler):
             return False
         finally:
             connection.close()
+
+    def _forward_websocket(
+        self,
+        sock,
+        method: str,
+        path: bytes,
+        pairs: list[tuple[bytes, bytes]],
+        host: str,
+        port: int,
+    ) -> bool:
+        host_header = f"{host}:{port}".encode()
+        forward = upstream.filter_upgrade_headers(pairs, host_header, self.client_address[0], b"https")
+        try:
+            connection = upstream.open_raw(host, port, CONNECT_TIMEOUT)
+        except OSError:
+            self._simple(502)
+            return False
+        try:
+            head = method.encode("latin-1") + b" " + path + b" HTTP/1.1\r\n"
+            for name, value in forward:
+                head += name + b": " + value + b"\r\n"
+            head += b"\r\n"
+            connection.sendall(head)
+            upstream_head = self._read_raw_head(connection)
+            if upstream_head is None:
+                self._simple(502)
+                return False
+            response_head, rest = upstream_head
+            try:
+                status = int(response_head.split(b" ", 2)[1])
+            except (IndexError, ValueError):
+                self._simple(502)
+                return False
+            try:
+                sock.sendall(response_head)
+                if rest:
+                    sock.sendall(rest)
+            except OSError:
+                return False
+            if status != 101:
+                self._pipe_until_eof(connection, sock)
+                return False
+            self._tunnel(sock, connection)
+            return False
+        finally:
+            connection.close()
+
+    @staticmethod
+    def _read_raw_head(sock) -> tuple[bytes, bytes] | None:
+        buf = b""
+        while b"\r\n\r\n" not in buf:
+            try:
+                chunk = sock.recv(65536)
+            except OSError:
+                return None
+            if not chunk:
+                return None
+            buf += chunk
+            if len(buf) > framing.MAX_HEADER_BYTES:
+                return None
+        head, _, rest = buf.partition(b"\r\n\r\n")
+        return head + b"\r\n\r\n", rest
+
+    @staticmethod
+    def _pipe_until_eof(src, dst) -> None:
+        try:
+            while True:
+                data = src.recv(65536)
+                if not data:
+                    break
+                dst.sendall(data)
+        except OSError:
+            pass
+
+    @staticmethod
+    def _tunnel(client, upstream_sock) -> None:
+        client.settimeout(None)
+        upstream_sock.settimeout(None)
+        stop = threading.Event()
+
+        def pump(src, dst) -> None:
+            try:
+                while not stop.is_set():
+                    data = src.recv(65536)
+                    if not data:
+                        break
+                    dst.sendall(data)
+            except OSError:
+                pass
+            finally:
+                stop.set()
+
+        first = threading.Thread(target=pump, args=(client, upstream_sock), daemon=True)
+        second = threading.Thread(target=pump, args=(upstream_sock, client), daemon=True)
+        first.start()
+        second.start()
+        first.join()
+        second.join()
 
     def _relay(self, sock, method: str, response, request_close: bool) -> bool:
         raw = [

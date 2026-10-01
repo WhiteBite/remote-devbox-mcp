@@ -18,6 +18,9 @@ python -m pytest
 python -m ruff check home arena tests
 ```
 
+Host orchestration (Windows): `python home/devbox.py start <profile> [--preview]`
+brings the stack up and prints the agent hand-off block.
+
 ## Repository map
 
 | Path | Purpose |

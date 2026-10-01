@@ -105,21 +105,6 @@ def test_304_no_body(tmp_path):
         server.shutdown()
 
 
-def test_websocket_upgrade_501(tmp_path):
-    fake = FakeUpstream(responder)
-    server, port = start_ingress(tmp_path, allowed={fake.port})
-    try:
-        raw = (
-            f"GET {_url(fake.port)} HTTP/1.1\r\nHost: t\r\nAuthorization: Bearer tok\r\n"
-            "Upgrade: websocket\r\nConnection: upgrade\r\n\r\n"
-        ).encode("latin-1")
-        out = raw_request(port, raw)
-        assert b"501 Not Implemented" in out
-    finally:
-        fake.close()
-        server.shutdown()
-
-
 def test_chunked_request_501(tmp_path):
     fake = FakeUpstream(responder)
     server, port = start_ingress(tmp_path, allowed={fake.port})
