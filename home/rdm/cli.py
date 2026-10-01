@@ -8,6 +8,8 @@ import json
 import os
 import pathlib
 import sys
+import urllib.error
+import urllib.request
 
 from rdm import docker, envfile, hostos, procman, profiles, ps_import, render, tokens, tunnels
 
@@ -395,10 +397,26 @@ def _down() -> int:
     return 0
 
 
+def _probe_http(url: str, token: str, timeout: float = 8.0) -> int:
+    request = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"} if token else {})
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return int(response.status)
+    except urllib.error.HTTPError as error:
+        return int(error.code)
+    except (urllib.error.URLError, OSError):
+        return 0
+
+
 def _health() -> int:
     env_map = envfile.EnvFile.load(ENV_FILE).as_map()
-    statuses = docker.compose_ps(COMPOSE_FILE)
-    return 0 if ("healthy" in statuses and _ingress_url(env_map)) else 1
+    if "healthy" not in docker.compose_ps(COMPOSE_FILE):
+        return 1
+    url = _ingress_url(env_map)
+    if not url:
+        return 1
+    ok = _probe_http(f"{url}/p/{BRIDGE_PORT}/healthz", env_map.get("MCP_BEARER_TOKEN", "")) == 200
+    return 0 if ok else 1
 
 
 def _allow(port: int, ui: bool) -> int:
