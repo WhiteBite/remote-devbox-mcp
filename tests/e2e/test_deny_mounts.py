@@ -12,7 +12,14 @@ def _docker(*args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(["docker", *args], capture_output=True, text=True, timeout=180)
 
 
+def _require_image(name: str) -> None:
+    probe = _docker("image", "inspect", name)
+    if probe.returncode != 0:
+        pytest.skip(f"{name} image not present (skip to avoid a network pull)")
+
+
 def test_devnull_hides_secret_file(tmp_path):
+    _require_image("alpine")
     project = tmp_path / "proj"
     project.mkdir()
     (project / ".env.staging").write_text("TOKEN=supersecret", encoding="utf-8")
@@ -30,6 +37,7 @@ def test_devnull_hides_secret_file(tmp_path):
 
 
 def test_tmpfs_hides_secret_dir(tmp_path):
+    _require_image("alpine")
     project = tmp_path / "proj"
     project.mkdir()
     secrets_dir = project / "secrets"

@@ -16,8 +16,10 @@ _CREATE_NO_WINDOW = 0x08000000
 _CREATE_NEW_PROCESS_GROUP = 0x00000200
 _CREATE_BREAKAWAY_FROM_JOB = 0x01000000
 
+_LAUNCH_BASE = _CREATE_NO_WINDOW | _CREATE_NEW_PROCESS_GROUP
+
 LAUNCH_FLAGS = (
-    _CREATE_NO_WINDOW | _CREATE_NEW_PROCESS_GROUP | _CREATE_BREAKAWAY_FROM_JOB
+    _LAUNCH_BASE | _CREATE_BREAKAWAY_FROM_JOB
     if sys.platform == "win32"
     else 0
 )
@@ -100,17 +102,23 @@ def spawn(
 ) -> int:
     stdout = open(stdout_path, "ab") if stdout_path is not None else subprocess.DEVNULL
     stderr = open(stderr_path, "ab") if stderr_path is not None else subprocess.DEVNULL
+    resolved = _resolve(list(argv))
+    kwargs = {
+        "cwd": cwd,
+        "stdout": stdout,
+        "stderr": stderr,
+        "env": env,
+        "shell": False,
+        "start_new_session": sys.platform != "win32",
+    }
     try:
-        proc = subprocess.Popen(
-            _resolve(list(argv)),
-            cwd=cwd,
-            stdout=stdout,
-            stderr=stderr,
-            env=env,
-            creationflags=LAUNCH_FLAGS,
-            shell=False,
-            start_new_session=sys.platform != "win32",
-        )
+        try:
+            proc = subprocess.Popen(resolved, creationflags=LAUNCH_FLAGS, **kwargs)
+        except OSError:
+            if sys.platform != "win32" or LAUNCH_FLAGS == _LAUNCH_BASE:
+                raise
+            # CREATE_BREAKAWAY_FROM_JOB отклоняется, когда процесс в job без breakaway
+            proc = subprocess.Popen(resolved, creationflags=_LAUNCH_BASE, **kwargs)
     finally:
         if stdout_path is not None:
             stdout.close()
