@@ -9,6 +9,7 @@ license = { file = "LICENSE" }
 pythonpath = ["home"]
 testpaths = ["tests"]
 addopts = "-q"
+timeout = 60
 
 [tool.ruff]
 line-length = 110

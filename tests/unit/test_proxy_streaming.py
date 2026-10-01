@@ -14,23 +14,34 @@ def _auth() -> list[tuple[str, str]]:
     return [("Authorization", "Bearer tok")]
 
 
+def _read_until(sock, needle: bytes, deadline: float) -> bytes:
+    buf = b""
+    while needle not in buf:
+        if time.monotonic() > deadline:
+            raise AssertionError(f"timeout waiting for {needle!r}; got {buf!r}")
+        try:
+            chunk = sock.recv(65536)
+        except OSError as error:
+            raise AssertionError(f"read failed waiting for {needle!r}: {error}") from None
+        if not chunk:
+            raise AssertionError(f"eof waiting for {needle!r}; got {buf!r}")
+        buf += chunk
+    return buf
+
+
 def test_sse_incremental(tmp_path):
     fake = FakeUpstream(responder)
     server, port = start_ingress(tmp_path, allowed={fake.port})
     try:
         with socket.create_connection(("127.0.0.1", port), timeout=5.0) as sock:
+            sock.settimeout(2.0)
             sock.sendall(request("GET", _url(fake.port, b"/sse"), headers=_auth()))
             started = time.monotonic()
-            head = b""
-            while b"\r\n\r\n" not in head:
-                head += sock.recv(65536)
-            first = b""
-            while b"event-1" not in first:
-                first += sock.recv(65536)
+            head = _read_until(sock, b"\r\n\r\n", started + 5)
+            first = _read_until(sock, b"event-1", started + 5)
             first_at = time.monotonic()
-            rest = b""
-            while b"event-2" not in rest:
-                rest += sock.recv(65536)
+            rest = _read_until(sock, b"event-2", started + 5)
+        assert b"\r\n\r\n" in head
         assert b"event-1" in first
         assert first_at - started < 0.35
         assert b"event-2" in rest
