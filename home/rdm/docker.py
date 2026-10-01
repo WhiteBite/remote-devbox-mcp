@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 from pathlib import Path
 
 _DEFAULT_COMPOSE_FILE = str(Path(__file__).resolve().parent.parent / "docker-compose.yml")
+_CREATE_NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
 
 
 def compose(
@@ -20,6 +22,7 @@ def compose(
             capture_output=True,
             text=True,
             shell=False,
+            creationflags=_CREATE_NO_WINDOW,
         )
     except FileNotFoundError:
         return subprocess.CompletedProcess(["docker"], 127, "", "docker not found")
@@ -46,6 +49,7 @@ def run(*args: str, input: str | None = None, timeout: int = 120) -> subprocess.
             capture_output=True,
             text=True,
             shell=False,
+            creationflags=_CREATE_NO_WINDOW,
         )
     except FileNotFoundError:
         return subprocess.CompletedProcess(["docker"], 127, "", "docker not found")

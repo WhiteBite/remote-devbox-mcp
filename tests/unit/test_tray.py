@@ -33,3 +33,10 @@ def test_tray_builds_menu():
     pytest.importorskip("pystray")
     module = _load()
     assert len(list(module._build_menu().items)) > 0
+
+
+def test_tray_clipboard_does_not_crash():
+    module = _load()
+    if sys.platform != "win32":
+        pytest.skip("clipboard is Windows-only")
+    assert module._clipboard("rdm clipboard regression") in (True, False)

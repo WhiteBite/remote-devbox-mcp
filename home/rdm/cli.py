@@ -389,6 +389,12 @@ def _down() -> int:
     return 0
 
 
+def _health() -> int:
+    env_map = envfile.EnvFile.load(ENV_FILE).as_map()
+    statuses = docker.compose_ps(COMPOSE_FILE)
+    return 0 if ("healthy" in statuses and _ingress_url(env_map)) else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="devbox")
     sub = parser.add_subparsers(dest="command")
@@ -416,6 +422,7 @@ def main(argv: list[str] | None = None) -> int:
     url = sub.add_parser("url")
     url.add_argument("--preview", action="store_true")
     sub.add_parser("down")
+    sub.add_parser("health")
     args = parser.parse_args(argv)
 
     if args.command == "use":
@@ -446,4 +453,6 @@ def main(argv: list[str] | None = None) -> int:
         return _url(args.preview)
     if args.command == "down":
         return _down()
+    if args.command == "health":
+        return _health()
     return _status()

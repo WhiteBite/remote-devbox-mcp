@@ -13,6 +13,7 @@ import pathlib
 import subprocess
 import sys
 import threading
+import time
 import webbrowser
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
@@ -46,11 +47,25 @@ def _devbox(*args: str, timeout: int = 240) -> subprocess.CompletedProcess[str]:
 def _clipboard(text: str) -> bool:
     if sys.platform != "win32":
         return False
+    from ctypes import wintypes
+
     cf_unicodetext, gmem_moveable = 13, 0x0002
     kernel32, user32 = ctypes.windll.kernel32, ctypes.windll.user32
+    kernel32.GlobalAlloc.restype = wintypes.HGLOBAL
+    kernel32.GlobalAlloc.argtypes = [wintypes.UINT, ctypes.c_size_t]
+    kernel32.GlobalLock.restype = ctypes.c_void_p
+    kernel32.GlobalLock.argtypes = [wintypes.HGLOBAL]
+    kernel32.GlobalUnlock.argtypes = [wintypes.HGLOBAL]
+    user32.OpenClipboard.argtypes = [wintypes.HWND]
+    user32.SetClipboardData.restype = wintypes.HANDLE
+    user32.SetClipboardData.argtypes = [wintypes.UINT, wintypes.HANDLE]
     buf = ctypes.create_unicode_buffer(text)
     size = ctypes.sizeof(buf)
-    if not user32.OpenClipboard(None):
+    for _ in range(10):
+        if user32.OpenClipboard(None):
+            break
+        time.sleep(0.05)
+    else:
         return False
     try:
         user32.EmptyClipboard()
@@ -58,9 +73,12 @@ def _clipboard(text: str) -> bool:
         if not handle:
             return False
         ptr = kernel32.GlobalLock(handle)
+        if not ptr:
+            return False
         ctypes.memmove(ptr, buf, size)
         kernel32.GlobalUnlock(handle)
-        user32.SetClipboardData(cf_unicodetext, handle)
+        if not user32.SetClipboardData(cf_unicodetext, handle):
+            return False
     finally:
         user32.CloseClipboard()
     return True
@@ -206,7 +224,7 @@ def _quit(icon, item) -> None:
 def _status_loop(icon) -> None:
     while not _stop.is_set():
         try:
-            code = _devbox("doctor", timeout=120).returncode
+            code = _devbox("health", timeout=30).returncode
         except Exception:
             code = 1
         icon.icon = _icon_rgb("ok" if code == 0 else "bad")

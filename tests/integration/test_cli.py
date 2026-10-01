@@ -177,3 +177,11 @@ def test_down_stops_host_ingress_and_tunnels(monkeypatch, tmp_path):
     assert calls["stop"] == [("p1",)]
     assert "stop" in calls["ingress"]
     assert any("cloudflared-ingress" in args for args in calls["compose"])
+
+
+def test_health_reflects_stack(monkeypatch, tmp_path):
+    _setup(monkeypatch, tmp_path)
+    cli.ENV_FILE.write_text("PUBLIC_URL=https://devbox.example.test\n", encoding="utf-8")
+    assert cli.main(["health"]) == 0
+    monkeypatch.setattr(cli.docker, "compose_ps", lambda *a, **k: "rdm-toolbox starting")
+    assert cli.main(["health"]) == 1
