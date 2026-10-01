@@ -24,6 +24,7 @@ python -m ruff check home arena tests
 | --- | --- |
 | `home/` | host side: `devbox.py` core (`rdm/` package), docker-compose stack, `host/runner-mcp.py` |
 | `arena/` | agent-side Python MCP client (`mcp_client.py`, `mcp` wrapper) |
+| `skills/remote-devbox/` | agent skill describing how to drive the devbox |
 | `projects/` | per-project JSON profiles (`muffin.json`, `_template.json`) |
 | `tests/` | pytest suite (unit / integration / e2e) |
 | `.discoverability/project.yml` | source of truth for repo metadata |

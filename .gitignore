@@ -16,3 +16,5 @@ build/
 .opencode/
 .pytest_cache/
 *.egg-info/
+.ruff_cache/
+.codenomad/

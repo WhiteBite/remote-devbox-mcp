@@ -76,6 +76,8 @@ python -m pytest -q               # проверить окружение (200 �
 Точка входа — [ARENA.md](ARENA.md): полная инструкция по подключению и работе
 (bootstrap, правила, рабочий цикл, шаблон сообщения-передачи для пользователя).
 ТЗ задачи лежит в проекте: `/workspace/ARENA_TASK.md` (конвенция).
+Готовый агент-скилл: [skills/remote-devbox/SKILL.md](skills/remote-devbox/SKILL.md);
+шаблон ТЗ — [arena/ARENA_TASK.template.md](arena/ARENA_TASK.template.md).
 
 Читай `arena/AGENT_INSTRUCTIONS.md` — там протокол джобов и разрешений, имена
 тулов, коды возврата и обязательства (диагностика после правки, git-дисциплина,
