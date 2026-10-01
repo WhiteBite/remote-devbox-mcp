@@ -19,17 +19,31 @@ def _rehash(entry):
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows cmd shim resolution")
-def test_cmd_shim_uses_cmd_exe_argv_not_joined_string(monkeypatch):
+def test_cmd_shim_uses_cmd_exe_argv_not_joined_string(monkeypatch, tmp_path):
     main = _main()
     fake = "C:\\Tools\\npm.cmd"
     monkeypatch.setattr(shutil, "which", lambda _name: fake)
     argv = ["npm", "install", "some package"]
-    resolved = main._resolve(argv)
+    resolved = main._resolve(argv, tmp_path)
     assert resolved[0:2] == ["cmd", "/c"]
     assert resolved[2] == fake
     assert resolved[3:] == ["install", '"some package"']
     joined = " ".join([fake] + [main._quote_cmd(a) for a in argv[1:]])
     assert all(el != joined for el in resolved)
+
+
+def test_resolve_relative_exe_against_project_cwd(tmp_path, monkeypatch):
+    main = _main()
+    proj = tmp_path / "proj"
+    (proj / "backend").mkdir(parents=True)
+    fake_exe = proj / "backend" / "tool.exe"
+    fake_exe.write_bytes(b"")
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+    resolved = main._resolve(["backend/tool.exe", "-q"], proj)
+    assert resolved[0] == str(fake_exe)
+    assert resolved[1:] == ["-q"]
 
 
 def test_quote_cmd_quotes_only_metachars():

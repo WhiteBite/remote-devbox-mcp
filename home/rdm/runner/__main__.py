@@ -53,17 +53,24 @@ def _quote_cmd(a: str) -> str:
     return f'"{a}"'
 
 
-def _resolve(argv: list[str]) -> list[str]:
+def _resolve(argv: list[str], cwd: Path) -> list[str]:
     """npm/npx на Windows = .cmd-шимы; shutil.which матчит и бесрасширенный
     sh-скрипт (WinError 193), поэтому ищем только явные расширения.
+    Относительный exe Windows резолвит от cwd процесса (папка home), а не от
+    cwd команды — поэтому сначала делаем его абсолютным от cwd проекта.
     argv остаётся allowlist-ным; аргументы экранируются для cmd."""
+    first = argv[0]
+    if not os.path.isabs(first):
+        candidate = cwd / first
+        if candidate.exists():
+            first = str(candidate)
     exe = None
     if os.name == "nt":
         for ext in (".exe", ".cmd", ".bat"):
-            exe = shutil.which(argv[0] + ext)
+            exe = shutil.which(first + ext)
             if exe:
                 break
-    exe = exe or shutil.which(argv[0]) or argv[0]
+    exe = exe or shutil.which(first) or first
     if os.name == "nt" and exe.lower().endswith((".cmd", ".bat")):
         return ["cmd", "/c", exe, *(_quote_cmd(a) for a in argv[1:])]
     return [exe] + argv[1:]
@@ -116,7 +123,7 @@ def _make_tool(name: str, spec: dict, ctx: _Ctx):
         _check_args(present.values())
         argv = _build_argv(spec, present)
         _audit({"tool": name, "argv": _redact_argv(argv)}, ctx.run_dir)
-        resolved = _resolve(argv)
+        resolved = _resolve(argv, ctx.cwd)
         if resolved[:2] == ["cmd", "/c"]:
             _check_cmd_shim(argv[1:])
         argv = resolved
