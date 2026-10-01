@@ -109,7 +109,7 @@ cd arena && chmod +x mcp && ./mcp check
 
 ## Статус / Status
 
-Активная разработка. Host-часть покрыта 217 автотестами (unit/integration/e2e), CI гоняет
+Активная разработка. Host-часть покрыта 217 tests (прогон ~6 s, unit/integration/e2e), CI гоняет
 `python -m pytest` и rdk-audit (discoverability 96/100). Профиль проекта — `projects/*.json`;
 ядро — `home/rdm/`.
 
