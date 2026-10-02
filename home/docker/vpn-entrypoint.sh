@@ -20,7 +20,8 @@ fi
 touch /run/vpn-active
 
 fetch_sub() {
-  raw=$(curl -fsSL -A "$UA" --max-time 20 --max-redirs 5 "$VLESS_SUB_URL" 2>/dev/null) || raw=""
+  # подписка отдаёт 307 на себя до установки cookie — ходим с cookie-jar
+  raw=$(curl -fsSL -A "$UA" -c /tmp/sub.cookies -b /tmp/sub.cookies --max-time 20 --max-redirs 5 "$VLESS_SUB_URL" 2>/dev/null) || raw=""
   if [ -n "$raw" ]; then
     printf '%s' "$raw" > "$CACHE"
   else
