@@ -39,10 +39,15 @@ def test_kill_tree_call_sites_only_in_lifecycle_owners():
 
 
 def test_port_policy_computed_only_in_ports_module():
-    allowed = {"ports.py", "cli.py", "server.py", "__main__.py", "envfile.py"}
+    allowed = {"ports.py", "cli.py", "render.py", "server.py", "__main__.py", "envfile.py"}
     offenders = [
         path for path in _py_sources()
-        if "SELF_AUTHED" in path.read_text(encoding="utf-8")
-        and path.name not in allowed
+        if "SELF_AUTHED" in path.read_text(encoding="utf-8") and path.name not in allowed
     ]
     assert offenders == []
+    policy_callers = [
+        path for path in _py_sources()
+        if "compute_port_policy" in path.read_text(encoding="utf-8")
+        and path.name not in {"ports.py", "cli.py", "render.py"}
+    ]
+    assert policy_callers == []

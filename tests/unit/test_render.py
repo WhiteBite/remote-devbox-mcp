@@ -2,10 +2,12 @@ import base64
 import hashlib
 from dataclasses import replace
 
+from rdm.envfile import _CANONICAL_ORDER
 from rdm.profiles import HostService, Profile, RunnerCommand, Script, SetupCommand
 from rdm.render import (
     build_manifest,
     build_setup_script,
+    env_fields,
     render_agents_md,
     render_override,
     setup_script_b64,
@@ -159,6 +161,26 @@ def test_agents_md_empty_sections():
 
     assert "## Runner commands\n- (нет)\n" in text
     assert "## Scripts\n- (нет)\n" in text
+
+
+def test_env_fields_covered_by_canonical_order():
+    profile = Profile(
+        project_dir=".",
+        preview_origin="",
+        mode="standard",
+        runner_commands=(RunnerCommand(name="x", cmd=("npm",)),),
+        runner_port=8796,
+    )
+    fields = env_fields(profile, "p", "")
+    assert set(fields) <= set(_CANONICAL_ORDER)
+
+
+def test_env_fields_none_means_remove():
+    profile = Profile(project_dir=".", preview_origin="", mode="readonly", runner_commands=())
+    fields = env_fields(profile, "p", "")
+    assert fields["PREVIEW_ORIGIN"] is None
+    assert fields["UI_PORT"] is None
+    assert fields["OPENCODE_MCP_PERMISSIONS"].startswith('{"write":"deny"')
 
 
 def test_agents_md_projects_section():

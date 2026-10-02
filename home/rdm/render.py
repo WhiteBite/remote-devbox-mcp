@@ -1,13 +1,38 @@
-"""Детерминированные генераторы артефактов профиля: override-compose, setup-скрипт, manifest, AGENTS.md, TUNNEL_TAIL."""
+"""Детерминированные генераторы артефактов профиля: env-поля, override-compose, setup-скрипт, manifest, AGENTS.md, TUNNEL_TAIL."""
 
 from __future__ import annotations
 
 import base64
 import hashlib
 
+from rdm import ports
 from rdm.profiles import Profile
 
 _BRIDGE_PORT = 8787
+
+_PERMISSIONS_JSON = {
+    "readonly": '{"write":"deny","edit":"deny","apply_patch":"deny","bash":"deny"}',
+    "full": '{"write":"allow","edit":"allow","apply_patch":"allow","bash":"allow"}',
+}
+
+
+def env_fields(profile: Profile, name: str, tunnel_token: str) -> dict[str, str | None]:
+    """Env-поля профиля одним вызовом; None означает «удалить ключ» из .env."""
+    policy = ports.compute_port_policy(profile)
+    return {
+        "PROJECT_DIR": profile.project_dir,
+        "TOOLCHAIN": profile.toolchain,
+        "GIT_NAME": profile.git_name,
+        "GIT_EMAIL": profile.git_email,
+        "PREVIEW_ORIGIN": profile.preview_origin or None,
+        "UI_PORT": str(profile.ui_port) if profile.ui_port else None,
+        "SELF_AUTHED_PORTS": ",".join(str(port) for port in policy.self_authed),
+        "ALLOWED_PORTS": ",".join(str(port) for port in policy.allowed),
+        "OPENCODE_MCP_PERMISSIONS": _PERMISSIONS_JSON.get(profile.mode),
+        "SETUP_SCRIPT_B64": setup_script_b64(profile, name),
+        "TUNNEL_TAIL": tunnel_tail(tunnel_token),
+        "ACTIVE_PROFILE": name,
+    }
 
 
 def render_override(profile: Profile, dir_mounts: frozenset[str] | set[str] = frozenset()) -> str:

@@ -22,17 +22,6 @@ BRIDGE_PORT = ports.BRIDGE_PORT
 INGRESS_PORT = 8799
 _NAME_RE = re.compile(r"[A-Za-z0-9._\-]+")
 
-_READONLY = '{"write":"deny","edit":"deny","apply_patch":"deny","bash":"deny"}'
-_FULL = '{"write":"allow","edit":"allow","apply_patch":"allow","bash":"allow"}'
-
-
-def _permissions(mode: str) -> str | None:
-    if mode == "readonly":
-        return _READONLY
-    if mode == "full":
-        return _FULL
-    return None
-
 
 def _ingress_url(env_map: dict[str, str]) -> str:
     return netprobe.ingress_url(env_map, COMPOSE_FILE)
@@ -192,30 +181,13 @@ def apply_use(name: str) -> int:
     active = env.get("ACTIVE_PROFILE")
     if active:
         procman.stop_host_services(active)
-    env.set("PROJECT_DIR", profile.project_dir)
-    env.set("TOOLCHAIN", profile.toolchain)
-    env.set("GIT_NAME", profile.git_name)
-    env.set("GIT_EMAIL", profile.git_email)
-    if profile.preview_origin:
-        env.set("PREVIEW_ORIGIN", profile.preview_origin)
-    else:
-        env.remove("PREVIEW_ORIGIN")
-    if profile.ui_port:
-        env.set("UI_PORT", str(profile.ui_port))
-    else:
-        env.remove("UI_PORT")
+    for key, value in render.env_fields(profile, name, env.get("TUNNEL_TOKEN") or "").items():
+        if value is None:
+            env.remove(key)
+        else:
+            env.set(key, value)
     policy = ports.compute_port_policy(profile)
-    env.set("SELF_AUTHED_PORTS", ",".join(str(port) for port in policy.self_authed))
     allowed_text = ",".join(str(port) for port in policy.allowed)
-    env.set("ALLOWED_PORTS", allowed_text)
-    permission = _permissions(profile.mode)
-    if permission:
-        env.set("OPENCODE_MCP_PERMISSIONS", permission)
-    else:
-        env.remove("OPENCODE_MCP_PERMISSIONS")
-    env.set("SETUP_SCRIPT_B64", render.setup_script_b64(profile, name))
-    env.set("TUNNEL_TAIL", render.tunnel_tail(env.get("TUNNEL_TOKEN") or ""))
-    env.set("ACTIVE_PROFILE", name)
     env.write(ENV_FILE)
     dir_mounts = frozenset(
         mount
