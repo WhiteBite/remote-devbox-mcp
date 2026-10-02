@@ -121,6 +121,27 @@ def test_kill_tool_kills_owned_background_tree(tmp_path):
     assert not pidfile.exists()
 
 
+def test_kill_tool_reaps_runner_spawned_background_child(tmp_path):
+    main = _main()
+    ctx = _ctx(main, tmp_path)
+    spec = {
+        "name": "bg",
+        "cmd": [sys.executable, "-c", "import time; time.sleep(60)"],
+        "background": True,
+    }
+    started = json.loads(main._make_tool("bg", spec, ctx)())
+    assert started["started"] is True
+    pid = started["pid"]
+    proc = ctx.bg[pid]
+    result = json.loads(_make_kill(main, ctx, "bg")())
+    assert result["killed"] is True
+    assert pid not in ctx.bg
+    assert proc.returncode is not None
+    if os.name != "nt":
+        with pytest.raises(ChildProcessError):
+            os.waitpid(pid, os.WNOHANG)
+
+
 def test_foreground_timeout_kills_tree_and_reports(tmp_path):
     main = _main()
     ctx = _ctx(main, tmp_path)

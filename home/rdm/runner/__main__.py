@@ -22,7 +22,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
@@ -38,6 +38,13 @@ class _Ctx:
     run_dir: Path
     profile: str
     default_timeout: int
+    bg: dict[int, subprocess.Popen] = field(default_factory=dict)
+
+
+def _prune_bg(ctx: _Ctx) -> None:
+    for stale, child in list(ctx.bg.items()):
+        if child.poll() is not None:
+            del ctx.bg[stale]
 
 
 def _norm(d):
@@ -153,6 +160,8 @@ def _make_tool(name: str, spec: dict, ctx: _Ctx):
                 f"{proc.pid}|{hostos.create_time(proc.pid) or ''}|{' '.join(argv)}",
                 encoding="utf-8",
             )
+            _prune_bg(ctx)
+            ctx.bg[proc.pid] = proc
             return json.dumps({
                 "started": True, "pid": proc.pid,
                 "port": spec.get("port"), "log": str(log),
@@ -219,6 +228,13 @@ def _make_kill_tool(name: str, ctx: _Ctx):
             pidfile.unlink(missing_ok=True)
             return json.dumps({"killed": False, "pid": pid, "reason": "процесс мёртв или pid переиспользован"})
         hostos.kill_tree(pid)
+        proc = ctx.bg.get(pid)
+        if proc is not None:
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                pass
+        _prune_bg(ctx)
         pidfile.unlink(missing_ok=True)
         _audit(f"{name}_kill pid={pid}", ctx.run_dir)
         return json.dumps({"killed": True, "pid": pid})
