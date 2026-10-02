@@ -5,6 +5,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import time
 
 try:
     import psutil
@@ -22,6 +23,8 @@ LAUNCH_FLAGS = (
     if sys.platform == "win32"
     else 0
 )
+
+_spawned: set[int] = set()
 
 
 def tempdir() -> pathlib.Path:
@@ -129,7 +132,23 @@ def spawn(
             stdout.close()
         if stderr_path is not None:
             stderr.close()
+    _spawned.add(proc.pid)
     return proc.pid
+
+
+def _reap_if_direct_child(pid: int) -> None:
+    if pid not in _spawned:
+        return
+    _spawned.discard(pid)
+    deadline = time.monotonic() + 2.0
+    while time.monotonic() < deadline:
+        try:
+            reaped, _ = os.waitpid(pid, os.WNOHANG)
+        except (ChildProcessError, OSError):
+            return
+        if reaped == pid:
+            return
+        time.sleep(0.05)
 
 
 def kill_tree(pid: int) -> None:
@@ -143,3 +162,4 @@ def kill_tree(pid: int) -> None:
             os.kill(pid, signal.SIGKILL)
         except OSError:
             pass
+    _reap_if_direct_child(pid)
