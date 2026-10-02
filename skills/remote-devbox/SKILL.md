@@ -53,6 +53,29 @@ If any of these are missing, ask — do not invent them.
 4. Read `arena/AGENT_INSTRUCTIONS.md` (full rules) and `arena/SANDBOX_FACTS.md`
    (measured facts about your sandbox). The task comes from the user in the chat.
 
+## Persistence: your sandbox resets
+
+Your sandbox is ephemeral; your workspace is not. Right after a successful
+bootstrap, copy the connection state into the workspace:
+
+```bash
+mkdir -p "$WORKSPACE/devbox-state"   # your platform's persistent storage
+cp ~/.remote-devbox-mcp.conf ~/.mcp-runner.conf "$WORKSPACE/devbox-state/"
+```
+
+At the start of every later session (fresh sandbox), restore BEFORE anything
+else:
+
+```bash
+cp "$WORKSPACE"/devbox-state/*.conf ~/
+git clone --depth 1 <repo> devbox && cd devbox/arena && chmod +x mcp
+./mcp check
+```
+
+Keep screenshots, reports and artifacts in the workspace too. Tokens do not
+change across sandbox resets — reuse them; ask the user only if they stop
+working (401 with a full-length token).
+
 ## Two configs, two tokens (do not mix — 401 means you did)
 
 - `~/.remote-devbox-mcp.conf` → `MCP_URL=<INGRESS>/p/8787/mcp`,

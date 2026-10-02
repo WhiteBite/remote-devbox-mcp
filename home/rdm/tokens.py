@@ -57,4 +57,8 @@ def chat_block(
         lines.append(f"HOST_TOKEN={host}  # MCP_TOKEN для RUNNER_URL (runner: run_<имя>)")
     if ingress_url:
         lines.append(f"Реестр эндпоинтов: GET {ingress_url}/p/9000/manifest.json (Bearer INGRESS_TOKEN)")
+    lines.append(
+        "Песочница сбрасывается — конфиги ~/.remote-devbox-mcp.conf и ~/.mcp-runner.conf"
+        " держи в Workspace и восстанавливай на старте сессии"
+    )
     return "\n".join(lines)

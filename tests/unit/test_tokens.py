@@ -62,9 +62,10 @@ def test_chat_block_masks_when_not_full():
     assert lines[2] == "INGRESS=https://x.trycloudflare.com"
     assert lines[3] == "BRIDGE_TOKEN=aaaa...aaaa  # /p/8787/mcp — код: read/edit/write/bash"
     assert lines[4] == "INGRESS_TOKEN=cccc...cccc  # UI и прочие порты (Authorization: Bearer)"
+    assert "Реестр эндпоинтов: GET https://x.trycloudflare.com/p/9000/manifest.json" in block
     assert lines[-1] == (
-        "Реестр эндпоинтов: GET https://x.trycloudflare.com/p/9000/manifest.json"
-        " (Bearer INGRESS_TOKEN)"
+        "Песочница сбрасывается — конфиги ~/.remote-devbox-mcp.conf и ~/.mcp-runner.conf"
+        " держи в Workspace и восстанавливай на старте сессии"
     )
     assert "HOST_TOKEN" not in block
     assert "RUNNER_URL" not in block
