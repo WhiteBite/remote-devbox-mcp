@@ -10,8 +10,7 @@ from rdm import docker, hostos, netprobe, procman, profiles
 
 _HOME = pathlib.Path(__file__).resolve().parent.parent
 _DEFAULT_COMPOSE = str(_HOME / "docker-compose.yml")
-_BRIDGE_PORT = 8787
-_PROJECTS = _HOME.parent / "projects"
+_PROJECTS = profiles.PROJECTS_DIR
 START_DELAY = 15.0
 RECREATE_DELAY = 30.0
 
@@ -45,10 +44,12 @@ def run(
                 procman.stop_ingress()
                 from rdm import cli as _cli
 
-                procman.start_ingress(_cli._ingress_env(env_map), _HOME)
+                # .env перечитываем: issue-tokens ротирует INGRESS_TOKEN уже после старта watch
+                fresh = _cli.envfile.EnvFile.load(_cli.ENV_FILE).as_map()
+                procman.start_ingress(_cli._ingress_env(fresh), _HOME)
                 fails = 0
             url = netprobe.ingress_url(env_map, compose_file)
-            code = probe(f"{url}/p/{_BRIDGE_PORT}/healthz", env_map.get("MCP_BEARER_TOKEN")) if url else 0
+            code = probe(f"{url}/p/{profiles.BRIDGE_PORT}/healthz", env_map.get("MCP_BEARER_TOKEN")) if url else 0
             fails = fails + 1 if code != 200 else 0
             if fails >= 3:
                 _log(log_path, "tunnel flap: recreate ingress")
@@ -64,8 +65,12 @@ def run(
 
                     profile = _cli._with_runner(profiles.load(profile_path), active)
                     procman.restart_host_services(profile, active, _HOME, env_map.get("MCP_PUBLIC_TOKEN", ""))
-            if "healthy" not in docker.compose_ps(compose_file):
-                _log(log_path, "toolbox unhealthy: up -d")
+            ps = docker.compose_ps(compose_file)
+            if "unhealthy" in ps:
+                _log(log_path, "toolbox unhealthy: recreate")
+                docker.compose("up", "-d", "--force-recreate", "toolbox", compose_file=compose_file)
+            elif "toolbox" not in ps:
+                _log(log_path, "toolbox отсутствует: up -d")
                 docker.compose("up", "-d", "toolbox", compose_file=compose_file)
         except (OSError, ValueError) as error:
             _log(log_path, f"watchdog error: {error}")

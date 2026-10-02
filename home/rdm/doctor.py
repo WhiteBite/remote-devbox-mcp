@@ -9,9 +9,8 @@ import secrets
 from rdm import docker, hostos, netprobe, profiles
 
 _HOME = pathlib.Path(__file__).resolve().parent.parent
-_PROJECTS = _HOME.parent / "projects"
+_PROJECTS = profiles.PROJECTS_DIR
 _DEFAULT_COMPOSE = str(_HOME / "docker-compose.yml")
-_BRIDGE_PORT = 8787
 _INGRESS_PORT = 8799
 
 
@@ -76,12 +75,12 @@ def run(env_map: dict[str, str], compose_file: str | None = None, prober=None) -
     if url:
         report.check(
             "bridge via ingress 200",
-            probe(f"{url}/p/{_BRIDGE_PORT}/healthz", env_map.get("MCP_BEARER_TOKEN")) == 200,
+            probe(f"{url}/p/{profiles.BRIDGE_PORT}/healthz", env_map.get("MCP_BEARER_TOKEN")) == 200,
             "docker compose logs toolbox",
         )
         report.check(
             "ingress auth 401",
-            probe(f"{url}/p/{_BRIDGE_PORT}/mcp", "wrong-" + secrets.token_hex(8)) == 401,
+            probe(f"{url}/p/{profiles.BRIDGE_PORT}/mcp", "wrong-" + secrets.token_hex(8)) == 401,
             "проверь MCP_BEARER_TOKEN/INGRESS_TOKEN",
         )
         report.check(

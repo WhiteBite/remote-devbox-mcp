@@ -9,9 +9,8 @@ from __future__ import annotations
 import dataclasses
 import pathlib
 
-from rdm.profiles import HostService, Profile
+from rdm.profiles import BRIDGE_PORT, HostService, Profile
 
-BRIDGE_PORT = 8787
 DEFAULT_RUNNER_PORT = 8796
 
 _HOME_DIR = pathlib.Path(__file__).resolve().parent.parent

@@ -12,6 +12,14 @@ def _py_sources():
     yield _HOME / "tray.py"
 
 
+def test_projects_dir_literal_only_in_profiles():
+    offenders = [
+        path for path in _py_sources()
+        if '"projects"' in path.read_text(encoding="utf-8") and path.name != "profiles.py"
+    ]
+    assert offenders == []
+
+
 def test_taskkill_appears_only_in_hostos():
     offenders = [
         path for path in _py_sources()

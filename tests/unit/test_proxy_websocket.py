@@ -94,6 +94,22 @@ def test_websocket_tunnel_echo(tmp_path):
         server.shutdown()
 
 
+def test_websocket_pipelined_frames_before_101_not_lost(tmp_path):
+    fake = FakeWebSocket()
+    server, port = start_ingress(tmp_path, allowed={fake.port})
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=5.0) as sock:
+            sock.settimeout(5.0)
+            sock.sendall(_upgrade_request(fake.port, "Authorization: Bearer tok") + b"ping")
+            out = b""
+            while b"ping" not in out:
+                out += sock.recv(65536)
+            assert b"101 Switching Protocols" in out
+    finally:
+        fake.close()
+        server.shutdown()
+
+
 def test_websocket_requires_token(tmp_path):
     fake = FakeWebSocket()
     server, port = start_ingress(tmp_path, allowed={fake.port})

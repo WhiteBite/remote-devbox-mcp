@@ -6,9 +6,7 @@ import base64
 import hashlib
 
 from rdm import ports
-from rdm.profiles import Profile
-
-_BRIDGE_PORT = 8787
+from rdm.profiles import BRIDGE_PORT, Profile
 
 _PERMISSIONS_JSON = {
     "readonly": '{"write":"deny","edit":"deny","apply_patch":"deny","bash":"deny"}',
@@ -77,7 +75,7 @@ def build_manifest(
 ) -> dict[str, object]:
     ports = list(profile.allowed_ports) if allowed_ports is None else list(allowed_ports)
     endpoints: list[dict[str, object]] = [
-        {"name": "bridge", "port": _BRIDGE_PORT, "auth": "bearer", "path": f"/p/{_BRIDGE_PORT}/mcp"}
+        {"name": "bridge", "port": BRIDGE_PORT, "auth": "bearer", "path": f"/p/{BRIDGE_PORT}/mcp"}
     ]
     for service in profile.host_services:
         if service.port in self_authed:

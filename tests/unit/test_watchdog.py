@@ -6,7 +6,7 @@ import subprocess
 from rdm import watchdog
 
 
-def _wire(monkeypatch, tmp_path, dead=False, ingress_up=True):
+def _wire(monkeypatch, tmp_path, dead=False, ingress_up=True, ps="rdm-toolbox healthy"):
     projects = tmp_path / "projects"
     projects.mkdir(exist_ok=True)
     (projects / "p1.json").write_text(json.dumps({"project_dir": str(tmp_path), "git_name": "a", "git_email": "a@b"}), encoding="utf-8")
@@ -18,7 +18,7 @@ def _wire(monkeypatch, tmp_path, dead=False, ingress_up=True):
     monkeypatch.setattr(watchdog.procman, "start_ingress", lambda env_map, host_dir: calls["ingress_start"].append(env_map) or 4242)
     monkeypatch.setattr(watchdog.procman, "host_services_dead", lambda active: dead)
     monkeypatch.setattr(watchdog.docker, "compose", lambda *a, **k: calls["compose"].append(a) or subprocess.CompletedProcess(["docker"], 0, stdout="", stderr=""))
-    monkeypatch.setattr(watchdog.docker, "compose_ps", lambda *a, **k: "rdm-toolbox healthy")
+    monkeypatch.setattr(watchdog.docker, "compose_ps", lambda *a, **k: ps)
     monkeypatch.setattr(watchdog.procman, "restart_host_services", lambda *a, **k: calls["restart"].append(a) or [])
     return calls
 
@@ -48,12 +48,37 @@ def test_watchdog_bounded_iterations(monkeypatch, tmp_path):
 
 def test_watchdog_restarts_dead_ingress_origin(monkeypatch, tmp_path):
     calls = _wire(monkeypatch, tmp_path, ingress_up=False)
+    (tmp_path / ".env").write_text("INGRESS_TOKEN=fresh-token\n", encoding="utf-8")
+    monkeypatch.setattr("rdm.cli.ENV_FILE", tmp_path / ".env")
     logs: list[str] = []
     monkeypatch.setattr(watchdog, "_log", lambda path, message: logs.append(message))
     watchdog.run(_env(), iterations=1, prober=lambda url, token, timeout=10.0: 0)
     assert len(calls["ingress_start"]) == 1
+    assert calls["ingress_start"][0]["INGRESS_TOKEN"] == "fresh-token"
     assert "ingress proxy dead: restart" in logs
     assert [c for c in calls["compose"] if "--force-recreate" in c] == []
+
+
+def test_watchdog_recreates_unhealthy_toolbox(monkeypatch, tmp_path):
+    calls = _wire(monkeypatch, tmp_path, ps="rdm-toolbox Up (unhealthy)")
+    watchdog.run(_env(), iterations=1, prober=lambda url, token, timeout=10.0: 200)
+    toolbox = [c for c in calls["compose"] if "toolbox" in c]
+    assert len(toolbox) == 1
+    assert "--force-recreate" in toolbox[0]
+
+
+def test_watchdog_starts_absent_toolbox(monkeypatch, tmp_path):
+    calls = _wire(monkeypatch, tmp_path, ps="cloudflared-ingress Up (healthy)")
+    watchdog.run(_env(), iterations=1, prober=lambda url, token, timeout=10.0: 200)
+    toolbox = [c for c in calls["compose"] if "toolbox" in c]
+    assert len(toolbox) == 1
+    assert "--force-recreate" not in toolbox[0]
+
+
+def test_watchdog_leaves_starting_toolbox_alone(monkeypatch, tmp_path):
+    calls = _wire(monkeypatch, tmp_path, ps="rdm-toolbox Up (health: starting)")
+    watchdog.run(_env(), iterations=1, prober=lambda url, token, timeout=10.0: 200)
+    assert [c for c in calls["compose"] if "toolbox" in c] == []
 
 
 def test_watchdog_keeps_ingress_when_origin_alive(monkeypatch, tmp_path):

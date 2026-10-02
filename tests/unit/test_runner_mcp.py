@@ -5,6 +5,7 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 
 import pytest
 from rdm import hostos
@@ -230,6 +231,24 @@ def test_main_registers_kill_tool_for_background_script(monkeypatch, tmp_path):
     main.main()
     assert "run_script_shots" in registered
     assert "run_script_shots_kill" in registered
+
+
+def test_audit_chain_serializes_concurrent_writers(tmp_path):
+    def worker():
+        for _ in range(20):
+            _audit({"tool": "x"}, tmp_path)
+
+    threads = [threading.Thread(target=worker) for _ in range(4)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    entries = [json.loads(line) for line in (tmp_path / "audit.log").read_text(encoding="utf-8").splitlines()]
+    assert len(entries) == 80
+    prevs = [entry["prev"] for entry in entries]
+    assert len(set(prevs)) == len(prevs)
+    for left, right in zip(entries, entries[1:], strict=False):
+        assert right["prev"] == left["hash"]
 
 
 def test_import_without_runner_config(monkeypatch):

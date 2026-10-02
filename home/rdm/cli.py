@@ -12,7 +12,7 @@ import sys
 from rdm import docker, envfile, hostos, netprobe, ports, procman, profiles, render, tokens, tunnels
 
 HOME_DIR = pathlib.Path(__file__).resolve().parent.parent
-PROJECTS_DIR = HOME_DIR.parent / "projects"
+PROJECTS_DIR = profiles.PROJECTS_DIR
 ENV_FILE = HOME_DIR / ".env"
 OVERRIDE_FILE = HOME_DIR / "docker-compose.override.yml"
 COMPOSE_FILE = str(HOME_DIR / "docker-compose.yml")
@@ -276,16 +276,16 @@ def _start(name: str | None, with_preview: bool) -> int:
         if rc:
             return rc
     else:
-        docker.compose("up", "-d", compose_file=COMPOSE_FILE)
+        up = docker.compose("up", "-d", compose_file=COMPOSE_FILE)
+        if up.returncode != 0:
+            print(f"docker compose up не удался (rc={up.returncode}): {up.stderr.strip()[:200]}", file=sys.stderr)
+            return 1
         env_map = envfile.EnvFile.load(ENV_FILE).as_map()
         procman.stop_ingress()
         procman.start_ingress(_ingress_env(env_map), HOME_DIR)
     env_map = envfile.EnvFile.load(ENV_FILE).as_map()
-    if not env_map.get("PUBLIC_PREVIEW_URL"):
-        if with_preview:
-            docker.compose("--profile", "preview", "up", "-d", compose_file=COMPOSE_FILE)
-        else:
-            docker.compose("stop", "cloudflared-preview", compose_file=COMPOSE_FILE)
+    if not env_map.get("PUBLIC_PREVIEW_URL") and with_preview:
+        docker.compose("--profile", "preview", "up", "-d", compose_file=COMPOSE_FILE)
     print()
     print("=== Скопируй агенту (arena.ai и любой агентский сайт) ===")
     print(tokens.chat_block(env_map, _ingress_url(env_map), True, _preview_url(env_map), _runner_port(env_map)))
@@ -303,7 +303,10 @@ def _preview(origin: str | None) -> int:
     if not env_map.get("PREVIEW_ORIGIN"):
         print("укажи origin: devbox.py preview http://host.docker.internal:<port>", file=sys.stderr)
         return 1
-    docker.compose("--profile", "preview", "up", "-d", "--force-recreate", "cloudflared-preview", compose_file=COMPOSE_FILE)
+    up = docker.compose("--profile", "preview", "up", "-d", "--force-recreate", "cloudflared-preview", compose_file=COMPOSE_FILE)
+    if up.returncode != 0:
+        print(f"preview-туннель не поднялся (rc={up.returncode}): {up.stderr.strip()[:200]}", file=sys.stderr)
+        return 1
     url = _preview_url(env_map)
     print(f"PREVIEW={url}" if url else "preview поднимается; повтори `devbox.py preview` через пару секунд")
     return 0
@@ -313,7 +316,10 @@ def _issue_tokens() -> int:
     env = envfile.EnvFile.load(ENV_FILE)
     tokens.rotate_tokens(env)
     env.write(ENV_FILE)
-    docker.compose("up", "-d", "--force-recreate", "toolbox", compose_file=COMPOSE_FILE)
+    up = docker.compose("up", "-d", "--force-recreate", "toolbox", compose_file=COMPOSE_FILE)
+    if up.returncode != 0:
+        print(f"docker compose up не удался (rc={up.returncode}): {up.stderr.strip()[:200]}", file=sys.stderr)
+        return 1
     env_map = env.as_map()
     active = env_map.get("ACTIVE_PROFILE")
     if active:

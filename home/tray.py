@@ -19,12 +19,12 @@ import webbrowser
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
-from rdm import envfile
+from rdm import envfile, profiles
 
 HOME = pathlib.Path(__file__).resolve().parent
 DEVBOX = HOME / "devbox.py"
 ENV_FILE = HOME / ".env"
-PROJECTS = HOME.parent / "projects"
+PROJECTS = profiles.PROJECTS_DIR
 _TEMP = pathlib.Path(os.environ.get("TEMP", "/tmp"))
 CREATE_NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
 STATUS_INTERVAL = 30.0
@@ -178,6 +178,8 @@ def _notify(icon, message: str) -> None:
 
 def _copy_block_silent(full: bool = True) -> bool:
     result = _devbox("block", *([] if full else ["--masked"]))
+    if result.returncode != 0 or not result.stdout.strip():
+        return False
     return _clipboard(result.stdout.strip())
 
 
@@ -230,7 +232,10 @@ def _stop_all(icon) -> None:
 def _rotate(icon) -> None:
     def work() -> None:
         result = _devbox("issue-tokens", timeout=300)
-        _clipboard(result.stdout.strip())
+        if result.returncode != 0 or not _clipboard(result.stdout.strip()):
+            line = (result.stderr.strip().splitlines() or ["без вывода"])[-1]
+            _notify(icon, f"ротация не удалась — {line[:150]}")
+            return
         _notify(icon, "токены ротированы; новый блок в буфере")
 
     _background(icon, work)

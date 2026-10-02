@@ -52,6 +52,35 @@ def test_tray_start_does_not_open_preview(monkeypatch):
     assert "--preview" not in start
 
 
+def test_tray_copy_block_silent_fails_on_devbox_error(monkeypatch):
+    module = _load()
+
+    class _Result:
+        returncode = 1
+        stdout = ""
+        stderr = "boom"
+
+    monkeypatch.setattr(module, "_devbox", lambda *a, **k: _Result())
+    monkeypatch.setattr(module, "_clipboard", lambda text: True)
+    assert module._copy_block_silent() is False
+
+
+def test_tray_rotate_reports_failure(monkeypatch):
+    module = _load()
+
+    class _Result:
+        returncode = 1
+        stdout = ""
+        stderr = "docker down"
+
+    notes: list[str] = []
+    monkeypatch.setattr(module, "_devbox", lambda *a, **k: _Result())
+    monkeypatch.setattr(module, "_background", lambda icon, work: work())
+    monkeypatch.setattr(module, "_notify", lambda icon, message: notes.append(message))
+    module._rotate(None)
+    assert notes and "не удалась" in notes[0]
+
+
 def test_tray_clipboard_does_not_crash():
     module = _load()
     if sys.platform != "win32":

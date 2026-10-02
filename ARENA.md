@@ -9,7 +9,7 @@
 ## 0. К чему ты подключаешься
 
 - **devbox на машине пользователя**: контейнер toolbox с проектом (`/workspace`)
-  и тулчейнами; внутри opencode-mcp-bridge — 16 нативных тулов
+  и тулчейнами; внутри opencode-mcp-bridge — 9 нативных тулов
   (read/write/edit/apply_patch/glob/grep/bash/lsp/todowrite) с джоб-протоколом.
 - **ingress**: единственный публичный вход `<INGRESS>`; любой эндпоинт хоста =
   путь `<INGRESS>/p/<порт>/<путь>`. Код проекта: `/p/8787/mcp`.
@@ -32,7 +32,7 @@ MCP_URL=<INGRESS>/p/8787/mcp
 MCP_TOKEN=<BRIDGE_TOKEN>
 MCP_TIMEOUT=300
 EOF
-./mcp check        # ожидаешь opencode-mcp-bridge и список из 16 тулов
+./mcp check        # ожидаешь opencode-mcp-bridge и список из 9 тулов
 ```
 
 Конфиги сразу скопируй в свой **Workspace** (песочница сбрасывается, Workspace —

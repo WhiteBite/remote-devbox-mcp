@@ -14,6 +14,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
+BRIDGE_PORT = 8787
+PROJECTS_DIR = Path(__file__).resolve().parent.parent.parent / "projects"
+
 
 @dataclass(frozen=True, slots=True)
 class HostService:
@@ -310,6 +313,8 @@ def validate(profile: Profile) -> list[str]:
             problems.append(f"R14: RunnerPort {runner_port} в AllowedPorts")
         if runner_port in ports:
             problems.append(f"R15: RunnerPort {runner_port} в HostServices")
+        if runner_port == BRIDGE_PORT or runner_port + 1 == BRIDGE_PORT:
+            problems.append(f"R20: RunnerPort {runner_port} конфликтует с портом моста {BRIDGE_PORT}")
         naked = runner_port + 1
         if naked in allowed:
             problems.append(f"R20: порт {naked} (HTTP раннера без авторизации) в AllowedPorts")

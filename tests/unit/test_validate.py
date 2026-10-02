@@ -122,6 +122,16 @@ def test_validate_r23_rejects_template_in_argv0():
     assert any(m.startswith("R23") and "argv[0]" in m for m in validate(profile))
 
 
+def test_validate_r20_rejects_runner_port_colliding_with_bridge():
+    for port in (8787, 8786):
+        profile = Profile(
+            project_dir=".",
+            runner_commands=(RunnerCommand(name="x", cmd=("npm",)),),
+            runner_port=port,
+        )
+        assert any(m.startswith("R20") and "моста" in m for m in validate(profile))
+
+
 def test_validate_r25_rejects_out_of_range_timeout():
     profile = Profile(
         project_dir=".",

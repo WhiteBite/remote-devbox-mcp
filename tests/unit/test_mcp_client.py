@@ -233,6 +233,28 @@ def test_502_on_tools_call_raises_without_retry(monkeypatch):
     assert len(calls) == 1
 
 
+def test_503_on_tools_call_retries(monkeypatch):
+    mod = load_client()
+    calls = []
+
+    def fake_urlopen(req, timeout=None):
+        calls.append(req)
+        if len(calls) == 1:
+            raise urllib.error.HTTPError(
+                "http://devbox/mcp", 503, "Service Unavailable", None,
+                io.BytesIO(b"connection slot exhausted"))
+        return FakeResponse(
+            b'{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"ok"}]}}')
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr("time.sleep", lambda s: None)
+    t = mod.HttpTransport("http://devbox/mcp", retries=2)
+    res = t.send({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                  "params": {"name": "bash", "arguments": {}}})
+    assert res["result"]["content"][0]["text"] == "ok"
+    assert len(calls) == 2
+
+
 def test_401_resets_session_via_callback_then_retries(monkeypatch):
     mod = load_client()
     calls = []

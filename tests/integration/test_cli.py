@@ -283,6 +283,45 @@ def test_use_fails_when_agent_artifacts_fail(monkeypatch, tmp_path):
     assert calls["gitleaks"] == []
 
 
+def test_start_without_name_fails_when_compose_up_fails(monkeypatch, tmp_path):
+    _, calls = _setup(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        cli.docker, "compose",
+        lambda *a, **k: subprocess.CompletedProcess(["docker"], 1, "", "compose failed"),
+    )
+    assert cli.main(["start"]) == 1
+
+
+def test_start_without_preview_keeps_preview_tunnel(monkeypatch, tmp_path):
+    projects, calls = _setup(monkeypatch, tmp_path)
+    (projects / "p1.json").write_text(_profile_json(tmp_path), encoding="utf-8")
+    assert cli.main(["start", "p1"]) == 0
+    assert not any("cloudflared-preview" in args and "stop" in args for args in calls["compose"])
+
+
+def test_issue_tokens_fails_when_compose_up_fails(monkeypatch, tmp_path):
+    _setup(monkeypatch, tmp_path)
+    cli.ENV_FILE.write_text(
+        "MCP_BEARER_TOKEN=" + "0" * 64 + "\nMCP_PUBLIC_TOKEN=" + "0" * 64 + "\nINGRESS_TOKEN=" + "0" * 64 + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        cli.docker, "compose",
+        lambda *a, **k: subprocess.CompletedProcess(["docker"], 1, "", "compose failed"),
+    )
+    assert cli.main(["issue-tokens"]) == 1
+
+
+def test_preview_fails_when_compose_up_fails(monkeypatch, tmp_path):
+    _setup(monkeypatch, tmp_path)
+    cli.ENV_FILE.write_text("PREVIEW_ORIGIN=http://host.docker.internal:8080\n", encoding="utf-8")
+    monkeypatch.setattr(
+        cli.docker, "compose",
+        lambda *a, **k: subprocess.CompletedProcess(["docker"], 1, "", "compose failed"),
+    )
+    assert cli.main(["preview"]) == 1
+
+
 def test_use_rejects_profile_name_with_shell_characters(monkeypatch, tmp_path):
     projects, calls = _setup(monkeypatch, tmp_path)
     (projects / "bad name.json").write_text(_profile_json(tmp_path), encoding="utf-8")

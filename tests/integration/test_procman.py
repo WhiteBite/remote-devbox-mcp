@@ -158,6 +158,26 @@ def test_missing_pidfile_is_noop(monkeypatch, tmp_path):
     assert procman.stop_ingress() is None
 
 
+def test_start_ingress_replaces_previous_proxy(monkeypatch, tmp_path):
+    _isolate_tempdir(monkeypatch, tmp_path)
+    port = _ephemeral_port()
+    env_map = {
+        "INGRESS_TOKEN": "integration-test-token",
+        "PROXY_PORT": str(port),
+        "SELF_AUTHED_PORTS": "",
+        "ALLOWED_PORTS": "",
+        "RDM_MANIFEST_PATH": str(tmp_path / "manifest.json"),
+    }
+    first = procman.start_ingress(env_map, HOME_DIR)
+    second = procman.start_ingress(env_map, HOME_DIR)
+    try:
+        assert second != first
+        assert _wait_until(lambda: not _alive(first))
+    finally:
+        procman.stop_ingress()
+        hostos.kill_tree(first)
+
+
 def test_start_ingress_listens(monkeypatch, tmp_path):
     _isolate_tempdir(monkeypatch, tmp_path)
     port = _ephemeral_port()

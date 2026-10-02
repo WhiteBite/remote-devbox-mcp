@@ -75,8 +75,8 @@ class HttpTransport:
 
     name = "http"
 
-    # 502: край туннеля = не доставлен (ретрай ок), ориджин = мог выполниться (tools/call без ретрая)
-    RETRYABLE_STATUS = frozenset({502, 520, 521, 523, 524, 530})
+    # 502: ориджин мог выполниться (tools/call не ретраим); 503: слот соединений, запрос не обработан
+    RETRYABLE_STATUS = frozenset({502, 503, 520, 521, 523, 524, 530})
 
     def __init__(self, url: str, token: str | None = None,
                  header: str = "Authorization", bearer: bool = True,

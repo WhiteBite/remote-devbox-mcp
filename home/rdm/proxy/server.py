@@ -194,7 +194,7 @@ class _Handler(socketserver.BaseRequestHandler):
 
         access_log.log(server.config.access_log_path, port, method, target, "forward")
         if _is_websocket(pairs):
-            return self._forward_websocket(sock, method, path, pairs, host, port)
+            return self._forward_websocket(sock, method, path, pairs, host, port, carry)
         return self._forward(sock, method, path, pairs, body, host, port, request_close)
 
     def _consume_body(self, sock, decision: framing.FramingOk, carry: bytes) -> tuple[bytes, bytes] | None:
@@ -246,6 +246,7 @@ class _Handler(socketserver.BaseRequestHandler):
         pairs: list[tuple[bytes, bytes]],
         host: str,
         port: int,
+        carry: bytes,
     ) -> bool:
         host_header = f"{host}:{port}".encode()
         forward = upstream.filter_upgrade_headers(pairs, host_header, self.client_address[0], b"https")
@@ -260,6 +261,9 @@ class _Handler(socketserver.BaseRequestHandler):
                 head += name + b": " + value + b"\r\n"
             head += b"\r\n"
             connection.sendall(head)
+            # клиенты пайплайнят первые WS-фреймы сразу за upgrade-запросом — они уже в carry
+            if carry:
+                connection.sendall(carry)
             upstream_head = self._read_raw_head(connection)
             if upstream_head is None:
                 self._simple(502)
