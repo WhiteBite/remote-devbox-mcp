@@ -122,8 +122,8 @@ what not to touch.
 ## Exit codes
 
 `0` ok · `2` config · `3` tunnel · `4` permission needed · `5` job error.
-A `completed` job with a non-zero bash exit still exits `5` — a failed test is
-never a success.
+A `completed` job with a non-zero bash exit still exits `5`, and so does a job
+that never finished (polls exhausted) — a failed or hung test is never a success.
 
 ## Do / Don't
 
@@ -179,7 +179,7 @@ Notes:
 
 | Symptom | Action |
 |---|---|
-| 502/520/521/523/530 | client retries itself; wait |
+| 502/503/520/521/523/530 | client retries itself; wait |
 | persistent 530 >3 min | wait 2-3 min, retry `check` once, then ask the user |
 | 401 after a Docker restart | INGRESS URL rotated; ask for the new one |
 | `metadata.exit != 0` | exit 5, read `metadata.outputPath` if truncated |

@@ -12,6 +12,7 @@ def _wire(monkeypatch, tmp_path, dead=False, ingress_up=True, ps="rdm-toolbox he
     (projects / "p1.json").write_text(json.dumps({"project_dir": str(tmp_path), "git_name": "a", "git_email": "a@b"}), encoding="utf-8")
     calls: dict[str, list] = {"compose": [], "restart": [], "ingress_start": []}
     monkeypatch.setattr(watchdog, "_PROJECTS", projects)
+    monkeypatch.setattr(watchdog, "_log", lambda path, message: None)
     monkeypatch.setattr(watchdog.netprobe, "ingress_url", lambda env_map, compose_file=None: "https://x")
     monkeypatch.setattr(watchdog.netprobe, "can_connect", lambda port: ingress_up)
     monkeypatch.setattr(watchdog.procman, "stop_ingress", lambda: None)
