@@ -5,7 +5,6 @@ import signal
 import subprocess
 import sys
 import tempfile
-import time
 
 try:
     import psutil
@@ -133,18 +132,6 @@ def spawn(
     return proc.pid
 
 
-def _reap(pid: int) -> None:
-    deadline = time.monotonic() + 2.0
-    while time.monotonic() < deadline:
-        try:
-            reaped, _ = os.waitpid(pid, os.WNOHANG)
-        except (ChildProcessError, OSError):
-            return
-        if reaped == pid:
-            return
-        time.sleep(0.05)
-
-
 def kill_tree(pid: int) -> None:
     if sys.platform == "win32":
         subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)], capture_output=True)
@@ -156,4 +143,3 @@ def kill_tree(pid: int) -> None:
             os.kill(pid, signal.SIGKILL)
         except OSError:
             pass
-    _reap(pid)
