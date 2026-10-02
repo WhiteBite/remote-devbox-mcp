@@ -5,10 +5,11 @@
 из поля $RunnerCommands профиля). Каждая команда = argv-массив; аргументы
 агента подставляются ТОЛЬКО как элементы argv (shell=False); для .cmd/.bat
 шимов Windows (npm/npx) запуск идёт через `cmd.exe /c` с отдельной валидацией
-аргументов на cmd-опасные символы (% ! перевод строки), .exe запускаются
+аргументов на cmd-опасные символы (% ! " перевод строки), .exe запускаются
 напрямую. type=path валидируется на выход за cwd. Background-команды детачатся,
-pid пишется в %TEMP%\\rdm-runner\\<profile>-<name>.pid. Каждый вызов
-логируется в %TEMP%\\rdm-runner\\audit.log.
+pid-файл хранит `pid|create_time|marker`; kill-тул сверяет владение процессом
+(cmdline-маркер или create_time) и не трогает чужой/переиспользованный pid.
+Каждый вызов логируется в %TEMP%\\rdm-runner\\audit.log.
 
 Наружу отдаётся через auth-proxy (bearer) + ingress /p/<port>/...;
 в SELF_AUTHED_PORTS добавляется порт auth-proxy, не самого раннера.
@@ -20,11 +21,13 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
+from rdm import hostos
 from rdm.runner.audit import _audit
 from rdm.runner.policy import _check_args, _check_cmd_shim, _redact_argv
 
@@ -42,23 +45,32 @@ def _norm(d):
     return {(k.lower() if isinstance(k, str) else k): v for k, v in (d or {}).items()}
 
 
-def _quote_cmd(a: str) -> str:
-    """Экранирование аргумента для cmd.exe только когда необходимо:
-    простые аргументы передаём как есть (иначе npm получит литеральные кавычки)."""
-    if not any(c in a for c in ' &|<>()^%!"'):
-        return a
-    a = a.replace('"', '""')
-    for ch in "&|<>()^%!":
-        a = a.replace(ch, "^" + ch)
-    return f'"{a}"'
+def _shim_cmdline(exe: str, args: list[str]) -> str:
+    """Сырая командная строка для cmd-шимов: list2cmdline экранирует наши
+    кавычки бэкслешами (\"), и аргумент приходит в .cmd с литеральными
+    кавычками; поэтому шимовый путь собираем строкой и квотим сами. `"`/`%`/`!`
+    в аргументах уже отклонены _check_cmd_shim, внутри кавычек метасимволы
+    cmd литеральны. Внешняя пара кавычек обязательна: иначе cmd /c срезает
+    первую и последнюю кавычки строки и ломает путь шима."""
+    parts = [f'"{exe}"']
+    for a in args:
+        parts.append(f'"{a}"' if any(c in a for c in " \t&|<>()^") else a)
+    return f'cmd /c "{" ".join(parts)}"'
 
 
-def _resolve(argv: list[str], cwd: Path) -> list[str]:
+def _tail(stream, limit: int) -> str:
+    size = stream.seek(0, os.SEEK_END)
+    stream.seek(max(0, size - limit))
+    return stream.read().decode("utf-8", "replace")
+
+
+def _resolve(argv: list[str], cwd: Path) -> list[str] | str:
     """npm/npx на Windows = .cmd-шимы; shutil.which матчит и бесрасширенный
     sh-скрипт (WinError 193), поэтому ищем только явные расширения.
     Относительный exe Windows резолвит от cwd процесса (папка home), а не от
     cwd команды — поэтому сначала делаем его абсолютным от cwd проекта.
-    argv остаётся allowlist-ным; аргументы экранируются для cmd."""
+    argv остаётся allowlist-ным; .cmd-путь собирается в сырую строку
+    (_shim_cmdline), .exe идёт списком."""
     first = argv[0]
     if not os.path.isabs(first):
         candidate = cwd / first
@@ -72,7 +84,7 @@ def _resolve(argv: list[str], cwd: Path) -> list[str]:
                 break
     exe = exe or shutil.which(first) or first
     if os.name == "nt" and exe.lower().endswith((".cmd", ".bat")):
-        return ["cmd", "/c", exe, *(_quote_cmd(a) for a in argv[1:])]
+        return _shim_cmdline(exe, argv[1:])
     return [exe] + argv[1:]
 
 
@@ -124,7 +136,7 @@ def _make_tool(name: str, spec: dict, ctx: _Ctx):
         argv = _build_argv(spec, present)
         _audit({"tool": name, "argv": _redact_argv(argv)}, ctx.run_dir)
         resolved = _resolve(argv, ctx.cwd)
-        if resolved[:2] == ["cmd", "/c"]:
+        if isinstance(resolved, str):
             _check_cmd_shim(argv[1:])
         argv = resolved
         env = _child_env(spec)
@@ -135,20 +147,42 @@ def _make_tool(name: str, spec: dict, ctx: _Ctx):
                 proc = subprocess.Popen(
                     argv, cwd=ctx.cwd, env=env, stdout=lf, stderr=lf,
                     creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
+                    start_new_session=os.name != "nt",
                 )
-            pidfile.write_text(str(proc.pid))
+            pidfile.write_text(
+                f"{proc.pid}|{hostos.create_time(proc.pid) or ''}|{' '.join(argv)}",
+                encoding="utf-8",
+            )
             return json.dumps({
                 "started": True, "pid": proc.pid,
                 "port": spec.get("port"), "log": str(log),
             })
-        proc = subprocess.run(
-            argv, cwd=ctx.cwd, env=env, capture_output=True, timeout=timeout,
-        )
+        with tempfile.TemporaryFile() as out_file, tempfile.TemporaryFile() as err_file:
+            proc = subprocess.Popen(
+                argv, cwd=ctx.cwd, env=env, stdout=out_file, stderr=err_file,
+                start_new_session=os.name != "nt",
+            )
+            timed_out = False
+            try:
+                proc.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                timed_out = True
+                hostos.kill_tree(proc.pid)
+                proc.wait()
+            stdout = _tail(out_file, 64000)
+            stderr = _tail(err_file, 32000)
+        if timed_out:
+            _audit({"tool": name, "exit": "timeout"}, ctx.run_dir)
+            return json.dumps({
+                "exit_code": 124,
+                "stdout": stdout,
+                "stderr": (stderr + f"\n[timeout] дерево процессов убито по таймауту {timeout}s").lstrip("\n"),
+            })
         _audit({"tool": name, "exit": proc.returncode}, ctx.run_dir)
         return json.dumps({
             "exit_code": proc.returncode,
-            "stdout": proc.stdout.decode("utf-8", "replace")[-64000:],
-            "stderr": proc.stderr.decode("utf-8", "replace")[-32000:],
+            "stdout": stdout,
+            "stderr": stderr,
         })
 
     run.__name__ = _tool_name(name)
@@ -168,24 +202,24 @@ def _make_tool(name: str, spec: dict, ctx: _Ctx):
 def _make_kill_tool(name: str, ctx: _Ctx):
     def kill():
         pidfile = ctx.run_dir / f"{ctx.profile}-{name}.pid"
-        if not pidfile.exists():
-            return json.dumps({"killed": False, "reason": "no pidfile"})
-        pid = int(pidfile.read_text().strip())
-        if os.name == "nt":
-            subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)])
-        else:
-            try:
-                pgid = os.getpgid(pid)
-                if pgid != os.getpgid(0):
-                    os.killpg(pgid, 9)
-                else:
-                    os.kill(pid, 9)
-            except OSError:
-                pass
         try:
-            pidfile.unlink()
-        except OSError:
-            pass
+            text = pidfile.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return json.dumps({"killed": False, "reason": "no pidfile"})
+        fields = text.strip().split("|", 2)
+        if len(fields) != 3 or not fields[0].isdigit():
+            pidfile.unlink(missing_ok=True)
+            return json.dumps({"killed": False, "reason": "pidfile повреждён (нет pid|create_time|marker)"})
+        pid = int(fields[0])
+        try:
+            recorded = float(fields[1]) if fields[1] else None
+        except ValueError:
+            recorded = None
+        if not hostos.owned(pid, recorded, fields[2]):
+            pidfile.unlink(missing_ok=True)
+            return json.dumps({"killed": False, "pid": pid, "reason": "процесс мёртв или pid переиспользован"})
+        hostos.kill_tree(pid)
+        pidfile.unlink(missing_ok=True)
         _audit(f"{name}_kill pid={pid}", ctx.run_dir)
         return json.dumps({"killed": True, "pid": pid})
 

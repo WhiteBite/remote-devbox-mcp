@@ -99,6 +99,9 @@ _SETUP_KEYS = {"cmd": "cmd", "marker": "marker", "required": "required"}
 _SCRIPT_KEYS = {"name": "name", "cmd": "cmd", "description": "description"}
 _ARGSPEC_KEYS = {"type": "type", "position": "position"}
 
+_MOUNT_RE = re.compile(r"[A-Za-z0-9._\-/]+")
+_TOOLCHAIN_RE = re.compile(r"[A-Za-z0-9._:\-+ ]*")
+
 
 def _norm(key: str) -> str:
     """ConvertTo-Json капитализирует ключи PowerShell — сравниваем без регистра и '_'."""
@@ -229,6 +232,8 @@ def validate(profile: Profile) -> list[str]:
         problems.append(f"R2: папка проекта {profile.project_dir} не существует")
     if not isinstance(profile.toolchain, str):
         problems.append("R3: $Toolchain должен быть строкой")
+    elif not _TOOLCHAIN_RE.fullmatch(profile.toolchain):
+        problems.append("R22: Toolchain: допустимы только символы [A-Za-z0-9._:+- ]")
     if not profile.git_name:
         problems.append("R4: задай $GitName")
     if not profile.git_email or "@" not in profile.git_email:
@@ -262,6 +267,13 @@ def validate(profile: Profile) -> list[str]:
             for element in command.cmd:
                 if any(ch in metachars for ch in element):
                     problems.append(f"R9: Cmd элемент '{element}' содержит shell-символ")
+        for arg_name, spec in command.args:
+            if spec.type not in ("str", "path"):
+                problems.append(f"R23: RunnerCommand[{i}] args.{arg_name}: type должен быть str или path")
+            if spec.position not in ("append", "template"):
+                problems.append(f"R23: RunnerCommand[{i}] args.{arg_name}: position должен быть append или template")
+            if command.cmd and command.cmd[0] == "{" + arg_name + "}":
+                problems.append(f"R23: RunnerCommand[{i}]: шаблон {{{arg_name}}} в argv[0] — аргумент станет исполняемым")
     if len(names) != len(set(names)):
         problems.append("R10: дубликат имени в RunnerCommands")
 
@@ -287,8 +299,19 @@ def validate(profile: Profile) -> list[str]:
             problems.append(f"R14: RunnerPort {runner_port} в AllowedPorts")
         if runner_port in ports:
             problems.append(f"R15: RunnerPort {runner_port} в HostServices")
+        naked = runner_port + 1
+        if naked in allowed:
+            problems.append(f"R20: порт {naked} (HTTP раннера без авторизации) в AllowedPorts")
+        if naked in ports:
+            problems.append(f"R20: порт {naked} (HTTP раннера без авторизации) в HostServices")
+        for i, command in enumerate(profile.runner_commands, 1):
+            if command.port == naked:
+                problems.append(f"R20: RunnerCommand[{i}]: port {naked} — HTTP раннера без авторизации")
 
     for mount in profile.deny_mounts:
+        if not _MOUNT_RE.fullmatch(mount):
+            problems.append(f"R21: DenyMounts {mount!r}: допустимы только символы [A-Za-z0-9._-/]")
+            continue
         if not os.path.exists(os.path.join(profile.project_dir, mount)):
             problems.append(
                 f"WARN R16: DenyMounts {profile.project_dir}/{mount} не существует (ничего не денится)"

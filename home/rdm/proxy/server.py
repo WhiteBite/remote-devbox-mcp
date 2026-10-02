@@ -150,19 +150,6 @@ class _Handler(socketserver.BaseRequestHandler):
         request_close: bool,
         carry: bytes,
     ) -> bool:
-        if decision.framing is framing.BodyFraming.LENGTH:
-            if decision.expect_continue:
-                try:
-                    sock.sendall(b"HTTP/1.1 100 Continue\r\n\r\n")
-                except OSError:
-                    return False
-            body, carry, complete = _read_body(sock, carry, decision.content_length)
-            if not complete:
-                self._simple(400)
-                return False
-        else:
-            body = b""
-        self._carry = carry
         target_bytes = target.encode("latin-1")
 
         if server.config.mode == "ingress" and router.is_manifest(target_bytes):
@@ -173,6 +160,10 @@ class _Handler(socketserver.BaseRequestHandler):
             if data is None:
                 self._simple(404)
                 return False
+            consumed = self._consume_body(sock, decision, carry)
+            if consumed is None:
+                return False
+            self._carry = consumed[1]
             return self._send_body(200, [(b"content-type", b"application/json")], data, request_close)
 
         if server.config.mode == "ingress":
@@ -195,10 +186,30 @@ class _Handler(socketserver.BaseRequestHandler):
                 return False
             host, port, path = server.config.target_host, server.config.target_port, target_bytes
 
+        consumed = self._consume_body(sock, decision, carry)
+        if consumed is None:
+            return False
+        body, carry = consumed
+        self._carry = carry
+
         access_log.log(server.config.access_log_path, port, method, target, "forward")
         if _is_websocket(pairs):
             return self._forward_websocket(sock, method, path, pairs, host, port)
         return self._forward(sock, method, path, pairs, body, host, port, request_close)
+
+    def _consume_body(self, sock, decision: framing.FramingOk, carry: bytes) -> tuple[bytes, bytes] | None:
+        if decision.framing is not framing.BodyFraming.LENGTH:
+            return b"", carry
+        if decision.expect_continue:
+            try:
+                sock.sendall(b"HTTP/1.1 100 Continue\r\n\r\n")
+            except OSError:
+                return None
+        body, carry, complete = _read_body(sock, carry, decision.content_length)
+        if not complete:
+            self._simple(400)
+            return None
+        return body, carry
 
     def _forward(
         self,
@@ -336,7 +347,7 @@ class _Handler(socketserver.BaseRequestHandler):
             for name, value in raw
             if name not in hop and name not in (b"content-length", b"transfer-encoding")
         ]
-        bodyless = method == "HEAD" or response.status in (204, 304) or 100 <= response.status < 200
+        bodyless = method == "HEAD" or response.status in (204, 304)
         if bodyless:
             original = next((value for name, value in raw if name == b"content-length"), None)
             if original is not None:
@@ -369,11 +380,13 @@ class _Handler(socketserver.BaseRequestHandler):
                 if response.chunked:
                     self._stream_chunked(sock, response)
                 elif response.length is not None:
-                    if self._stream_length(sock, response) != response.length:
+                    # read1() decrements response.length as the body is consumed
+                    expected = response.length
+                    if self._stream_length(sock, response) != expected:
                         return False
                 else:
                     self._stream_eof(sock, response)
-        except OSError:
+        except (OSError, http.client.HTTPException):
             return False
         return not close
 

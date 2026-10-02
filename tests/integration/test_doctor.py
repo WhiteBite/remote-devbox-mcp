@@ -71,6 +71,20 @@ def test_doctor_passes_with_all_checks(monkeypatch, tmp_path, capsys):
     assert "[PASS] bridge via ingress 200" in out
 
 
+def test_doctor_counts_host_service_alive_via_create_time(monkeypatch, tmp_path, capsys):
+    _wire(monkeypatch, tmp_path)
+    monkeypatch.setattr(hostos, "cmdline_matches", lambda pid, marker: marker == "rdm.proxy")
+    monkeypatch.setattr(hostos, "create_time", lambda pid: 111.5)
+    pids = hostos.tempdir() / "rdm-host" / "p1-pids.txt"
+    pids.parent.mkdir(parents=True, exist_ok=True)
+    pids.write_text("12345|111.5|python.EXE tools/muffin-supervisor/server.py\n", encoding="utf-8")
+    try:
+        assert doctor.run(_env(tmp_path), prober=_prober) == 0
+    finally:
+        pids.unlink(missing_ok=True)
+    assert "[FAIL] host services alive" not in capsys.readouterr().out
+
+
 def test_doctor_reads_gitleaks_report(monkeypatch, tmp_path, capsys):
     _wire(monkeypatch, tmp_path)
     report = hostos.tempdir() / "rdm-host" / "gitleaks-p1.json"

@@ -39,6 +39,7 @@ import tempfile
 import time
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 
 # Описания тулов содержат юникод; Windows-консоли (cp1251 и т.п.) его не пользуют.
 for _stream in (sys.stdout, sys.stderr):
@@ -62,6 +63,8 @@ STATE_DIR = os.environ.get("RDM_ARENA_STATE_DIR") or os.path.join(
     tempfile.gettempdir(), "rdm-arena")
 JOBS_FILE = os.path.join(STATE_DIR, ".mcp_jobs.json")
 
+OPEN_JOB_STATUSES = ("running", "awaiting_permission", "cancelling")
+
 
 # ──────────────────────────────────────────────────────────────────────
 # Транспорты
@@ -72,8 +75,7 @@ class HttpTransport:
 
     name = "http"
 
-    # Ошибки края Cloudflare «ориджин недоступен»: запрос НЕ доставлен мосту,
-    # повтор безопасен (в отличие от таймаута чтения — тот не ретраим).
+    # 502: край туннеля = не доставлен (ретрай ок), ориджин = мог выполниться (tools/call без ретрая)
     RETRYABLE_STATUS = frozenset({502, 520, 521, 523, 524, 530})
 
     def __init__(self, url: str, token: str | None = None,
@@ -86,6 +88,7 @@ class HttpTransport:
         self.timeout = timeout
         self.retries = retries
         self.session_id: str | None = None
+        self.on_session_reset: Callable[[], object] | None = None
 
     def _redact(self, msg: str) -> str:
         if self.token and self.token in msg:
@@ -127,7 +130,13 @@ class HttpTransport:
                         and attempt < self.retries:
                     print("[!] сессия истекла, переподключаюсь", file=sys.stderr)
                     self.session_id = None
+                    if self.on_session_reset:
+                        self.on_session_reset()
                     continue
+                if e.code == 502 and payload.get("method") == "tools/call":
+                    # origin-502 приходит уже после доставки: мутация могла выполниться дважды
+                    raise RuntimeError(
+                        self._redact(f"HTTP {e.code} {e.reason}: {detail}")) from None
                 if e.code in self.RETRYABLE_STATUS and attempt < self.retries:
                     print(f"[!] HTTP {e.code}: туннель временно недоступен",
                           file=sys.stderr)
@@ -214,8 +223,19 @@ class StdioTransport:
 # Перзистентность джобов
 # ──────────────────────────────────────────────────────────────────────
 
-def save_job_state(job: dict, tool: str) -> None:
+def _atomic_write_jobs(jobs: dict) -> None:
     os.makedirs(STATE_DIR, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=STATE_DIR, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(jobs, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, JOBS_FILE)
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+
+
+def save_job_state(job: dict, tool: str) -> None:
     try:
         with open(JOBS_FILE, encoding="utf-8") as f:
             jobs = json.load(f)
@@ -226,8 +246,7 @@ def save_job_state(job: dict, tool: str) -> None:
         "status": job.get("status"),
         "tool": tool,
     }
-    with open(JOBS_FILE, "w", encoding="utf-8") as f:
-        json.dump(jobs, f, ensure_ascii=False, indent=2)
+    _atomic_write_jobs(jobs)
 
 
 def load_job_states() -> dict:
@@ -239,9 +258,7 @@ def load_job_states() -> dict:
 
 
 def save_job_states(jobs: dict) -> None:
-    os.makedirs(STATE_DIR, exist_ok=True)
-    with open(JOBS_FILE, "w", encoding="utf-8") as f:
-        json.dump(jobs, f, ensure_ascii=False, indent=2)
+    _atomic_write_jobs(jobs)
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -254,6 +271,8 @@ class MCPClient:
         self._id = 0
         self.server_info: dict = {}
         self.capabilities: dict = {}
+        if hasattr(transport, "on_session_reset"):
+            transport.on_session_reset = self.initialize
 
     def _next(self) -> int:
         self._id += 1
@@ -404,7 +423,7 @@ def settle_job(client, job: dict, auto: bool,
     """
     polls = 0
     last_output = ""
-    while job.get("status") in ("awaiting_permission", "running", "cancelling"):
+    while job.get("status") in OPEN_JOB_STATUSES:
         polls += 1
         if polls > max_polls:
             print(f"[!] джоб не завершился за {max_polls} опросов", file=sys.stderr)
@@ -608,7 +627,12 @@ def main():
                 save_job_state(job, args.tool)
                 job = settle_job(client, job, args.auto, polls, args.delay,
                                  wait, args.progress)
-                save_job_state(job, args.tool)
+                if job.get("status") in OPEN_JOB_STATUSES:
+                    save_job_state(job, args.tool)
+                else:
+                    jobs = load_job_states()
+                    jobs.pop(job["job_id"], None)
+                    save_job_states(jobs)
                 imgs = dump_images(raw, job, f"mcp-{job.get('job_id', 'job')[:8]}")
                 if imgs:
                     print("сохранены картинки: " + ", ".join(imgs))
@@ -619,7 +643,7 @@ def main():
                 # (result.metadata.exit). Непройденный тест не должен выглядеть
                 # как успех, поэтому падаем и в этом случае.
                 exit_code = ((job.get("result") or {}).get("metadata") or {}).get("exit")
-                if job.get("status") == "failed" or exit_code not in (None, 0):
+                if job.get("status") != "completed" or exit_code not in (None, 0):
                     sys.exit(EX_JOB_FAILED)
 
         if args.action == "job":
@@ -636,7 +660,7 @@ def main():
             wait = resolve_wait(args.wait_seconds)
             jobs = load_job_states()
             for job_id, entry in list(jobs.items()):
-                if entry.get("status") not in ("running", "awaiting_permission", "cancelling"):
+                if entry.get("status") not in OPEN_JOB_STATUSES:
                     continue
                 try:
                     raw = client.call("opencode_job_result", {"job_id": job_id})

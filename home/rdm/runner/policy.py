@@ -13,7 +13,7 @@ DENY_ARG = [
 ]
 SECRETISH = re.compile(
     r"(token|key|secret|password|passwd|bearer)\s*[=:]\s*\S+|^[A-Fa-f0-9]{32,}$", re.I)
-CMD_UNSAFE = re.compile(r"[%!\r\n]")
+CMD_UNSAFE = re.compile(r'[%!"\r\n]')
 
 
 def _redact_argv(argv: Iterable[str]) -> list[str]:

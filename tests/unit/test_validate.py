@@ -1,4 +1,4 @@
-from rdm.profiles import HostService, Profile, RunnerCommand, validate
+from rdm.profiles import ArgSpec, HostService, Profile, RunnerCommand, validate
 
 
 def test_validate_r14_reports_runner_port():
@@ -55,3 +55,55 @@ def test_validate_warn_r16_r19(tmp_path):
 
     assert any(m.startswith("WARN R16") for m in messages)
     assert any(m.startswith("WARN R19") for m in messages)
+
+
+def test_validate_r20_rejects_naked_runner_http_port():
+    profile = Profile(
+        project_dir=".",
+        runner_commands=(RunnerCommand(name="build", cmd=("npm", "run", "build")),),
+        runner_port=8796,
+        allowed_ports=(8797,),
+    )
+    assert any(m.startswith("R20") for m in validate(profile))
+
+
+def test_validate_r20_rejects_naked_runner_port_in_services():
+    profile = Profile(
+        project_dir=".",
+        runner_commands=(RunnerCommand(name="build", cmd=("npm",)),),
+        runner_port=8796,
+        host_services=(HostService(port=8797, cmd="run"),),
+    )
+    assert any(m.startswith("R20") for m in validate(profile))
+
+
+def test_validate_r21_rejects_deny_mount_injection():
+    profile = Profile(project_dir=".", deny_mounts=("a\n      - C:/:/host:rw",))
+    assert any(m.startswith("R21") for m in validate(profile))
+
+
+def test_validate_r22_rejects_toolchain_metachars():
+    profile = Profile(project_dir=".", toolchain="x' && rm -rf /opt/tools #")
+    assert any(m.startswith("R22") for m in validate(profile))
+
+
+def test_validate_r23_argspec_enums():
+    profile = Profile(
+        project_dir=".",
+        runner_commands=(
+            RunnerCommand(name="x", cmd=("npm",), args=(("a", ArgSpec(type="Path", position="prepend")),)),
+        ),
+    )
+    messages = validate(profile)
+    assert any(m.startswith("R23") and "type" in m for m in messages)
+    assert any(m.startswith("R23") and "position" in m for m in messages)
+
+
+def test_validate_r23_rejects_template_in_argv0():
+    profile = Profile(
+        project_dir=".",
+        runner_commands=(
+            RunnerCommand(name="x", cmd=("{file}",), args=(("file", ArgSpec(position="template")),)),
+        ),
+    )
+    assert any(m.startswith("R23") and "argv[0]" in m for m in validate(profile))

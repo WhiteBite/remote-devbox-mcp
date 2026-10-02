@@ -3,14 +3,21 @@ import importlib
 import json
 import os
 import shutil
+import subprocess
+import sys
 
 import pytest
+from rdm import hostos
 from rdm.runner.audit import _audit
-from rdm.runner.policy import _check_args, _redact_argv
+from rdm.runner.policy import _check_args, _check_cmd_shim, _redact_argv
 
 
 def _main():
     return importlib.import_module("rdm.runner.__main__")
+
+
+def _ctx(main, tmp_path):
+    return main._Ctx(cwd=tmp_path, run_dir=tmp_path, profile="p", default_timeout=60)
 
 
 def _rehash(entry):
@@ -19,17 +26,13 @@ def _rehash(entry):
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows cmd shim resolution")
-def test_cmd_shim_uses_cmd_exe_argv_not_joined_string(monkeypatch, tmp_path):
+def test_cmd_shim_builds_raw_cmdline_string(monkeypatch, tmp_path):
     main = _main()
     fake = "C:\\Tools\\npm.cmd"
     monkeypatch.setattr(shutil, "which", lambda _name: fake)
-    argv = ["npm", "install", "some package"]
-    resolved = main._resolve(argv, tmp_path)
-    assert resolved[0:2] == ["cmd", "/c"]
-    assert resolved[2] == fake
-    assert resolved[3:] == ["install", '"some package"']
-    joined = " ".join([fake] + [main._quote_cmd(a) for a in argv[1:]])
-    assert all(el != joined for el in resolved)
+    resolved = main._resolve(["npm", "install", "some package"], tmp_path)
+    assert isinstance(resolved, str)
+    assert resolved == 'cmd /c ""C:\\Tools\\npm.cmd" install "some package""'
 
 
 def test_resolve_relative_exe_against_project_cwd(tmp_path, monkeypatch):
@@ -46,10 +49,105 @@ def test_resolve_relative_exe_against_project_cwd(tmp_path, monkeypatch):
     assert resolved[1:] == ["-q"]
 
 
-def test_quote_cmd_quotes_only_metachars():
+def test_shim_cmdline_quotes_only_when_needed():
     main = _main()
-    assert main._quote_cmd("plain") == "plain"
-    assert main._quote_cmd("a&b") == '"a^^&b"'
+    assert main._shim_cmdline("C:\\t\\npm.cmd", ["plain"]) == 'cmd /c ""C:\\t\\npm.cmd" plain"'
+    assert main._shim_cmdline("C:\\t\\npm.cmd", ["c d"]) == 'cmd /c ""C:\\t\\npm.cmd" "c d""'
+    assert main._shim_cmdline("C:\\t\\npm.cmd", ["a&b"]) == 'cmd /c ""C:\\t\\npm.cmd" "a&b""'
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows cmd shim round-trip")
+def test_cmd_shim_args_roundtrip_through_real_cmd(tmp_path, monkeypatch):
+    main = _main()
+    shim = tmp_path / "echo-args.cmd"
+    shim.write_text(
+        "@echo off\r\n"
+        f'"{sys.executable}" -c "import sys,json;print(json.dumps(sys.argv[1:]))" %*\r\n',
+        encoding="ascii",
+    )
+    monkeypatch.setattr(shutil, "which", lambda name: str(shim) if name == "echo-args.cmd" else None)
+    for value in ["plain", "c d", "a&b", "x<y", "p(1)", "a^b", "a & b"]:
+        resolved = main._resolve(["echo-args", value], tmp_path)
+        assert isinstance(resolved, str)
+        result = subprocess.run(resolved, capture_output=True, text=True, timeout=60, cwd=tmp_path)
+        assert result.returncode == 0, result.stderr
+        assert json.loads(result.stdout) == [value], value
+
+
+def _make_kill(main, ctx, name):
+    return main._make_kill_tool(name, ctx)
+
+
+def test_kill_tool_refuses_foreign_or_reused_pid(tmp_path):
+    main = _main()
+    ctx = _ctx(main, tmp_path)
+    foreign = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+    try:
+        pidfile = tmp_path / "p-bg.pid"
+        pidfile.write_text(f"{foreign.pid}|123.45|not-our-marker\n", encoding="utf-8")
+        result = json.loads(_make_kill(main, ctx, "bg")())
+        assert result["killed"] is False
+        assert result["pid"] == foreign.pid
+        assert foreign.poll() is None
+        assert not pidfile.exists()
+    finally:
+        foreign.kill()
+        foreign.wait()
+
+
+def test_kill_tool_cleans_corrupt_pidfile_without_killing(tmp_path):
+    main = _main()
+    ctx = _ctx(main, tmp_path)
+    pidfile = tmp_path / "p-bg.pid"
+    pidfile.write_text("4242\n", encoding="utf-8")
+    result = json.loads(_make_kill(main, ctx, "bg")())
+    assert result["killed"] is False
+    assert "pid|create_time|marker" in result["reason"]
+    assert not pidfile.exists()
+
+
+def test_kill_tool_kills_owned_background_tree(tmp_path):
+    main = _main()
+    ctx = _ctx(main, tmp_path)
+    argv = [sys.executable, "-c", "import time; time.sleep(60)"]
+    proc = subprocess.Popen(argv, start_new_session=os.name != "nt")
+    pidfile = tmp_path / "p-bg.pid"
+    pidfile.write_text(f"{proc.pid}|{hostos.create_time(proc.pid)}|{' '.join(argv)}\n", encoding="utf-8")
+    result = json.loads(_make_kill(main, ctx, "bg")())
+    assert result["killed"] is True
+    proc.wait(timeout=30)
+    assert proc.returncode != 0
+    assert not pidfile.exists()
+
+
+def test_foreground_timeout_kills_tree_and_reports(tmp_path):
+    main = _main()
+    ctx = _ctx(main, tmp_path)
+    spec = {
+        "name": "sleep",
+        "cmd": [sys.executable, "-c", "import time; time.sleep(60)"],
+        "timeout": 1,
+    }
+    result = json.loads(main._make_tool("sleep", spec, ctx)())
+    assert result["exit_code"] == 124
+    assert "[timeout]" in result["stderr"]
+    audit = (tmp_path / "audit.log").read_text(encoding="utf-8")
+    assert '"exit": "timeout"' in audit
+
+
+def test_foreground_output_tails_last_64000(tmp_path):
+    main = _main()
+    ctx = _ctx(main, tmp_path)
+    spec = {"name": "spew", "cmd": [sys.executable, "-c", "import sys; sys.stdout.write('x' * 200000)"]}
+    result = json.loads(main._make_tool("spew", spec, ctx)())
+    assert len(result["stdout"]) == 64000
+    assert result["stdout"] == "x" * 64000
+
+
+def test_cmd_shim_rejects_quote_char():
+    with pytest.raises(ValueError):
+        _check_cmd_shim(['a"b'])
+    _check_cmd_shim(["safe"])
 
 
 def test_deny_argv_rejects_exec_vectors():

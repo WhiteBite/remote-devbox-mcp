@@ -3,15 +3,15 @@
 from __future__ import annotations
 
 import argparse
-import dataclasses
 import json
 import os
 import pathlib
+import re
 import sys
 import urllib.error
 import urllib.request
 
-from rdm import docker, envfile, hostos, procman, profiles, ps_import, render, tokens, tunnels
+from rdm import docker, envfile, hostos, ports, procman, profiles, ps_import, render, tokens, tunnels
 
 HOME_DIR = pathlib.Path(__file__).resolve().parent.parent
 PROJECTS_DIR = HOME_DIR.parent / "projects"
@@ -20,9 +20,10 @@ OVERRIDE_FILE = HOME_DIR / "docker-compose.override.yml"
 COMPOSE_FILE = str(HOME_DIR / "docker-compose.yml")
 LOG_ROOT = hostos.tempdir() / "rdm-host"
 MANIFEST_PATH = LOG_ROOT / "rdm-manifest.json"
-BRIDGE_PORT = 8787
+BRIDGE_PORT = ports.BRIDGE_PORT
 INGRESS_PORT = 8799
-DEFAULT_RUNNER_PORT = 8796
+DEFAULT_RUNNER_PORT = ports.DEFAULT_RUNNER_PORT
+_NAME_RE = re.compile(r"[A-Za-z0-9._\-]+")
 
 _READONLY = '{"write":"deny","edit":"deny","apply_patch":"deny","bash":"deny"}'
 _FULL = '{"write":"allow","edit":"allow","apply_patch":"allow","bash":"allow"}'
@@ -41,7 +42,7 @@ def _ingress_url(env_map: dict[str, str]) -> str:
     if public:
         return public
     try:
-        logs = docker.compose("logs", "cloudflared-ingress", compose_file=COMPOSE_FILE).stdout
+        logs = docker.compose("logs", "--tail", "200", "cloudflared-ingress", compose_file=COMPOSE_FILE).stdout
     except OSError:
         return ""
     return tunnels.from_logs(logs)
@@ -52,7 +53,7 @@ def _preview_url(env_map: dict[str, str]) -> str:
     if public:
         return public
     try:
-        logs = docker.compose("logs", "cloudflared-preview", compose_file=COMPOSE_FILE).stdout
+        logs = docker.compose("logs", "--tail", "200", "cloudflared-preview", compose_file=COMPOSE_FILE).stdout
     except OSError:
         return ""
     return tunnels.from_logs(logs)
@@ -74,9 +75,7 @@ def _runner_port(env_map: dict[str, str]) -> int | None:
         profile = profiles.load(path)
     except (ValueError, OSError):
         return None
-    if not profile.runner_commands:
-        return None
-    return profile.runner_port or DEFAULT_RUNNER_PORT
+    return ports.compute_port_policy(profile).runner_port
 
 
 def _runner_json(command: profiles.RunnerCommand) -> dict[str, object]:
@@ -116,8 +115,7 @@ def _with_runner(profile: profiles.Profile, name: str) -> profiles.Profile:
     )
     os.environ["RUNNER_CONFIG"] = str(config)
     os.environ["RUNNER_PORT"] = str(port + 1)
-    service = profiles.HostService(port=port, auth="bearer", cwd=str(HOME_DIR), cmd="python host\\runner-mcp.py")
-    return dataclasses.replace(profile, host_services=(*profile.host_services, service))
+    return ports.with_runner_service(profile)
 
 
 def _ingress_env(env_map: dict[str, str]) -> dict[str, str]:
@@ -130,19 +128,27 @@ def _ingress_env(env_map: dict[str, str]) -> dict[str, str]:
     }
 
 
-def _emit_agent_artifacts(profile: profiles.Profile, name: str, allowed: str) -> None:
+def _emit_agent_artifacts(profile: profiles.Profile, name: str, allowed: str) -> bool:
     if profile.toolchain:
-        docker.run(
-            "run", "--rm", "-v", "rdm-tools:/opt/tools", "alpine", "sh", "-c",
-            f"mkdir -p /opt/tools/refs && echo '{profile.toolchain}' > /opt/tools/refs/{name}.list",
+        result = docker.run(
+            "run", "--rm", "-i", "-v", "rdm-tools:/opt/tools", "alpine", "sh", "-c",
+            f"mkdir -p /opt/tools/refs && cat > /opt/tools/refs/{name}.list",
+            input=profile.toolchain + "\n",
         )
+        if result.returncode != 0:
+            print(f"refs тулчейнов не записаны (rc={result.returncode}): {result.stderr.strip()[:200]}", file=sys.stderr)
+            return False
     agents = render.render_agents_md(
         profile, name, profile.toolchain, profile.mode, allowed, _available_profiles()
     )
-    docker.run(
+    result = docker.run(
         "run", "--rm", "-i", "-v", "rdm-agent:/agent", "alpine", "sh", "-c", "cat > /agent/AGENTS.md",
         input=agents,
     )
+    if result.returncode != 0:
+        print(f"/agent/AGENTS.md не записан (rc={result.returncode}): {result.stderr.strip()[:200]}", file=sys.stderr)
+        return False
+    return True
 
 
 def _start_gitleaks(profile: profiles.Profile, name: str) -> None:
@@ -176,6 +182,9 @@ def apply_use(name: str) -> int:
     if not path.exists():
         print(f"нет профиля {path}", file=sys.stderr)
         return 1
+    if not _NAME_RE.fullmatch(name):
+        print(f"имя профиля {name!r}: допустимы только [A-Za-z0-9._-]", file=sys.stderr)
+        return 1
     try:
         profile = profiles.load(path)
     except (ValueError, OSError) as error:
@@ -207,14 +216,9 @@ def apply_use(name: str) -> int:
         env.set("UI_PORT", str(profile.ui_port))
     else:
         env.remove("UI_PORT")
-    bearer_ports = [service.port for service in profile.host_services if service.auth == "bearer"]
-    self_authed = {BRIDGE_PORT, *bearer_ports}
-    env.set("SELF_AUTHED_PORTS", ",".join(str(port) for port in sorted(self_authed)))
-    allowed = set(profile.allowed_ports)
-    allowed |= {service.port for service in profile.host_services if service.auth != "bearer"}
-    allowed |= {command.port for command in profile.runner_commands if command.port}
-    allowed_sorted = sorted(allowed)
-    allowed_text = ",".join(str(port) for port in allowed_sorted)
+    policy = ports.compute_port_policy(profile)
+    env.set("SELF_AUTHED_PORTS", ",".join(str(port) for port in policy.self_authed))
+    allowed_text = ",".join(str(port) for port in policy.allowed)
     env.set("ALLOWED_PORTS", allowed_text)
     permission = _permissions(profile.mode)
     if permission:
@@ -235,7 +239,7 @@ def apply_use(name: str) -> int:
     env_map = env.as_map()
     MANIFEST_PATH.write_text(
         json.dumps(
-            render.build_manifest(profile, name, _ingress_url(env_map), profile.mode, allowed_sorted, self_authed),
+            render.build_manifest(profile, name, _ingress_url(env_map), profile.mode, list(policy.allowed), set(policy.self_authed)),
             ensure_ascii=False,
             indent=2,
         ),
@@ -244,8 +248,12 @@ def apply_use(name: str) -> int:
     procman.restart_host_services(profile, name, HOME_DIR, env_map.get("MCP_PUBLIC_TOKEN", ""))
     procman.stop_ingress()
     procman.start_ingress(_ingress_env(env_map), HOME_DIR, hostos.tempdir() / "rdm-ingress")
-    docker.compose("up", "-d", "--force-recreate", "toolbox", compose_file=COMPOSE_FILE)
-    _emit_agent_artifacts(profile, name, allowed_text)
+    up = docker.compose("up", "-d", "--force-recreate", "toolbox", compose_file=COMPOSE_FILE)
+    if up.returncode != 0:
+        print(f"docker compose up не удался (rc={up.returncode}): {up.stderr.strip()[:200]}", file=sys.stderr)
+        return 1
+    if not _emit_agent_artifacts(profile, name, allowed_text):
+        return 1
     _start_gitleaks(profile, name)
     print(f"профиль {name} применён; тулчейны ставятся при старте toolbox")
     return 0
@@ -445,6 +453,21 @@ def _allow(port: int, ui: bool) -> int:
     if not path.exists():
         print(f"нет профиля {path}", file=sys.stderr)
         return 1
+    if port < 1 or port > 65535:
+        print(f"порт {port} вне 1-65535", file=sys.stderr)
+        return 1
+    try:
+        profile = profiles.load(path)
+    except (ValueError, OSError) as error:
+        print(f"profile error: {error}", file=sys.stderr)
+        return 1
+    policy = ports.compute_port_policy(profile)
+    if policy.runner_http_port == port:
+        print(f"порт {port} — HTTP раннера без авторизации; открывать его наружу нельзя", file=sys.stderr)
+        return 1
+    if port in policy.self_authed:
+        print(f"порт {port} уже в SELF_AUTHED_PORTS (сервис со своей авторизацией)", file=sys.stderr)
+        return 1
     data = json.loads(path.read_text(encoding="utf-8"))
     allowed = {int(p) for p in (data.get("allowed_ports") or [])}
     allowed.add(port)
@@ -453,21 +476,21 @@ def _allow(port: int, ui: bool) -> int:
         data["ui_port"] = port
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     profile = profiles.load(path)
-    bearer_ports = [service.port for service in profile.host_services if service.auth == "bearer"]
-    self_authed = {BRIDGE_PORT, *bearer_ports}
-    allowed_all = set(profile.allowed_ports)
-    allowed_all |= {service.port for service in profile.host_services if service.auth != "bearer"}
-    allowed_all |= {command.port for command in profile.runner_commands if command.port}
-    env.set("SELF_AUTHED_PORTS", ",".join(str(p) for p in sorted(self_authed)))
-    env.set("ALLOWED_PORTS", ",".join(str(p) for p in sorted(allowed_all)))
+    policy = ports.compute_port_policy(profile)
+    env.set("SELF_AUTHED_PORTS", ",".join(str(p) for p in policy.self_authed))
+    env.set("ALLOWED_PORTS", ",".join(str(p) for p in policy.allowed))
     if ui:
         env.set("UI_PORT", str(port))
     env.write(ENV_FILE)
     LOG_ROOT.mkdir(parents=True, exist_ok=True)
     env_map = env.as_map()
+    manifest_profile = ports.with_runner_service(profile)
     MANIFEST_PATH.write_text(
         json.dumps(
-            render.build_manifest(profile, active, _ingress_url(env_map), profile.mode, sorted(allowed_all), self_authed),
+            render.build_manifest(
+                manifest_profile, active, _ingress_url(env_map), manifest_profile.mode,
+                list(policy.allowed), set(policy.self_authed),
+            ),
             ensure_ascii=False,
             indent=2,
         ),

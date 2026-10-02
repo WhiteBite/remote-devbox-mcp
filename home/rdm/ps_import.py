@@ -67,6 +67,8 @@ def _parse_array(tokens: list[tuple[str, str]], pos: int) -> tuple[list[object],
     pos += 1
     items: list[object] = []
     while True:
+        if pos >= len(tokens):
+            raise PsImportError("обрезанный вход: незакрытый массив @(")
         kind, value = tokens[pos]
         if kind == _PUNCT and value == ")":
             return items, pos + 1
@@ -81,6 +83,8 @@ def _parse_hash(tokens: list[tuple[str, str]], pos: int) -> tuple[dict[str, obje
     pos += 1
     result: dict[str, object] = {}
     while True:
+        if pos >= len(tokens):
+            raise PsImportError("обрезанный вход: незакрытый хэш @{")
         kind, value = tokens[pos]
         if kind == _PUNCT and value == "}":
             return result, pos + 1
@@ -91,6 +95,8 @@ def _parse_hash(tokens: list[tuple[str, str]], pos: int) -> tuple[dict[str, obje
             raise PsImportError(f"ожидался ключ хэш-таблицы, получено {value!r}")
         key = _snake(value)
         pos += 1
+        if pos >= len(tokens):
+            raise PsImportError("обрезанный вход: ожидался '=' после ключа")
         kind, value = tokens[pos]
         if kind != _PUNCT or value != "=":
             raise PsImportError("ожидался '=' после ключа")
@@ -99,6 +105,8 @@ def _parse_hash(tokens: list[tuple[str, str]], pos: int) -> tuple[dict[str, obje
 
 
 def _parse_value(tokens: list[tuple[str, str]], pos: int) -> tuple[object, int]:
+    if pos >= len(tokens):
+        raise PsImportError("обрезанный вход: ожидалось значение")
     kind, value = tokens[pos]
     if kind == "string":
         return _unquote(value), pos + 1
@@ -127,6 +135,8 @@ def parse_profile_ps1(text: str) -> dict[str, object]:
             raise PsImportError(f"ожидалось присваивание, получено {value!r}")
         key = _snake(value[1:])
         pos += 1
+        if pos >= len(tokens):
+            raise PsImportError("обрезанный вход: ожидался '=' при присваивании")
         kind, value = tokens[pos]
         if kind != _PUNCT or value != "=":
             raise PsImportError("ожидался '=' при присваивании")

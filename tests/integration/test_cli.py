@@ -213,3 +213,78 @@ def test_allow_opens_port_and_sets_ui(monkeypatch, tmp_path):
     assert data["ui_port"] == 12345
     assert "12345" in cli.ENV_FILE.read_text(encoding="utf-8")
     assert "start" in calls["ingress"]
+
+
+def _runner_profile_json(root, **overrides) -> str:
+    data = json.loads(_profile_json(root))
+    data["runner_commands"] = [{"name": "build", "cmd": ["npm", "run", "build"]}]
+    data["runner_port"] = 8796
+    data.update(overrides)
+    return json.dumps(data)
+
+
+def _env_value(text: str, key: str) -> str:
+    for line in text.splitlines():
+        if line.startswith(f"{key}="):
+            return line.split("=", 1)[1]
+    return ""
+
+
+def test_allow_keeps_runner_auth_proxy_in_self_authed(monkeypatch, tmp_path):
+    projects, calls = _setup(monkeypatch, tmp_path)
+    cli.ENV_FILE.write_text("ACTIVE_PROFILE=p1\n", encoding="utf-8")
+    (projects / "p1.json").write_text(_runner_profile_json(tmp_path), encoding="utf-8")
+    assert cli.main(["allow", "9000"]) == 0
+    text = cli.ENV_FILE.read_text(encoding="utf-8")
+    assert "8796" in _env_value(text, "SELF_AUTHED_PORTS").split(",")
+    assert "9000" in _env_value(text, "ALLOWED_PORTS").split(",")
+    manifest = json.loads(cli.MANIFEST_PATH.read_text(encoding="utf-8"))
+    assert 8796 in {entry["port"] for entry in manifest["endpoints"]}
+
+
+def test_allow_rejects_naked_runner_http_port(monkeypatch, tmp_path):
+    projects, calls = _setup(monkeypatch, tmp_path)
+    cli.ENV_FILE.write_text("ACTIVE_PROFILE=p1\n", encoding="utf-8")
+    (projects / "p1.json").write_text(_runner_profile_json(tmp_path), encoding="utf-8")
+    assert cli.main(["allow", "8797"]) == 1
+    data = json.loads((projects / "p1.json").read_text(encoding="utf-8"))
+    assert 8797 not in data["allowed_ports"]
+    assert calls["ingress"] == []
+
+
+def test_allow_rejects_port_out_of_range(monkeypatch, tmp_path):
+    projects, _ = _setup(monkeypatch, tmp_path)
+    cli.ENV_FILE.write_text("ACTIVE_PROFILE=p1\n", encoding="utf-8")
+    (projects / "p1.json").write_text(_profile_json(tmp_path), encoding="utf-8")
+    for bad in (0, -1, 65536, 99999):
+        assert cli.main(["allow", str(bad)]) == 1
+    data = json.loads((projects / "p1.json").read_text(encoding="utf-8"))
+    assert data["allowed_ports"] == [1]
+
+
+def test_use_fails_when_compose_up_fails(monkeypatch, tmp_path):
+    projects, _ = _setup(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        cli.docker, "compose",
+        lambda *a, **k: subprocess.CompletedProcess(["docker"], 1, "", "compose failed"),
+    )
+    (projects / "p1.json").write_text(_profile_json(tmp_path), encoding="utf-8")
+    assert cli.main(["use", "p1"]) == 1
+
+
+def test_use_fails_when_agent_artifacts_fail(monkeypatch, tmp_path):
+    projects, calls = _setup(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        cli.docker, "run",
+        lambda *a, **k: subprocess.CompletedProcess(["docker"], 1, "", "docker: error"),
+    )
+    (projects / "p1.json").write_text(_profile_json(tmp_path, toolchain="node22"), encoding="utf-8")
+    assert cli.main(["use", "p1"]) == 1
+    assert calls["gitleaks"] == []
+
+
+def test_use_rejects_profile_name_with_shell_characters(monkeypatch, tmp_path):
+    projects, calls = _setup(monkeypatch, tmp_path)
+    (projects / "bad name.json").write_text(_profile_json(tmp_path), encoding="utf-8")
+    assert cli.main(["use", "bad name"]) == 1
+    assert calls["restart"] == []

@@ -81,6 +81,12 @@ def create_time(pid: int) -> float | None:
         return None
 
 
+def owned(pid: int, recorded: float | None, marker: str) -> bool:
+    if cmdline_matches(pid, marker):
+        return True
+    return recorded is not None and create_time(pid) == recorded
+
+
 def _resolve(argv: list[str]) -> list[str]:
     exe = argv[0]
     if not os.path.isabs(exe):

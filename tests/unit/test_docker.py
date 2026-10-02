@@ -58,6 +58,28 @@ def test_compose_config_raises_on_nonzero(monkeypatch):
         docker.compose_config("c.yml")
 
 
+def test_compose_timeout_returns_124(monkeypatch):
+    def expired(argv, **kwargs):
+        raise subprocess.TimeoutExpired(argv, kwargs.get("timeout", 120))
+
+    monkeypatch.setattr(subprocess, "run", expired)
+    result = docker.compose("up", "-d", timeout=5)
+    assert result.returncode == 124
+    assert result.stdout == ""
+    assert result.stderr == "docker timeout"
+
+
+def test_run_timeout_returns_124(monkeypatch):
+    def expired(argv, **kwargs):
+        raise subprocess.TimeoutExpired(argv, kwargs.get("timeout", 120))
+
+    monkeypatch.setattr(subprocess, "run", expired)
+    result = docker.run("ps", timeout=5)
+    assert result.returncode == 124
+    assert result.stdout == ""
+    assert result.stderr == "docker timeout"
+
+
 @pytest.mark.skipif(shutil.which("docker") is None, reason="docker CLI not present")
 def test_compose_config_shape(monkeypatch, tmp_path):
     monkeypatch.setenv("MCP_BEARER_TOKEN", "x" * 32)

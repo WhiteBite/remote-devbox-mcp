@@ -43,7 +43,7 @@ def _ingress_url(env_map: dict[str, str]) -> str:
     if public:
         return public
     try:
-        logs = docker.compose("logs", "cloudflared-ingress").stdout
+        logs = docker.compose("logs", "--tail", "200", "cloudflared-ingress").stdout
     except OSError:
         return ""
     return tunnels.from_logs(logs)
@@ -101,7 +101,7 @@ def run(env_map: dict[str, str], compose_file: str | None = None, prober=None) -
     ingress_pid = _first_pid(hostos.tempdir() / "rdm-ingress" / "pids.txt")
     report.check(
         "ingress pid",
-        ingress_pid is not None and hostos.cmdline_matches(ingress_pid, "rdm.proxy"),
+        ingress_pid is not None and hostos.owned(ingress_pid, None, "rdm.proxy"),
         "devbox.py ingress start",
     )
     report.check("ingress listen 8799", _can_connect(_INGRESS_PORT), "перезапусти devbox.py ingress start")
@@ -131,7 +131,8 @@ def run(env_map: dict[str, str], compose_file: str | None = None, prober=None) -
             if not fields or not fields[0].isdigit():
                 continue
             marker = fields[2] if len(fields) > 2 else ""
-            if not hostos.cmdline_matches(int(fields[0]), marker):
+            recorded = float(fields[1]) if len(fields) > 1 and fields[1] else None
+            if not hostos.owned(int(fields[0]), recorded, marker):
                 dead += 1
     except FileNotFoundError:
         pass

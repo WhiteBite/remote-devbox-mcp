@@ -58,9 +58,7 @@ def _read_entries(path: pathlib.Path) -> list[tuple[int, float | None, str]]:
 
 
 def _owned(pid: int, recorded: float | None, marker: str) -> bool:
-    if hostos.cmdline_matches(pid, marker):
-        return True
-    return recorded is not None and hostos.create_time(pid) == recorded
+    return hostos.owned(pid, recorded, marker)
 
 
 def _free_port(port: int) -> None:

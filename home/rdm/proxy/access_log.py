@@ -6,8 +6,14 @@ import datetime
 import os
 import pathlib
 import tempfile
+import threading
+from typing import TextIO
 
+_handles: dict[pathlib.Path, TextIO] = {}
+_lock = threading.Lock()
+_writes = 0
 _MAX_BYTES = 10 * 1024 * 1024
+_CHECK_EVERY = 512
 
 
 def default_path() -> pathlib.Path:
@@ -29,15 +35,24 @@ def _escape(raw: bytes) -> str:
 
 
 def log(path: pathlib.Path, port: int, method: str, target: str, auth_mode: str) -> None:
+    global _writes
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        if path.exists() and path.stat().st_size > _MAX_BYTES:
-            path.replace(path.with_name(path.name + ".1"))
         line = (
             f"{datetime.datetime.now().isoformat()} {port} "
             f"{_escape(method.encode('latin-1'))} {_escape(target.encode('latin-1'))[:120]} {auth_mode}\n"
         )
-        with open(path, "a", encoding="utf-8") as handle:
+        with _lock:
+            handle = _handles.get(path)
+            if handle is None:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                handle = open(path, "a", encoding="utf-8")
+                _handles[path] = handle
             handle.write(line)
+            handle.flush()
+            _writes += 1
+            if _writes % _CHECK_EVERY == 0 and path.stat().st_size > _MAX_BYTES:
+                handle.close()
+                del _handles[path]
+                path.replace(path.with_name(path.name + ".1"))
     except OSError:
         pass

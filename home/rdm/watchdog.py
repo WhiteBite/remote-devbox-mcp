@@ -7,7 +7,7 @@ import pathlib
 import time
 
 from rdm import docker, hostos, procman, profiles
-from rdm.doctor import _HOME, _ingress_url, _probe
+from rdm.doctor import _HOME, _can_connect, _ingress_url, _probe
 
 _DEFAULT_COMPOSE = str(_HOME / "docker-compose.yml")
 _BRIDGE_PORT = 8787
@@ -40,6 +40,13 @@ def run(
     while iterations is None or count < iterations:
         count += 1
         try:
+            if not _can_connect(procman.INGRESS_PORT):
+                _log(log_path, "ingress proxy dead: restart")
+                procman.stop_ingress()
+                from rdm import cli as _cli
+
+                procman.start_ingress(_cli._ingress_env(env_map), _HOME, hostos.tempdir() / "rdm-ingress")
+                fails = 0
             url = _ingress_url(env_map)
             code = probe(f"{url}/p/{_BRIDGE_PORT}/healthz", env_map.get("MCP_BEARER_TOKEN")) if url else 0
             fails = fails + 1 if code != 200 else 0

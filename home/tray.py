@@ -172,6 +172,7 @@ def _notify(icon, message: str) -> None:
     try:
         icon.notify(message, "remote-devbox")
     except Exception:
+        # упавший тост не должен ронять поток трея
         pass
 
 
@@ -204,7 +205,7 @@ def _start(icon, profile: str) -> None:
 
     def work() -> None:
         _notify(icon, f"поднимаю стек {profile}… (может занять минуту)")
-        result = _devbox("start", profile, "--preview", timeout=600)
+        result = _devbox("start", profile, timeout=600)
         copied = _copy_block_silent(True)
         healthy = _devbox("health", timeout=30).returncode == 0
         if result.returncode == 0 and healthy and copied:

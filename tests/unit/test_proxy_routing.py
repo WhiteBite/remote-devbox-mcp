@@ -71,6 +71,28 @@ def test_wrong_token_401(tmp_path):
         server.shutdown()
 
 
+def test_unauth_expect_continue_401_without_100_continue(tmp_path):
+    fake = FakeUpstream(responder)
+    server, port = start_ingress(tmp_path, allowed={fake.port})
+    try:
+        out = raw_request(
+            port,
+            request(
+                "POST",
+                _url(fake.port),
+                headers=[("Expect", "100-continue"), ("Content-Length", "5")],
+                body=b"hello",
+            ),
+        )
+        assert b"401 Unauthorized" in out
+        assert b"100 Continue" not in out
+        assert b"connection: close" in out.lower()
+        assert fake.seen == []
+    finally:
+        fake.close()
+        server.shutdown()
+
+
 def test_not_allowed_port_403(tmp_path):
     fake = FakeUpstream(responder)
     server, port = start_ingress(tmp_path, allowed=set())

@@ -35,6 +35,23 @@ def test_tray_builds_menu():
     assert len(list(module._build_menu().items)) > 0
 
 
+def test_tray_start_does_not_open_preview(monkeypatch):
+    module = _load()
+    calls: list[tuple[str, ...]] = []
+
+    class _Result:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    monkeypatch.setattr(module, "_devbox", lambda *args, **kwargs: calls.append(args) or _Result())
+    monkeypatch.setattr(module, "_background", lambda icon, work: work())
+    monkeypatch.setattr(module, "_copy_block_silent", lambda full=True: True)
+    module._start(None, "p1")
+    start = next(c for c in calls if c[0] == "start")
+    assert "--preview" not in start
+
+
 def test_tray_clipboard_does_not_crash():
     module = _load()
     if sys.platform != "win32":

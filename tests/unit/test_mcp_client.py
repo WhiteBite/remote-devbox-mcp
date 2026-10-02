@@ -1,7 +1,9 @@
 import argparse
 import importlib.util
 import io
+import json
 import os
+import sys
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -97,6 +99,82 @@ def test_job_state_roundtrip(tmp_path, monkeypatch):
     assert not (Path.cwd() / "shots").exists()
 
 
+def test_save_job_state_writes_atomically(tmp_path, monkeypatch):
+    state = tmp_path / "state"
+    monkeypatch.setenv("RDM_ARENA_STATE_DIR", str(state))
+    mod = load_client()
+    mod.save_job_state({"job_id": "j-1", "status": "running"}, "bash")
+    assert sorted(p.name for p in state.iterdir()) == [".mcp_jobs.json"]
+    written = json.loads((state / ".mcp_jobs.json").read_text(encoding="utf-8"))
+    assert written["j-1"]["status"] == "running"
+
+
+def test_save_job_state_keeps_previous_file_on_write_failure(tmp_path, monkeypatch):
+    state = tmp_path / "state"
+    monkeypatch.setenv("RDM_ARENA_STATE_DIR", str(state))
+    mod = load_client()
+    mod.save_job_state({"job_id": "j-1", "status": "running"}, "bash")
+
+    def boom(obj, f, **kw):
+        raise OSError("обрыв посреди записи")
+
+    monkeypatch.setattr(mod.json, "dump", boom)
+    with pytest.raises(OSError):
+        mod.save_job_state({"job_id": "j-2", "status": "running"}, "bash")
+    assert list(mod.load_job_states()) == ["j-1"]
+    assert sorted(p.name for p in state.iterdir()) == [".mcp_jobs.json"]
+
+
+class ScriptedClient:
+    def __init__(self, job_payload):
+        self.job_payload = job_payload
+
+    def initialize(self):
+        return {"protocolVersion": "2025-06-18"}
+
+    def call(self, tool, arguments):
+        return {"content": [{"type": "text", "text": json.dumps(self.job_payload)}]}
+
+    def close(self):
+        pass
+
+
+def _patch_run_main(monkeypatch, tmp_path, settle_result):
+    state = tmp_path / "state"
+    monkeypatch.setenv("RDM_ARENA_STATE_DIR", str(state))
+    mod = load_client()
+    monkeypatch.setattr(mod, "build_client", lambda args: ScriptedClient(
+        {"job_id": settle_result["job_id"], "status": "running"}))
+    monkeypatch.setattr(mod, "settle_job", lambda *a, **k: settle_result)
+    monkeypatch.setattr(sys, "argv", ["mcp_client", "--url", "http://x/mcp",
+                                      "run", "bash", '{"command":"x"}'])
+    return mod
+
+
+def test_run_path_exits_job_failed_when_job_never_settles(monkeypatch, tmp_path):
+    mod = _patch_run_main(monkeypatch, tmp_path,
+                          {"job_id": "j-hang", "status": "running"})
+    with pytest.raises(SystemExit) as exc:
+        mod.main()
+    assert exc.value.code == mod.EX_JOB_FAILED
+
+
+def test_run_path_drops_terminal_job_from_state(monkeypatch, tmp_path):
+    mod = _patch_run_main(monkeypatch, tmp_path, {
+        "job_id": "j-done", "status": "completed",
+        "result": {"metadata": {"exit": 0}}})
+    mod.main()
+    assert mod.load_job_states() == {}
+
+
+def test_run_path_keeps_unsettled_job_in_state(monkeypatch, tmp_path):
+    mod = _patch_run_main(monkeypatch, tmp_path,
+                          {"job_id": "j-hang", "status": "running"})
+    with pytest.raises(SystemExit):
+        mod.main()
+    assert mod.load_job_states()["j-hang"]["status"] == "running"
+
+
 class FakeResponse:
     def __init__(self, body):
         self.headers = {"Content-Type": "application/json"}
@@ -128,11 +206,77 @@ def test_retryable_status_retries(monkeypatch):
     monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
     monkeypatch.setattr("time.sleep", lambda s: None)
     t = mod.HttpTransport("http://devbox/mcp", retries=2)
-    res = t.send({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {}})
+    res = t.send({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
     assert res["result"]["content"][0]["text"] == "ok"
     assert len(calls) == 2
-    t.send({"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {}})
+    t.send({"jsonrpc": "2.0", "id": 2, "method": "initialize", "params": {}})
     assert len(calls) == 3
+
+
+def test_502_on_tools_call_raises_without_retry(monkeypatch):
+    mod = load_client()
+    calls = []
+
+    def fake_urlopen(req, timeout=None):
+        calls.append(req)
+        raise urllib.error.HTTPError(
+            "http://devbox/mcp", 502, "Bad Gateway", None,
+            io.BytesIO(b"origin died mid-execution"))
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr("time.sleep", lambda s: None)
+    t = mod.HttpTransport("http://devbox/mcp", retries=2)
+    with pytest.raises(RuntimeError) as err:
+        t.send({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                "params": {"name": "bash", "arguments": {}}})
+    assert "502" in str(err.value)
+    assert len(calls) == 1
+
+
+def test_401_resets_session_via_callback_then_retries(monkeypatch):
+    mod = load_client()
+    calls = []
+    resets = []
+    session_on_retry = []
+
+    def fake_urlopen(req, timeout=None):
+        calls.append(req)
+        if len(calls) == 1:
+            raise urllib.error.HTTPError(
+                "http://devbox/mcp", 401, "Unauthorized", None,
+                io.BytesIO(b"session expired"))
+        session_on_retry.append(req.headers.get("Mcp-session-id"))
+        return FakeResponse(b'{"jsonrpc":"2.0","id":1,"result":{"tools":[]}}')
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr("time.sleep", lambda s: None)
+    t = mod.HttpTransport("http://devbox/mcp", retries=2)
+    t.session_id = "stale"
+
+    def on_reset():
+        resets.append(1)
+        t.session_id = "fresh"
+
+    t.on_session_reset = on_reset
+    res = t.send({"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}})
+    assert res["result"]["tools"] == []
+    assert len(resets) == 1
+    assert len(calls) == 2
+    assert session_on_retry == ["fresh"]
+
+
+def test_client_wires_on_session_reset_to_initialize():
+    mod = load_client()
+    t = mod.HttpTransport("http://devbox/mcp")
+    client = mod.MCPClient(t)
+    assert t.on_session_reset == client.initialize
+
+
+def test_client_skips_wiring_for_transport_without_callback():
+    mod = load_client()
+    t = RecordingTransport()
+    mod.MCPClient(t)
+    assert not hasattr(t, "on_session_reset")
 
 
 def test_midbody_failure_is_clean_runtime_error(monkeypatch):

@@ -1,7 +1,8 @@
 import json
 from pathlib import Path
 
-from rdm.ps_import import parse_profile_ps1
+import pytest
+from rdm.ps_import import PsImportError, parse_profile_ps1
 
 REPO = Path(__file__).resolve().parents[2]
 PROJECTS = REPO / "projects"
@@ -27,3 +28,18 @@ def test_ps_import_case_insensitive_keys():
 
     assert upper == lower
     assert upper == {"host_services": [{"port": 8792, "cmd": "x"}]}
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "$A = @( 1, 2",
+        "$Var",
+        "$H = @{ key =",
+        "$H = @{ key",
+        "$A = @(",
+    ],
+)
+def test_ps_import_truncated_input_raises(text):
+    with pytest.raises(PsImportError):
+        parse_profile_ps1(text)

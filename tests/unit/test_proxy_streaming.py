@@ -181,6 +181,78 @@ def test_post_body_forwarded(tmp_path):
         server.shutdown()
 
 
+def test_expect_continue_forwarded_after_auth(tmp_path):
+    fake = FakeUpstream(responder)
+    server, port = start_ingress(tmp_path, allowed={fake.port})
+    try:
+        out = raw_request(
+            port,
+            request(
+                "POST",
+                _url(fake.port, b"/echo-body"),
+                headers=_auth() + [("Expect", "100-continue"), ("Content-Length", "5")],
+                body=b"hello",
+            ),
+        )
+        assert b"100 Continue" in out
+        assert fake.seen[-1]["body"] == b"hello"
+        assert out.endswith(b"hello")
+    finally:
+        fake.close()
+        server.shutdown()
+
+
+def test_keep_alive_reuse_after_post_body(tmp_path):
+    fake = FakeUpstream(responder)
+    server, port = start_ingress(tmp_path, allowed={fake.port})
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=5.0) as sock:
+            sock.settimeout(5.0)
+            sock.sendall(
+                request(
+                    "POST",
+                    _url(fake.port, b"/echo-body"),
+                    headers=_auth() + [("Content-Length", "5")],
+                    body=b"hello",
+                    connection="keep-alive",
+                )
+            )
+            first = b""
+            while b"hello" not in first:
+                first += sock.recv(65536)
+            assert b"connection: keep-alive" in first.lower()
+            sock.sendall(request("GET", _url(fake.port), headers=_auth()))
+            second = b""
+            while True:
+                data = sock.recv(65536)
+                if not data:
+                    break
+                second += data
+        assert b"200 OK" in second and second.endswith(b"ok")
+        assert len(fake.seen) == 2
+    finally:
+        fake.close()
+        server.shutdown()
+
+
+def test_upstream_dies_mid_chunked_closes_without_502(tmp_path):
+    def broken_chunked(conn, method, path, pairs, body):
+        conn.sendall(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n")
+        conn.sendall(b"5\r\nhello\r\n")
+
+    fake = FakeUpstream(broken_chunked)
+    server, port = start_ingress(tmp_path, allowed={fake.port})
+    try:
+        out = raw_request(port, request("GET", _url(fake.port, b"/chunked"), headers=_auth()))
+        assert b"200 OK" in out
+        assert b"hello" in out
+        assert b"HTTP/1.1 502" not in out
+        assert not out.endswith(b"0\r\n\r\n")
+    finally:
+        fake.close()
+        server.shutdown()
+
+
 def test_large_body_within_cap_forwarded(tmp_path):
     fake = FakeUpstream(responder)
     server, port = start_ingress(tmp_path, allowed={fake.port})
