@@ -128,7 +128,7 @@ def _tool_name(name: str) -> str:
 
 def _make_tool(name: str, spec: dict, ctx: _Ctx):
     argnames = list((spec.get("args") or {}).keys())
-    timeout = int(spec.get("timeout", ctx.default_timeout))
+    timeout = int(spec.get("timeout") or ctx.default_timeout)
 
     def run(**kwargs):
         present = {k: v for k, v in kwargs.items() if v is not None}
@@ -245,7 +245,7 @@ def main() -> None:
     mcp = FastMCP(
         f"devbox-runner-{ctx.profile}",
         host="127.0.0.1",
-        port=int(os.environ.get("RUNNER_PORT", "8797")),
+        port=int(os.environ.get("MCP_HTTP_PORT", "8797")),
     )
 
     @mcp.tool()
@@ -266,6 +266,9 @@ def main() -> None:
         _sc = _norm(_sc)
         _fn = _make_tool("script:" + _sc["name"], _sc, ctx)
         mcp.add_tool(_fn, name=_fn.__name__)
+        if _sc.get("background"):
+            _kill_fn = _make_kill_tool("script:" + _sc["name"], ctx)
+            mcp.add_tool(_kill_fn, name=_kill_fn.__name__)
 
     mcp.run(transport="streamable-http")
 

@@ -9,7 +9,6 @@ from rdm.render import (
     render_agents_md,
     render_override,
     setup_script_b64,
-    toolchain_ref,
     tunnel_tail,
 )
 
@@ -160,10 +159,6 @@ def test_agents_md_empty_sections():
 
     assert "## Runner commands\n- (нет)\n" in text
     assert "## Scripts\n- (нет)\n" in text
-
-
-def test_toolchain_ref():
-    assert toolchain_ref(PROFILE) == "java21 flutter:3.44.9"
 
 
 def test_agents_md_projects_section():

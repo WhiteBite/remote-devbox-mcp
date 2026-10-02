@@ -250,7 +250,7 @@ Ingress rout'ит только порты из `$AllowedPorts` профиля + 
 - `share` — только чат-блок с полными текущими значениями.
 - `issue-tokens` — ротация трёх токенов + рестарт цепи + чат-блок.
   Каденция: на каждую новую сессию агента; revocation = stop-host + ingress stop.
-- `use` дополнительно: валидация профиля R1–R19 fail-fast; рендер
+- `use` дополнительно: валидация профиля R1–R26 fail-fast; рендер
   `OPENCODE_MCP_PERMISSIONS` из `$Mode` (readonly/standard/full); gitleaks
   скан секретов проекта в фоне (отчёт `%TEMP%\rdm-host\gitleaks-<profile>.json`,
   doctor показывает WARN/PASS; `SKIP_GITLEAKS=1` отключает);

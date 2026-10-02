@@ -1,4 +1,17 @@
-from rdm.profiles import ArgSpec, HostService, Profile, RunnerCommand, validate
+import pathlib
+
+from rdm.profiles import ArgSpec, HostService, Profile, RunnerCommand, load, validate
+
+
+def test_repo_profiles_validate_clean():
+    repo = pathlib.Path(__file__).resolve().parents[2]
+    for name in ("muffin", "midasai", "_template"):
+        profile = load(repo / "projects" / f"{name}.json")
+        problems = [
+            problem for problem in validate(profile)
+            if not problem.startswith("WARN") and not problem.startswith("R2:")
+        ]
+        assert problems == [], (name, problems)
 
 
 def test_validate_r14_reports_runner_port():
@@ -107,3 +120,19 @@ def test_validate_r23_rejects_template_in_argv0():
         ),
     )
     assert any(m.startswith("R23") and "argv[0]" in m for m in validate(profile))
+
+
+def test_validate_r25_rejects_out_of_range_timeout():
+    profile = Profile(
+        project_dir=".",
+        runner_commands=(RunnerCommand(name="x", cmd=("npm",), timeout=0),),
+    )
+    assert any(m.startswith("R25") for m in validate(profile))
+
+
+def test_validate_r26_warns_on_unquoted_path_with_space(tmp_path):
+    exe = tmp_path / "my tools" / "svc.exe"
+    exe.parent.mkdir()
+    exe.write_bytes(b"")
+    profile = Profile(project_dir=".", host_services=(HostService(port=80, cmd=f"{exe} --flag"),))
+    assert any(m.startswith("WARN R26") for m in validate(profile))

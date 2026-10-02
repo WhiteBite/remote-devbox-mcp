@@ -68,9 +68,6 @@ class EnvFile:
             self._key_pos = _index_key_lines(self._lines)
         self._pending.pop(key, None)
 
-    def contains(self, key: str) -> bool:
-        return key in self._key_pos or key in self._pending
-
     def as_map(self) -> dict[str, str]:
         result: dict[str, str] = {}
         for i, line in enumerate(self._lines):

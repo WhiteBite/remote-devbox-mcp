@@ -1,7 +1,7 @@
-"""Типизированные профили projects/*.json и валидация R1-R19.
+"""Типизированные профили projects/*.json и валидация R1-R26.
 
-JSON-схема повторяет переменные профиля projects/<имя>.ps1 (ключи нормализуются
-регистронезависимо, чтобы читать и вывод PowerShell ConvertTo-Json).
+Ключи JSON нормализуются регистронезависимо (наследие профилей
+PowerShell ConvertTo-Json).
 """
 
 from __future__ import annotations
@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -36,6 +37,7 @@ class RunnerCommand:
     args: tuple[tuple[str, ArgSpec], ...] = ()
     background: bool = False
     port: int | None = None
+    timeout: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,6 +96,7 @@ _RUNNER_KEYS = {
     "args": "args",
     "background": "background",
     "port": "port",
+    "timeout": "timeout",
 }
 _SETUP_KEYS = {"cmd": "cmd", "marker": "marker", "required": "required"}
 _SCRIPT_KEYS = {"name": "name", "cmd": "cmd", "description": "description"}
@@ -183,6 +186,7 @@ def _runner(raw: object) -> RunnerCommand:
         args=_args(values.get("args")),
         background=bool(values.get("background", False)),
         port=_opt_int(values, "port"),
+        timeout=_opt_int(values, "timeout"),
     )
 
 
@@ -230,9 +234,7 @@ def validate(profile: Profile) -> list[str]:
         problems.append("R1: задай $ProjectDir")
     elif not os.path.exists(profile.project_dir):
         problems.append(f"R2: папка проекта {profile.project_dir} не существует")
-    if not isinstance(profile.toolchain, str):
-        problems.append("R3: $Toolchain должен быть строкой")
-    elif not _TOOLCHAIN_RE.fullmatch(profile.toolchain):
+    if not _TOOLCHAIN_RE.fullmatch(profile.toolchain):
         problems.append("R22: Toolchain: допустимы только символы [A-Za-z0-9._:+- ]")
     if not profile.git_name:
         problems.append("R4: задай $GitName")
@@ -247,6 +249,13 @@ def validate(profile: Profile) -> list[str]:
             ports.append(service.port)
         if not service.cmd:
             problems.append(f"R6: HostService[{i}]: Cmd непустой")
+        else:
+            tokens = shlex.split(service.cmd, posix=False)
+            for left, right in zip(tokens, tokens[1:], strict=False):
+                joined = f"{left.strip(chr(34))} {right.strip(chr(34))}"
+                if (("\\" in left or "/" in left) and ("\\" in right or "/" in right)) and os.path.exists(joined):
+                    problems.append(f"WARN R26: HostService[{i}]: путь с пробелом вне кавычек: {joined}")
+                    break
         if any(op in service.cmd for op in ("&&", "||", ";", "|")):
             problems.append(
                 f"WARN R18: HostService[{i}]: Cmd содержит shell-оператор; host-сервисы запускаются argv-only"
@@ -274,6 +283,8 @@ def validate(profile: Profile) -> list[str]:
                 problems.append(f"R23: RunnerCommand[{i}] args.{arg_name}: position должен быть append или template")
             if command.cmd and command.cmd[0] == "{" + arg_name + "}":
                 problems.append(f"R23: RunnerCommand[{i}]: шаблон {{{arg_name}}} в argv[0] — аргумент станет исполняемым")
+        if command.timeout is not None and not 1 <= command.timeout <= 86400:
+            problems.append(f"R25: RunnerCommand[{i}]: timeout должен быть 1-86400")
     if len(names) != len(set(names)):
         problems.append("R10: дубликат имени в RunnerCommands")
 

@@ -1,7 +1,5 @@
-import shutil
 import subprocess
 
-import pytest
 from rdm import docker
 
 
@@ -51,13 +49,6 @@ def test_compose_ps_format(monkeypatch):
     ]
 
 
-def test_compose_config_raises_on_nonzero(monkeypatch):
-    rec = _Recorder(returncode=1, stderr="yaml parse error")
-    monkeypatch.setattr(subprocess, "run", rec)
-    with pytest.raises(RuntimeError, match="yaml parse error"):
-        docker.compose_config("c.yml")
-
-
 def test_compose_timeout_returns_124(monkeypatch):
     def expired(argv, **kwargs):
         raise subprocess.TimeoutExpired(argv, kwargs.get("timeout", 120))
@@ -78,11 +69,3 @@ def test_run_timeout_returns_124(monkeypatch):
     assert result.returncode == 124
     assert result.stdout == ""
     assert result.stderr == "docker timeout"
-
-
-@pytest.mark.skipif(shutil.which("docker") is None, reason="docker CLI not present")
-def test_compose_config_shape(monkeypatch, tmp_path):
-    monkeypatch.setenv("MCP_BEARER_TOKEN", "x" * 32)
-    monkeypatch.setenv("PROJECT_DIR", str(tmp_path))
-    out = docker.compose_config("home/docker-compose.yml")
-    assert "services" in out

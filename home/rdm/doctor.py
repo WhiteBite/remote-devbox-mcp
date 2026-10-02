@@ -5,48 +5,14 @@ from __future__ import annotations
 import json
 import pathlib
 import secrets
-import socket
-import urllib.error
-import urllib.request
 
-from rdm import docker, hostos, profiles, tunnels
+from rdm import docker, hostos, netprobe, profiles
 
 _HOME = pathlib.Path(__file__).resolve().parent.parent
 _PROJECTS = _HOME.parent / "projects"
 _DEFAULT_COMPOSE = str(_HOME / "docker-compose.yml")
 _BRIDGE_PORT = 8787
 _INGRESS_PORT = 8799
-
-
-def _probe(url: str, token: str | None, timeout: float = 10.0) -> int:
-    headers = {"Authorization": f"Bearer {token}"} if token else {}
-    request = urllib.request.Request(url, headers=headers)
-    try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            return int(response.status)
-    except urllib.error.HTTPError as error:
-        return int(error.code)
-    except (urllib.error.URLError, OSError):
-        return 0
-
-
-def _can_connect(port: int) -> bool:
-    try:
-        with socket.create_connection(("127.0.0.1", port), timeout=1.0):
-            return True
-    except OSError:
-        return False
-
-
-def _ingress_url(env_map: dict[str, str]) -> str:
-    public = env_map.get("PUBLIC_URL")
-    if public:
-        return public
-    try:
-        logs = docker.compose("logs", "--tail", "200", "cloudflared-ingress").stdout
-    except OSError:
-        return ""
-    return tunnels.from_logs(logs)
 
 
 def _first_pid(path: pathlib.Path) -> int | None:
@@ -75,7 +41,7 @@ class _Report:
 
 def run(env_map: dict[str, str], compose_file: str | None = None, prober=None) -> int:
     compose_file = compose_file or _DEFAULT_COMPOSE
-    probe = prober or _probe
+    probe = prober or netprobe.probe_http
     report = _Report()
     report.check("docker engine", docker.run("info").returncode == 0, "Docker Desktop не запущен")
     report.check("psutil", hostos.psutil is not None, "python -m pip install psutil")
@@ -104,8 +70,8 @@ def run(env_map: dict[str, str], compose_file: str | None = None, prober=None) -
         ingress_pid is not None and hostos.owned(ingress_pid, None, "rdm.proxy"),
         "devbox.py ingress start",
     )
-    report.check("ingress listen 8799", _can_connect(_INGRESS_PORT), "перезапусти devbox.py ingress start")
-    url = _ingress_url(env_map)
+    report.check("ingress listen 8799", netprobe.can_connect(_INGRESS_PORT), "перезапусти devbox.py ingress start")
+    url = netprobe.ingress_url(env_map)
     report.check("ingress url", bool(url), "docker compose logs cloudflared-ingress")
     if url:
         report.check(

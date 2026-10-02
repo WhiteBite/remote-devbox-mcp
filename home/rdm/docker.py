@@ -36,13 +36,6 @@ def compose_ps(compose_file: str, fmt: str = "{{.Name}} {{.Status}}") -> str:
     return result.stdout
 
 
-def compose_config(compose_file: str = _DEFAULT_COMPOSE_FILE) -> str:
-    result = compose("config", compose_file=compose_file)
-    if result.returncode != 0:
-        raise RuntimeError(f"docker compose config failed: {result.stderr}")
-    return result.stdout
-
-
 def run(*args: str, input: str | None = None, timeout: int = 120) -> subprocess.CompletedProcess[str]:
     argv = ["docker", *args]
     try:

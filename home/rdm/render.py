@@ -118,7 +118,3 @@ def tunnel_tail(tunnel_token: str) -> str:
     if tunnel_token:
         return f"run --token {tunnel_token}"
     return "--protocol http2 --url http://host.docker.internal:8799"
-
-
-def toolchain_ref(profile: Profile) -> str:
-    return profile.toolchain

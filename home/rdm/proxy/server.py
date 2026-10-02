@@ -380,7 +380,7 @@ class _Handler(socketserver.BaseRequestHandler):
                 if response.chunked:
                     self._stream_chunked(sock, response)
                 elif response.length is not None:
-                    # read1() decrements response.length as the body is consumed
+                    # read1() декрементирует response.length, поэтому эталон снимаем до стриминга
                     expected = response.length
                     if self._stream_length(sock, response) != expected:
                         return False

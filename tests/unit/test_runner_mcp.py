@@ -193,6 +193,45 @@ def test_build_argv_path_arg_rejected():
             main._build_argv(spec, {"target": value})
 
 
+def test_main_registers_kill_tool_for_background_script(monkeypatch, tmp_path):
+    main = _main()
+    cfg = tmp_path / "runner.json"
+    cfg.write_text(
+        json.dumps({
+            "profile": "p",
+            "cwd": str(tmp_path),
+            "commands": [],
+            "scripts": [{"name": "shots", "cmd": ["python", "x.py"], "background": True}],
+        }),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("RUNNER_CONFIG", str(cfg))
+    monkeypatch.setenv("TEMP", str(tmp_path))
+    registered = []
+
+    class FakeMCP:
+        def __init__(self, name, host, port):
+            pass
+
+        def tool(self):
+            def deco(fn):
+                registered.append(fn.__name__)
+                return fn
+
+            return deco
+
+        def add_tool(self, fn, name=None):
+            registered.append(name)
+
+        def run(self, transport):
+            pass
+
+    monkeypatch.setattr(main, "FastMCP", FakeMCP)
+    main.main()
+    assert "run_script_shots" in registered
+    assert "run_script_shots_kill" in registered
+
+
 def test_import_without_runner_config(monkeypatch):
     monkeypatch.delenv("RUNNER_CONFIG", raising=False)
     mod = importlib.import_module("rdm.runner.__main__")

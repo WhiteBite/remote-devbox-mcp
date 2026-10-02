@@ -149,8 +149,21 @@ def test_with_runner_includes_scripts(monkeypatch, tmp_path):
         config = json.loads(pathlib.Path(os.environ["RUNNER_CONFIG"]).read_text(encoding="utf-8"))
     finally:
         os.environ.pop("RUNNER_CONFIG", None)
-        os.environ.pop("RUNNER_PORT", None)
     assert config["scripts"] == [{"name": "shots", "cmd": ["python", "x.py"], "description": "s"}]
+
+
+def test_with_runner_emits_command_timeout(monkeypatch, tmp_path):
+    monkeypatch.setattr(cli, "LOG_ROOT", tmp_path)
+    profile = Profile(
+        runner_commands=(RunnerCommand(name="t", cmd=("npm", "test"), timeout=120),),
+        runner_port=8796,
+    )
+    try:
+        cli._with_runner(profile, "p")
+        config = json.loads(pathlib.Path(os.environ["RUNNER_CONFIG"]).read_text(encoding="utf-8"))
+    finally:
+        os.environ.pop("RUNNER_CONFIG", None)
+    assert config["commands"][0]["timeout"] == 120
 
 
 def test_profile_rejects_wrong_shape(tmp_path):

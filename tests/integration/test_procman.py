@@ -169,7 +169,7 @@ def test_start_ingress_listens(monkeypatch, tmp_path):
         "RDM_MANIFEST_PATH": str(tmp_path / "manifest.json"),
     }
     state_dir = hostos.tempdir() / "rdm-ingress"
-    pid = procman.start_ingress(env_map, HOME_DIR, state_dir)
+    pid = procman.start_ingress(env_map, HOME_DIR)
     try:
         assert _wait_until(lambda: _can_connect(port))
         procman.stop_ingress()

@@ -21,12 +21,6 @@ def _pids_path(profile_name: str) -> pathlib.Path:
     return hostos.tempdir() / "rdm-host" / f"{profile_name}-pids.txt"
 
 
-def _ingress_dir(state_dir: pathlib.Path | None) -> pathlib.Path:
-    if state_dir is not None:
-        return pathlib.Path(state_dir)
-    return hostos.tempdir() / "rdm-ingress"
-
-
 def _argv(cmd: str) -> list[str]:
     # posix=False: бэкслеши Windows-путей выживают, кавычки срезаем после сплита
     return [token.strip('"') for token in shlex.split(cmd, posix=False)]
@@ -145,12 +139,8 @@ def restart_host_services(
     return report
 
 
-def start_ingress(
-    env_map: dict[str, str],
-    host_dir: pathlib.Path,
-    state_dir: pathlib.Path | None = None,
-) -> int:
-    target_dir = _ingress_dir(state_dir)
+def start_ingress(env_map: dict[str, str], host_dir: pathlib.Path) -> int:
+    target_dir = hostos.tempdir() / "rdm-ingress"
     target_dir.mkdir(parents=True, exist_ok=True)
     env = {**os.environ, **env_map}
     if not env.get("PROXY_PORT"):
@@ -167,7 +157,7 @@ def start_ingress(
 
 
 def stop_ingress() -> None:
-    path = _ingress_dir(None) / "pids.txt"
+    path = hostos.tempdir() / "rdm-ingress" / "pids.txt"
     for pid, recorded, _ in _read_entries(path):
         if _owned(pid, recorded, _PROXY_MARKER):
             hostos.kill_tree(pid)

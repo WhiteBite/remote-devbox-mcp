@@ -6,9 +6,9 @@ import datetime
 import pathlib
 import time
 
-from rdm import docker, hostos, procman, profiles
-from rdm.doctor import _HOME, _can_connect, _ingress_url, _probe
+from rdm import docker, hostos, netprobe, procman, profiles
 
+_HOME = pathlib.Path(__file__).resolve().parent.parent
 _DEFAULT_COMPOSE = str(_HOME / "docker-compose.yml")
 _BRIDGE_PORT = 8787
 _PROJECTS = _HOME.parent / "projects"
@@ -30,7 +30,7 @@ def run(
     prober=None,
 ) -> None:
     compose_file = compose_file or _DEFAULT_COMPOSE
-    probe = prober or _probe
+    probe = prober or netprobe.probe_http
     log_path = hostos.tempdir() / "rdm-watchdog" / "watchdog.log"
     active = env_map.get("ACTIVE_PROFILE", "")
     fails = 0
@@ -40,14 +40,14 @@ def run(
     while iterations is None or count < iterations:
         count += 1
         try:
-            if not _can_connect(procman.INGRESS_PORT):
+            if not netprobe.can_connect(procman.INGRESS_PORT):
                 _log(log_path, "ingress proxy dead: restart")
                 procman.stop_ingress()
                 from rdm import cli as _cli
 
-                procman.start_ingress(_cli._ingress_env(env_map), _HOME, hostos.tempdir() / "rdm-ingress")
+                procman.start_ingress(_cli._ingress_env(env_map), _HOME)
                 fails = 0
-            url = _ingress_url(env_map)
+            url = netprobe.ingress_url(env_map, compose_file)
             code = probe(f"{url}/p/{_BRIDGE_PORT}/healthz", env_map.get("MCP_BEARER_TOKEN")) if url else 0
             fails = fails + 1 if code != 200 else 0
             if fails >= 3:

@@ -40,7 +40,7 @@ def test_preserves_unknown_manual_keys(tmp_path: Path) -> None:
     env = EnvFile.load(path)
     assert env.get("MANUAL_FLAG") == "1"
     assert env.get("EXTRA_TOOL") == "x=y"
-    assert not env.contains("SHELL_VAR")
+    assert env.get("SHELL_VAR") is None
     env.set("PROJECT_DIR", "C:/work/other")
     assert env.render() == (
         "PROJECT_DIR=C:/work/other\n"
@@ -68,7 +68,7 @@ def test_new_key_appended_in_canonical_order(tmp_path: Path) -> None:
     env.set("GIT_NAME", "agent")
     env.set("Z_MANUAL", "zz")
     env.set("A_MANUAL", "aa")
-    assert env.contains("TUNNEL_TOKEN")
+    assert env.get("TUNNEL_TOKEN") is not None
     assert env.get("PROJECT_DIR") == "C:/work/muffin"
     assert env.render() == (
         "MCP_BEARER_TOKEN=abc\n"
@@ -110,7 +110,7 @@ def test_missing_file_returns_empty(tmp_path: Path) -> None:
     env = EnvFile.load(tmp_path / "missing.env")
     assert env.get("ANY_KEY") is None
     assert env.get("ANY_KEY", "fallback") == "fallback"
-    assert not env.contains("ANY_KEY")
+    assert env.get("ANY_KEY") is None
     assert env.render() == ""
 
 
@@ -129,6 +129,6 @@ def test_remove_deletes_key_line(tmp_path: Path) -> None:
     env = EnvFile.load(path)
     env.remove("TOOLCHAIN")
     env.remove("ABSENT_KEY")
-    assert not env.contains("TOOLCHAIN")
+    assert env.get("TOOLCHAIN") is None
     assert env.get("TOOLCHAIN") is None
     assert env.render() == "PROJECT_DIR=C:/work\nGIT_NAME=agent\n"

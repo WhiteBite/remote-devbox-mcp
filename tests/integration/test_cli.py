@@ -189,9 +189,9 @@ def test_down_stops_host_ingress_and_tunnels(monkeypatch, tmp_path):
 def test_health_reflects_stack(monkeypatch, tmp_path):
     _setup(monkeypatch, tmp_path)
     cli.ENV_FILE.write_text("PUBLIC_URL=https://devbox.example.test\n", encoding="utf-8")
-    monkeypatch.setattr(cli, "_probe_http", lambda url, token, timeout=8.0: 200)
+    monkeypatch.setattr(cli.netprobe, "probe_http", lambda url, token, timeout=8.0: 200)
     assert cli.main(["health"]) == 0
-    monkeypatch.setattr(cli, "_probe_http", lambda url, token, timeout=8.0: 530)
+    monkeypatch.setattr(cli.netprobe, "probe_http", lambda url, token, timeout=8.0: 530)
     assert cli.main(["health"]) == 1
 
 
