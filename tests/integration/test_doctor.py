@@ -51,7 +51,7 @@ def _wire(monkeypatch, tmp_path, *, healthy=True):
     monkeypatch.setattr(doctor, "_HOME", tmp_path)
     monkeypatch.setattr(doctor.netprobe, "ingress_url", lambda env_map, compose_file=None: env_map.get("PUBLIC_URL", ""))
     monkeypatch.setattr(doctor.netprobe, "can_connect", lambda port: healthy)
-    monkeypatch.setattr(doctor, "_first_pid", lambda path: 12345)
+    monkeypatch.setattr(doctor, "_first_entry", lambda path: (12345, None, "rdm.proxy"))
     monkeypatch.setattr(hostos, "cmdline_matches", lambda pid, marker: True)
     monkeypatch.setattr(doctor.docker, "run", lambda *a, **k: subprocess.CompletedProcess(["docker"], 0, stdout="", stderr=""))
     monkeypatch.setattr(doctor.docker, "compose", lambda *a, **k: subprocess.CompletedProcess(["docker"], 0, stdout="healthy" if healthy else "starting", stderr=""))
@@ -83,6 +83,15 @@ def test_doctor_counts_host_service_alive_via_create_time(monkeypatch, tmp_path,
     finally:
         pids.unlink(missing_ok=True)
     assert "[FAIL] host services alive" not in capsys.readouterr().out
+
+
+def test_doctor_ingress_alive_via_create_time_when_marker_differs(monkeypatch, tmp_path, capsys):
+    _wire(monkeypatch, tmp_path)
+    monkeypatch.setattr(doctor, "_first_entry", lambda path: (12345, 111.5, "proxy --mode"))
+    monkeypatch.setattr(hostos, "cmdline_matches", lambda pid, marker: False)
+    monkeypatch.setattr(hostos, "create_time", lambda pid: 111.5)
+    assert doctor.run(_env(tmp_path), prober=_prober) == 0
+    assert "[FAIL] ingress pid" not in capsys.readouterr().out
 
 
 def test_doctor_reads_gitleaks_report(monkeypatch, tmp_path, capsys):

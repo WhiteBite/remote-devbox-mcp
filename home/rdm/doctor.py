@@ -15,7 +15,7 @@ _DEFAULT_COMPOSE = str(_HOME / "docker-compose.yml")
 _INGRESS_PORT = 8799
 
 
-def _first_pid(path: pathlib.Path) -> int | None:
+def _first_entry(path: pathlib.Path) -> tuple[int, float | None, str] | None:
     try:
         text = path.read_text(encoding="utf-8")
     except FileNotFoundError:
@@ -23,7 +23,12 @@ def _first_pid(path: pathlib.Path) -> int | None:
     for line in text.splitlines():
         fields = line.split("|", 2)
         if fields and fields[0].isdigit():
-            return int(fields[0])
+            try:
+                recorded = float(fields[1]) if len(fields) > 1 and fields[1] else None
+            except ValueError:
+                recorded = None
+            marker = fields[2] if len(fields) > 2 else ""
+            return (int(fields[0]), recorded, marker)
     return None
 
 
@@ -64,10 +69,10 @@ def run(env_map: dict[str, str], compose_file: str | None = None, prober=None) -
     if env_map.get("VLESS_SUB_URL"):
         vpn = docker.compose("ps", "vpn", "--format", "{{.Status}}", compose_file=compose_file).stdout
         report.check("vpn healthy", "healthy" in vpn, "docker compose logs vpn")
-    ingress_pid = _first_pid(hostos.tempdir() / "rdm-ingress" / "pids.txt")
+    ingress_entry = _first_entry(hostos.tempdir() / "rdm-ingress" / "pids.txt")
     report.check(
         "ingress pid",
-        ingress_pid is not None and hostos.owned(ingress_pid, None, "rdm.proxy"),
+        ingress_entry is not None and hostos.owned(*ingress_entry),
         "devbox.py ingress start",
     )
     report.check("ingress listen 8799", netprobe.can_connect(_INGRESS_PORT), "перезапусти devbox.py ingress start")
