@@ -13,6 +13,13 @@ import subprocess
 import sys
 from pathlib import Path
 
+# CI-консоль Windows — cp1252, кириллица в print падает с UnicodeEncodeError
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass
+
 REPO = Path(__file__).resolve().parent.parent
 HOME = REPO / "home"
 DIST = REPO / "dist"
