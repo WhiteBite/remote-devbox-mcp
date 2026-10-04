@@ -8,13 +8,14 @@ import shlex
 import sys
 
 from rdm import hostos
+from rdm.freeze import spawn_entry
 from rdm.profiles import Profile
 
-DEFAULT_PROXY_ARGV = [sys.executable, "-m", "rdm.proxy", "--mode", "target"]
-INGRESS_ARGV = [sys.executable, "-m", "rdm.proxy", "--mode", "ingress"]
+DEFAULT_PROXY_ARGV = spawn_entry("proxy", "--mode", "target")
+INGRESS_ARGV = spawn_entry("proxy", "--mode", "ingress")
 INGRESS_PORT = 8799
-_PROXY_MARKER = "rdm.proxy"
-_RUNNER_MARKER = "runner-mcp.py"
+_PROXY_MARKER = "proxy --mode" if getattr(sys, "frozen", False) else "rdm.proxy"
+_RUNNER_MARKER = " runner" if getattr(sys, "frozen", False) else "runner-mcp.py"
 
 
 def _pids_path(profile_name: str) -> pathlib.Path:

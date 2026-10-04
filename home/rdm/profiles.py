@@ -14,8 +14,10 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
+from rdm.freeze import app_dir
+
 BRIDGE_PORT = 8787
-PROJECTS_DIR = Path(__file__).resolve().parent.parent.parent / "projects"
+PROJECTS_DIR = app_dir().parent / "projects"
 
 
 @dataclass(frozen=True, slots=True)

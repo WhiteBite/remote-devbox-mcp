@@ -9,9 +9,9 @@ import pathlib
 import re
 import sys
 
-from rdm import docker, envfile, hostos, netprobe, ports, procman, profiles, render, tokens, tunnels
+from rdm import docker, envfile, freeze, hostos, netprobe, ports, procman, profiles, render, tokens, tunnels
 
-HOME_DIR = pathlib.Path(__file__).resolve().parent.parent
+HOME_DIR = freeze.app_dir()
 PROJECTS_DIR = profiles.PROJECTS_DIR
 ENV_FILE = HOME_DIR / ".env"
 OVERRIDE_FILE = HOME_DIR / "docker-compose.override.yml"
@@ -447,7 +447,24 @@ def _allow(port: int, ui: bool) -> int:
     return 0
 
 
+def _embedded(argv: list[str]) -> int:
+    if argv[0] == "proxy":
+        sys.argv = ["rdm.proxy", *argv[1:]]
+        from rdm.proxy.__main__ import main as proxy_main
+
+        proxy_main()
+        return 0
+    from rdm.runner.__main__ import main as runner_main
+
+    runner_main()
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
+    argv = sys.argv[1:] if argv is None else list(argv)
+    # скрытые подкоманды: spawn_entry запускает proxy/runner через этот же CLI
+    if argv and argv[0] in ("proxy", "runner"):
+        return _embedded(argv)
     parser = argparse.ArgumentParser(prog="devbox")
     sub = parser.add_subparsers(dest="command")
     sub.add_parser("status")

@@ -7,8 +7,9 @@ import pathlib
 import secrets
 
 from rdm import docker, hostos, netprobe, profiles
+from rdm.freeze import app_dir
 
-_HOME = pathlib.Path(__file__).resolve().parent.parent
+_HOME = app_dir()
 _PROJECTS = profiles.PROJECTS_DIR
 _DEFAULT_COMPOSE = str(_HOME / "docker-compose.yml")
 _INGRESS_PORT = 8799

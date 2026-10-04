@@ -7,8 +7,9 @@ import pathlib
 import time
 
 from rdm import docker, hostos, netprobe, procman, profiles
+from rdm.freeze import app_dir
 
-_HOME = pathlib.Path(__file__).resolve().parent.parent
+_HOME = app_dir()
 _DEFAULT_COMPOSE = str(_HOME / "docker-compose.yml")
 _PROJECTS = profiles.PROJECTS_DIR
 START_DELAY = 15.0

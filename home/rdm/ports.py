@@ -7,13 +7,12 @@
 from __future__ import annotations
 
 import dataclasses
-import pathlib
+import sys
 
+from rdm import freeze
 from rdm.profiles import BRIDGE_PORT, HostService, Profile
 
 DEFAULT_RUNNER_PORT = 8796
-
-_HOME_DIR = pathlib.Path(__file__).resolve().parent.parent
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -31,7 +30,11 @@ def with_runner_service(profile: Profile) -> Profile:
     if not profile.runner_commands:
         return profile
     port = profile.runner_port or DEFAULT_RUNNER_PORT
-    service = HostService(port=port, auth="bearer", cwd=str(_HOME_DIR), cmd="python host\\runner-mcp.py")
+    if freeze.FROZEN:
+        cmd = f'"{sys.executable}" runner'
+    else:
+        cmd = "python host/runner-mcp.py"
+    service = HostService(port=port, auth="bearer", cwd=str(freeze.app_dir()), cmd=cmd)
     return dataclasses.replace(profile, host_services=(*profile.host_services, service))
 
 

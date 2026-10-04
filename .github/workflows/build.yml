@@ -1,0 +1,33 @@
+name: build
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows-x64
+          - os: ubuntu-latest
+            platform: linux-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -r requirements.txt pyinstaller
+      - run: python scripts/build_exe.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: devbox-${{ matrix.platform }}
+          path: dist/devbox-*.zip
+      - uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: dist/devbox-*.zip

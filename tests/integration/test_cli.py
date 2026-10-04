@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 
 from rdm import cli
 
@@ -320,6 +321,19 @@ def test_preview_fails_when_compose_up_fails(monkeypatch, tmp_path):
         lambda *a, **k: subprocess.CompletedProcess(["docker"], 1, "", "compose failed"),
     )
     assert cli.main(["preview"]) == 1
+
+
+def test_devbox_proxy_subcommand_delegates(monkeypatch):
+    import rdm.proxy.__main__ as proxy_main
+    import rdm.runner.__main__ as runner_main
+
+    seen: list[list[str]] = []
+    monkeypatch.setattr(proxy_main, "main", lambda: seen.append(sys.argv))
+    monkeypatch.setattr(runner_main, "main", lambda: seen.append(sys.argv))
+    assert cli.main(["proxy", "--mode", "ingress"]) == 0
+    assert cli.main(["runner"]) == 0
+    assert seen[0][:1] == ["rdm.proxy"]
+    assert "--mode" in seen[0] and "ingress" in seen[0]
 
 
 def test_use_rejects_profile_name_with_shell_characters(monkeypatch, tmp_path):

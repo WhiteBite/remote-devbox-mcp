@@ -58,6 +58,17 @@ python -m pytest -q               # проверить окружение
   codegraph, конвертеры — агент ставит у себя через bash и дёргает локально,
   в devbox-образ они не попадают (`arena/SANDBOX_FACTS.md`).
 
+## Установка без Python (готовый exe)
+
+Сборки — в [Releases](https://github.com/WhiteBite/remote-devbox-mcp/releases):
+`devbox-windows-x64.zip` / `devbox-linux-x64.zip`. Распакуй, `home\.env.example`
+скопируй в `home\.env` и заполни — дальше как в quickstart, только вместо
+`python devbox.py` — `home\devbox.exe` (в Windows есть и `devbox-tray.exe` —
+трей-пульт без консоли). Артефакт повторяет layout репозитория (`home/` +
+`projects/`), поэтому compose-проект и volumes общие с исходниковым запуском.
+Локальная сборка: `python scripts/build_exe.py` (pyinstaller — в
+requirements-dev.txt); CI собирает то же самое по тегу `v*`.
+
 ## Порядок действий
 
 1. **Ты:** клонируй репозиторий, перейди в `home/`, сделай `.env` из

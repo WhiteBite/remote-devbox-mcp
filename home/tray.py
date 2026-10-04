@@ -19,10 +19,10 @@ import webbrowser
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
-from rdm import envfile, profiles
+from rdm import envfile, freeze, profiles
 
-HOME = pathlib.Path(__file__).resolve().parent
-DEVBOX = HOME / "devbox.py"
+HOME = freeze.app_dir()
+DEVBOX_ARGV = freeze.cli_entry()
 ENV_FILE = HOME / ".env"
 PROJECTS = profiles.PROJECTS_DIR
 _TEMP = pathlib.Path(os.environ.get("TEMP", "/tmp"))
@@ -37,7 +37,7 @@ _status_text = "проверка…"
 
 def _devbox(*args: str, timeout: int = 240) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        [sys.executable, str(DEVBOX), *args],
+        [*DEVBOX_ARGV, *args],
         cwd=str(HOME),
         capture_output=True,
         text=True,
@@ -286,7 +286,7 @@ def _toggle_watch(icon, item) -> None:
         _notify(icon, "авто-восстановление выключено")
         return
     _watch = subprocess.Popen(
-        [sys.executable, str(DEVBOX), "watch"],
+        [*DEVBOX_ARGV, "watch"],
         cwd=str(HOME),
         creationflags=CREATE_NO_WINDOW,
     )
