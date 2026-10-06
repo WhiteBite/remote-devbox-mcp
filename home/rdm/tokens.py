@@ -5,6 +5,12 @@ import secrets
 from .envfile import EnvFile
 
 _TOKEN_KEYS = ("MCP_BEARER_TOKEN", "MCP_PUBLIC_TOKEN", "INGRESS_TOKEN")
+_TOKEN_SURFACES = (
+    "Токены и поверхности:",
+    "BRIDGE_TOKEN  -> /p/8787/mcp (bridge: read/edit/write/bash)",
+    "HOST_TOKEN    -> runner + host-сервисы со своей авторизацией (/p/<порт>/mcp)",
+    "INGRESS_TOKEN -> все HTTP-эндпоинты /p/<порт>, включая /p/9000/manifest.json",
+)
 _REPO_URL = "https://github.com/WhiteBite/remote-devbox-mcp"
 _INSTRUCTION_URL = f"{_REPO_URL}/blob/main/ARENA.md"
 _SKILL_URL = f"{_REPO_URL}/blob/main/skills/remote-devbox/SKILL.md"
@@ -33,6 +39,7 @@ def chat_block(
     full: bool,
     preview_url: str = "",
     runner_port: int | None = None,
+    self_authed_ports: tuple[int, ...] = (),
 ) -> str:
     def show(token: str) -> str:
         return token if full else mask(token)
@@ -45,16 +52,20 @@ def chat_block(
         f"INGRESS={ingress_url}",
         f"BRIDGE_TOKEN={bridge}  # /p/8787/mcp — код: read/edit/write/bash",
         f"INGRESS_TOKEN={ingress_token}  # UI и прочие порты (Authorization: Bearer)",
+        *_TOKEN_SURFACES,
     ]
     if preview_url:
         lines.append(f"PREVIEW={preview_url}  # UI для playwright (root URL, без токена)")
     ui_port = env_map.get("UI_PORT")
     if ui_port and ingress_url:
         lines.append(f"UI={ingress_url}/p/{ui_port}/  # открой своим Playwright (Bearer INGRESS_TOKEN)")
-    if runner_port and ingress_url:
-        lines.append(f"RUNNER_URL={ingress_url}/p/{runner_port}/mcp")
+    if ingress_url and (runner_port or self_authed_ports):
+        if runner_port:
+            lines.append(f"RUNNER_URL={ingress_url}/p/{runner_port}/mcp")
         host = show(env_map.get("MCP_PUBLIC_TOKEN", ""))
-        lines.append(f"HOST_TOKEN={host}  # MCP_TOKEN для RUNNER_URL (runner: run_<имя>)")
+        lines.append(
+            f"HOST_TOKEN={host}  # MCP_TOKEN: runner (run_<имя>) + host-сервисы со своей авторизацией /p/<порт>/mcp"
+        )
     if ingress_url:
         lines.append(f"Реестр эндпоинтов: GET {ingress_url}/p/9000/manifest.json (Bearer INGRESS_TOKEN)")
     lines.append(

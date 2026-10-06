@@ -1,5 +1,6 @@
 import base64
 import hashlib
+import pathlib
 from dataclasses import replace
 
 from rdm.envfile import _CANONICAL_ORDER
@@ -114,14 +115,68 @@ def test_manifest_endpoints():
         "project": "d:/Sources/StartUp/Muffin",
         "ingress_url": "https://x.trycloudflare.com",
         "endpoints": [
-            {"name": "bridge", "port": 8787, "auth": "bearer", "path": "/p/8787/mcp"},
-            {"name": "host-8792", "port": 8792, "auth": "bearer", "path": "/p/8792/mcp"},
-            {"name": "allowed-8765", "port": 8765, "auth": "ingress", "path": "/p/8765"},
-            {"name": "allowed-8080", "port": 8080, "auth": "ingress", "path": "/p/8080"},
+            {
+                "name": "manifest",
+                "port": 9000,
+                "auth": "ingress",
+                "token": "INGRESS_TOKEN",
+                "header": "Authorization: Bearer",
+                "path": "/p/9000/manifest.json",
+            },
+            {
+                "name": "bridge",
+                "port": 8787,
+                "auth": "bearer",
+                "token": "BRIDGE_TOKEN",
+                "header": "Authorization: Bearer",
+                "path": "/p/8787/mcp",
+            },
+            {
+                "name": "host-8792",
+                "port": 8792,
+                "auth": "bearer",
+                "token": "HOST_TOKEN",
+                "header": "Authorization: Bearer",
+                "path": "/p/8792/mcp",
+            },
+            {
+                "name": "allowed-8765",
+                "port": 8765,
+                "auth": "ingress",
+                "token": "INGRESS_TOKEN",
+                "header": "Authorization: Bearer",
+                "path": "/p/8765",
+            },
+            {
+                "name": "allowed-8080",
+                "port": 8080,
+                "auth": "ingress",
+                "token": "INGRESS_TOKEN",
+                "header": "Authorization: Bearer",
+                "path": "/p/8080",
+            },
         ],
         "allowed_ports": [8765, 8080],
-        "runner_commands": ["gradle-test", "psql:dump"],
-        "scripts": ["shots"],
+        "runner_commands": [
+            {"name": "gradle-test", "tool": "run_gradle_test", "description": "run tests", "kill_tool": None},
+            {"name": "psql:dump", "tool": "run_psql_dump", "description": "dump db", "kill_tool": None},
+        ],
+        "scripts": [
+            {"name": "shots", "tool": "run_script_shots", "description": "take screenshots", "kill_tool": None},
+        ],
+        "bridge_tools": [
+            {"name": "read", "mutating": False},
+            {"name": "write", "mutating": True},
+            {"name": "edit", "mutating": True},
+            {"name": "apply_patch", "mutating": True},
+            {"name": "glob", "mutating": False},
+            {"name": "grep", "mutating": False},
+            {"name": "bash", "mutating": True},
+            {"name": "lsp", "mutating": False},
+            {"name": "todowrite", "mutating": False},
+            {"name": "opencode_permission_reply", "mutating": False},
+            {"name": "opencode_job_result", "mutating": False},
+        ],
         "preview_origin": "http://host.docker.internal:8080",
         "mode": "standard",
         "host_requirements": {
@@ -130,6 +185,37 @@ def test_manifest_endpoints():
             "note": "toolchains in /opt/tools volume",
         },
     }
+
+
+def test_manifest_runner_kill_tool_for_background():
+    profile = replace(
+        PROFILE,
+        runner_commands=(RunnerCommand(name="dev:start", cmd=("npm",), description="dev server", background=True),),
+    )
+
+    manifest = build_manifest(profile, "muffin", "https://x", "standard")
+
+    assert manifest["runner_commands"] == [
+        {"name": "dev:start", "tool": "run_dev_start", "description": "dev server", "kill_tool": "run_dev_start_kill"}
+    ]
+
+
+def test_manifest_bridge_tools_match_arena_tools_md():
+    repo = pathlib.Path(__file__).resolve().parents[2]
+    tools_md = (repo / "arena" / "TOOLS.md").read_text(encoding="utf-8")
+    documented = {line.split("`")[1] for line in tools_md.splitlines() if line.startswith("| `")}
+
+    manifest = build_manifest(PROFILE, "muffin", "https://x", "standard")
+
+    assert {tool["name"] for tool in manifest["bridge_tools"]} == documented
+
+
+def test_manifest_bridge_tools_mutating_set():
+    manifest = build_manifest(PROFILE, "muffin", "https://x", "standard")
+
+    mutating = {tool["name"] for tool in manifest["bridge_tools"] if tool["mutating"]}
+
+    assert mutating == {"write", "edit", "apply_patch", "bash"}
 
 
 def test_tunnel_tail_named_vs_quick():
@@ -151,6 +237,11 @@ def test_agents_md_sections():
         "- run_psql_dump: dump db\n"
         "## Scripts\n"
         "- run_script_shots: take screenshots\n"
+        "## Back-pointers\n"
+        "- repo: https://github.com/WhiteBite/remote-devbox-mcp\n"
+        "- skill: skills/remote-devbox/SKILL.md\n"
+        "- manifest: /p/9000/manifest.json\n"
+        "- если читаешь копию из /agent и read её не берёт: `bash cat /agent/AGENTS.md`\n"
     )
 
 

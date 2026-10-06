@@ -1,6 +1,6 @@
 import pathlib
 
-from rdm.profiles import ArgSpec, HostService, Profile, RunnerCommand, load, validate
+from rdm.profiles import ArgSpec, HostService, Profile, RunnerCommand, Script, load, validate
 
 
 def test_repo_profiles_validate_clean():
@@ -12,6 +12,38 @@ def test_repo_profiles_validate_clean():
             if not problem.startswith("WARN") and not problem.startswith("R2:")
         ]
         assert problems == [], (name, problems)
+
+
+def test_validate_r10_rejects_normalized_command_collision():
+    profile = Profile(
+        project_dir=".",
+        runner_commands=(
+            RunnerCommand(name="gradle-test", cmd=("npm",)),
+            RunnerCommand(name="gradle_test", cmd=("npm",)),
+        ),
+    )
+
+    assert any(m.startswith("R10") and "run_gradle_test" in m for m in validate(profile))
+
+
+def test_validate_r10_rejects_command_script_tool_collision():
+    profile = Profile(
+        project_dir=".",
+        runner_commands=(RunnerCommand(name="script:shots", cmd=("npm",)),),
+        scripts=(Script(name="shots", cmd=("python",)),),
+    )
+
+    assert any(m.startswith("R10") and "run_script_shots" in m for m in validate(profile))
+
+
+def test_validate_r10_allows_distinct_normalized_tools():
+    profile = Profile(
+        project_dir=".",
+        runner_commands=(RunnerCommand(name="psql:dump", cmd=("pg_dump",)),),
+        scripts=(Script(name="dump", cmd=("pg_dump",)),),
+    )
+
+    assert not any(m.startswith("R10") for m in validate(profile))
 
 
 def test_validate_r14_reports_runner_port():

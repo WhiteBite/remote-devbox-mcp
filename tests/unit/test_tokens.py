@@ -67,7 +67,7 @@ def test_chat_block_masks_when_not_full():
         "Песочница сбрасывается — конфиги ~/.remote-devbox-mcp.conf и ~/.mcp-runner.conf"
         " держи в Workspace и восстанавливай на старте сессии"
     )
-    assert "HOST_TOKEN" not in block
+    assert "HOST_TOKEN=" not in block
     assert "RUNNER_URL" not in block
     assert "Профили" not in block
     assert "a" * 32 not in block
@@ -97,11 +97,45 @@ def test_chat_block_includes_runner_only_when_present():
     env_map = {"MCP_PUBLIC_TOKEN": "b" * 32}
     without = tokens.chat_block(env_map, "https://x", full=True)
     with_runner = tokens.chat_block(env_map, "https://x", full=True, runner_port=8796)
-    assert "HOST_TOKEN" not in without and "RUNNER_URL" not in without
+    assert "HOST_TOKEN=" not in without and "RUNNER_URL" not in without
     assert "RUNNER_URL=https://x/p/8796/mcp" in with_runner
     assert "HOST_TOKEN=" + "b" * 32 in with_runner
+
+
+def test_chat_block_supervisor_only_emits_host_token_without_runner():
+    public = tokens.generate_token()
+    env_map = {"MCP_PUBLIC_TOKEN": public}
+    block = tokens.chat_block(env_map, "https://x", full=True, self_authed_ports=(8792,))
+    assert f"HOST_TOKEN={public}" in block
+    assert "RUNNER_URL=" not in block
+
+
+def test_chat_block_supervisor_only_masks_host_token():
+    env_map = {"MCP_PUBLIC_TOKEN": "b" * 32}
+    block = tokens.chat_block(env_map, "https://x", full=False, self_authed_ports=(8792,))
+    assert "HOST_TOKEN=bbbb...bbbb" in block
+    assert "b" * 32 not in block
 
 
 def test_chat_block_includes_ui_url():
     block = tokens.chat_block({"UI_PORT": "8080"}, "https://ing", full=True)
     assert "UI=https://ing/p/8080/" in block
+
+
+def test_chat_block_maps_token_names_to_surfaces():
+    env_map = {
+        "MCP_BEARER_TOKEN": "a" * 32,
+        "MCP_PUBLIC_TOKEN": "b" * 32,
+        "INGRESS_TOKEN": "c" * 32,
+    }
+    masked = tokens.chat_block(env_map, "https://x", full=False, runner_port=8796)
+    full_block = tokens.chat_block(env_map, "https://x", full=True, runner_port=8796)
+    for block in (masked, full_block):
+        assert "BRIDGE_TOKEN" in block
+        assert "HOST_TOKEN" in block
+        assert "INGRESS_TOKEN" in block
+        assert "/p/8787/mcp" in block
+        assert "manifest.json" in block
+    assert "a" * 32 not in masked
+    assert "b" * 32 not in masked
+    assert "c" * 32 not in masked

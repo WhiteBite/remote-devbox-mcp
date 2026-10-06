@@ -28,6 +28,7 @@ from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 
 from rdm import hostos
+from rdm.profiles import runner_tool_name
 from rdm.runner.audit import _audit
 from rdm.runner.policy import _check_args, _check_cmd_shim, _redact_argv
 
@@ -130,7 +131,7 @@ def _child_env(spec: dict) -> dict[str, str]:
 
 
 def _tool_name(name: str) -> str:
-    return f"run_{name.replace(':', '_').replace('-', '_')}"
+    return runner_tool_name(name)
 
 
 def _make_tool(name: str, spec: dict, ctx: _Ctx):

@@ -16,6 +16,13 @@ CONNECT_TIMEOUT = 15.0
 IDLE_TIMEOUT = 120.0
 _TOO_BIG = b"\x00too-big"
 
+_BODY_UNAUTHORIZED = b'{"error":"unauthorized","hint":"send Authorization: Bearer <token>"}'
+_BODY_FORBIDDEN = b'{"error":"forbidden","hint":"port is not in the allowed list for this profile"}'
+_BODY_NOT_FOUND = b'{"error":"not_found","hint":"unknown path; endpoints live under /p/<port>/"}'
+_BODY_BAD_GATEWAY = b'{"error":"bad_gateway","hint":"upstream unavailable"}'
+_BODY_OVERLOADED = b'{"error":"service_unavailable","hint":"too many concurrent connections"}'
+_AUTH_CHALLENGE = ((b"www-authenticate", b'Bearer realm="devbox"'),)
+
 
 def _reason(code: int) -> str:
     try:
@@ -70,26 +77,36 @@ class _Handler(socketserver.BaseRequestHandler):
     def handle(self) -> None:
         server = self.server
         if not server.sem.acquire(blocking=False):
-            self._simple(503)
+            self._simple(503, body=_BODY_OVERLOADED)
             return
         try:
             self._run(server)
         finally:
             server.sem.release()
 
-    def _simple(self, code: int, keep_alive: bool = False) -> None:
+    def _simple(
+        self,
+        code: int,
+        keep_alive: bool = False,
+        body: bytes = b"",
+        headers: tuple[tuple[bytes, bytes], ...] = (),
+    ) -> None:
         connection = b"keep-alive" if keep_alive else b"close"
         head = (
             b"HTTP/1.1 "
             + str(code).encode()
             + b" "
             + _reason(code).encode("latin-1")
-            + b"\r\ncontent-length: 0\r\nconnection: "
-            + connection
-            + b"\r\n\r\n"
+            + b"\r\n"
         )
+        if body:
+            head += b"content-type: application/json\r\n"
+        for name, value in headers:
+            head += name + b": " + value + b"\r\n"
+        head += b"content-length: " + str(len(body)).encode() + b"\r\n"
+        head += b"connection: " + connection + b"\r\n\r\n"
         try:
-            self.request.sendall(head)
+            self.request.sendall(head + body)
         except OSError:
             pass
 
@@ -154,11 +171,11 @@ class _Handler(socketserver.BaseRequestHandler):
 
         if server.config.mode == "ingress" and router.is_manifest(target_bytes):
             if not auth.check_token(pairs, server.config.token):
-                self._simple(401)
+                self._simple(401, body=_BODY_UNAUTHORIZED, headers=_AUTH_CHALLENGE)
                 return False
             data = router.load_manifest(server.config.manifest_path)
             if data is None:
-                self._simple(404)
+                self._simple(404, body=_BODY_NOT_FOUND)
                 return False
             consumed = self._consume_body(sock, decision, carry)
             if consumed is None:
@@ -169,20 +186,20 @@ class _Handler(socketserver.BaseRequestHandler):
         if server.config.mode == "ingress":
             route = router.parse_route(target_bytes)
             if route is None:
-                self._simple(404)
+                self._simple(404, body=_BODY_NOT_FOUND)
                 return False
             access_log.log(server.config.access_log_path, route.port, method, target, "ingress")
             if route.port not in server.config.self_authed:
                 if not auth.check_token(pairs, server.config.token):
-                    self._simple(401)
+                    self._simple(401, body=_BODY_UNAUTHORIZED, headers=_AUTH_CHALLENGE)
                     return False
                 if route.port not in server.config.allowed:
-                    self._simple(403)
+                    self._simple(403, body=_BODY_FORBIDDEN)
                     return False
             host, port, path = "127.0.0.1", route.port, route.rest
         else:
             if not auth.check_token(pairs, server.config.token):
-                self._simple(401)
+                self._simple(401, body=_BODY_UNAUTHORIZED, headers=_AUTH_CHALLENGE)
                 return False
             host, port, path = server.config.target_host, server.config.target_port, target_bytes
 
@@ -232,7 +249,7 @@ class _Handler(socketserver.BaseRequestHandler):
             response = connection.getresponse()
             return self._relay(sock, method, response, request_close)
         except (OSError, http.client.HTTPException):
-            self._simple(502)
+            self._simple(502, body=_BODY_BAD_GATEWAY)
             return False
         finally:
             if connection is not None:
@@ -253,7 +270,7 @@ class _Handler(socketserver.BaseRequestHandler):
         try:
             connection = upstream.open_raw(host, port, CONNECT_TIMEOUT)
         except OSError:
-            self._simple(502)
+            self._simple(502, body=_BODY_BAD_GATEWAY)
             return False
         try:
             head = method.encode("latin-1") + b" " + path + b" HTTP/1.1\r\n"
@@ -266,13 +283,13 @@ class _Handler(socketserver.BaseRequestHandler):
                 connection.sendall(carry)
             upstream_head = self._read_raw_head(connection)
             if upstream_head is None:
-                self._simple(502)
+                self._simple(502, body=_BODY_BAD_GATEWAY)
                 return False
             response_head, rest = upstream_head
             try:
                 status = int(response_head.split(b" ", 2)[1])
             except (IndexError, ValueError):
-                self._simple(502)
+                self._simple(502, body=_BODY_BAD_GATEWAY)
                 return False
             try:
                 sock.sendall(response_head)

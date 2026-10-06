@@ -20,6 +20,10 @@ BRIDGE_PORT = 8787
 PROJECTS_DIR = app_dir().parent / "projects"
 
 
+def runner_tool_name(name: str) -> str:
+    return f"run_{name.replace(':', '_').replace('-', '_')}"
+
+
 @dataclass(frozen=True, slots=True)
 class HostService:
     port: int = 0
@@ -292,6 +296,14 @@ def validate(profile: Profile) -> list[str]:
             problems.append(f"R25: RunnerCommand[{i}]: timeout должен быть 1-86400")
     if len(names) != len(set(names)):
         problems.append("R10: дубликат имени в RunnerCommands")
+    tool_owners: dict[str, str] = {}
+    tool_sources = [(command.name, runner_tool_name(command.name)) for command in profile.runner_commands]
+    tool_sources += [(script.name, runner_tool_name(f"script:{script.name}")) for script in profile.scripts]
+    for raw_name, tool in tool_sources:
+        if tool in tool_owners and tool_owners[tool] != raw_name:
+            problems.append(f"R10: имена {tool_owners[tool]} и {raw_name} нормализуются в один tool {tool}")
+        else:
+            tool_owners[tool] = raw_name
 
     runner_port = profile.runner_port
     if profile.runner_commands and (not runner_port or runner_port < 1 or runner_port > 65535):

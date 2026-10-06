@@ -284,6 +284,33 @@ def test_use_fails_when_agent_artifacts_fail(monkeypatch, tmp_path):
     assert calls["gitleaks"] == []
 
 
+def test_use_writes_agents_md_to_agent_and_workspace(monkeypatch, tmp_path):
+    projects, calls = _setup(monkeypatch, tmp_path)
+    (projects / "p1.json").write_text(_profile_json(tmp_path), encoding="utf-8")
+    assert cli.main(["use", "p1"]) == 0
+    flat = [arg for args in calls["docker_run"] for arg in args]
+    assert "rdm-agent:/agent" in flat
+    assert "mkdir -p /workspace/.devbox && cat > /workspace/.devbox/AGENTS.md" in flat
+    project = str(tmp_path / "proj").replace("\\", "/")
+    assert f"{project}:/workspace" in flat
+
+
+def test_use_workspace_agents_md_failure_is_not_fatal(monkeypatch, tmp_path, capsys):
+    projects, calls = _setup(monkeypatch, tmp_path)
+    (projects / "p1.json").write_text(_profile_json(tmp_path), encoding="utf-8")
+
+    def fail_workspace(*args, **kwargs):
+        calls["docker_run"].append(args)
+        if any("/workspace/.devbox" in arg for arg in args):
+            return subprocess.CompletedProcess(["docker"], 1, "", "docker: error")
+        return subprocess.CompletedProcess(["docker"], 0, "", "")
+
+    monkeypatch.setattr(cli.docker, "run", fail_workspace)
+    assert cli.main(["use", "p1"]) == 0
+    assert "/workspace/.devbox/AGENTS.md" in capsys.readouterr().err
+    assert calls["gitleaks"] != []
+
+
 def test_start_without_name_fails_when_compose_up_fails(monkeypatch, tmp_path):
     _, calls = _setup(monkeypatch, tmp_path)
     monkeypatch.setattr(
@@ -341,3 +368,63 @@ def test_use_rejects_profile_name_with_shell_characters(monkeypatch, tmp_path):
     (projects / "bad name.json").write_text(_profile_json(tmp_path), encoding="utf-8")
     assert cli.main(["use", "bad name"]) == 1
     assert calls["restart"] == []
+
+
+def test_start_manifest_refreshed_after_compose_up(monkeypatch, tmp_path, capsys):
+    projects, _ = _setup(monkeypatch, tmp_path)
+    (projects / "p1.json").write_text(_profile_json(tmp_path), encoding="utf-8")
+    up = {"done": False}
+
+    def fake_compose(*args, **kwargs):
+        if "up" in args:
+            up["done"] = True
+        logs = "Visit it at https://abc123.trycloudflare.com\n" if up["done"] else ""
+        return subprocess.CompletedProcess(["docker"], 0, stdout=logs, stderr="")
+
+    monkeypatch.setattr(cli.docker, "compose", fake_compose)
+    assert cli.main(["start", "p1"]) == 0
+    assert "https://abc123.trycloudflare.com" in capsys.readouterr().out
+    manifest = json.loads(cli.MANIFEST_PATH.read_text(encoding="utf-8"))
+    assert manifest["ingress_url"] == "https://abc123.trycloudflare.com"
+
+
+def test_start_without_name_refreshes_stale_manifest(monkeypatch, tmp_path):
+    projects, _ = _setup(monkeypatch, tmp_path)
+    (projects / "p1.json").write_text(_profile_json(tmp_path), encoding="utf-8")
+    cli.ENV_FILE.write_text("ACTIVE_PROFILE=p1\nPUBLIC_URL=https://devbox.example.test\n", encoding="utf-8")
+    cli.LOG_ROOT.mkdir(parents=True, exist_ok=True)
+    cli.MANIFEST_PATH.write_text(json.dumps({"ingress_url": "https://stale.example.test"}), encoding="utf-8")
+    assert cli.main(["start"]) == 0
+    manifest = json.loads(cli.MANIFEST_PATH.read_text(encoding="utf-8"))
+    assert manifest["ingress_url"] == "https://devbox.example.test"
+
+
+def test_info_refreshes_stale_manifest(monkeypatch, tmp_path, capsys):
+    projects, _ = _setup(monkeypatch, tmp_path)
+    (projects / "p1.json").write_text(_profile_json(tmp_path), encoding="utf-8")
+    cli.ENV_FILE.write_text(
+        "ACTIVE_PROFILE=p1\nPUBLIC_URL=https://devbox.example.test\n"
+        "MCP_BEARER_TOKEN=" + "a" * 64 + "\nMCP_PUBLIC_TOKEN=" + "b" * 64 + "\nINGRESS_TOKEN=" + "c" * 64 + "\n",
+        encoding="utf-8",
+    )
+    cli.LOG_ROOT.mkdir(parents=True, exist_ok=True)
+    cli.MANIFEST_PATH.write_text(json.dumps({"ingress_url": "https://stale.example.test"}), encoding="utf-8")
+    assert cli.main(["info"]) == 0
+    assert "https://devbox.example.test" in capsys.readouterr().out
+    manifest = json.loads(cli.MANIFEST_PATH.read_text(encoding="utf-8"))
+    assert manifest["ingress_url"] == "https://devbox.example.test"
+
+
+def test_issue_tokens_refreshes_stale_manifest(monkeypatch, tmp_path):
+    projects, _ = _setup(monkeypatch, tmp_path)
+    (projects / "p1.json").write_text(_profile_json(tmp_path), encoding="utf-8")
+    cli.ENV_FILE.write_text(
+        "ACTIVE_PROFILE=p1\nPUBLIC_URL=https://devbox.example.test\n"
+        "MCP_BEARER_TOKEN=" + "0" * 64 + "\nMCP_PUBLIC_TOKEN=" + "0" * 64 + "\nINGRESS_TOKEN=" + "0" * 64 + "\n",
+        encoding="utf-8",
+    )
+    cli.LOG_ROOT.mkdir(parents=True, exist_ok=True)
+    cli.MANIFEST_PATH.write_text(json.dumps({"ingress_url": "https://stale.example.test"}), encoding="utf-8")
+    assert cli.main(["issue-tokens"]) == 0
+    manifest = json.loads(cli.MANIFEST_PATH.read_text(encoding="utf-8"))
+    assert manifest["ingress_url"] == "https://devbox.example.test"

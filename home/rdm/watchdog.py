@@ -48,6 +48,7 @@ def run(
                 # .env перечитываем: issue-tokens ротирует INGRESS_TOKEN уже после старта watch
                 fresh = _cli.envfile.EnvFile.load(_cli.ENV_FILE).as_map()
                 procman.start_ingress(_cli._ingress_env(fresh), _HOME)
+                _cli._refresh_manifest_from_env()
                 fails = 0
             url = netprobe.ingress_url(env_map, compose_file)
             code = probe(f"{url}/p/{profiles.BRIDGE_PORT}/healthz", env_map.get("MCP_BEARER_TOKEN")) if url else 0
@@ -55,6 +56,9 @@ def run(
             if fails >= 3:
                 _log(log_path, "tunnel flap: recreate ingress")
                 docker.compose("up", "-d", "--force-recreate", "cloudflared-ingress", compose_file=compose_file)
+                from rdm import cli as _cli
+
+                _cli._refresh_manifest_from_env()
                 fails = 0
                 if iterations is None:
                     time.sleep(RECREATE_DELAY)

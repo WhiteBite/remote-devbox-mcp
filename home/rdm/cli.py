@@ -57,6 +57,18 @@ def _runner_port(env_map: dict[str, str]) -> int | None:
     return ports.compute_port_policy(profile).runner_port
 
 
+def _self_authed_ports(env_map: dict[str, str]) -> tuple[int, ...]:
+    name = env_map.get("ACTIVE_PROFILE")
+    path = PROJECTS_DIR / f"{name}.json" if name else None
+    if not path or not path.exists():
+        return ()
+    try:
+        profile = profiles.load(path)
+    except (ValueError, OSError):
+        return ()
+    return tuple(port for port in ports.compute_port_policy(profile).self_authed if port != BRIDGE_PORT)
+
+
 def _runner_json(command: profiles.RunnerCommand) -> dict[str, object]:
     return {
         "name": command.name,
@@ -105,6 +117,36 @@ def _ingress_env(env_map: dict[str, str]) -> dict[str, str]:
     }
 
 
+def _write_manifest(profile: profiles.Profile, name: str, env_map: dict[str, str]) -> None:
+    policy = ports.compute_port_policy(profile)
+    manifest_profile = ports.with_runner_service(profile)
+    LOG_ROOT.mkdir(parents=True, exist_ok=True)
+    MANIFEST_PATH.write_text(
+        json.dumps(
+            render.build_manifest(
+                manifest_profile, name, _ingress_url(env_map), manifest_profile.mode,
+                list(policy.allowed), set(policy.self_authed),
+            ),
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+
+def _refresh_manifest_from_env() -> None:
+    env_map = envfile.EnvFile.load(ENV_FILE).as_map()
+    name = env_map.get("ACTIVE_PROFILE")
+    path = PROJECTS_DIR / f"{name}.json" if name else None
+    if not path or not path.exists():
+        return
+    try:
+        profile = profiles.load(path)
+    except (ValueError, OSError):
+        return
+    _write_manifest(profile, name, env_map)
+
+
 def _emit_agent_artifacts(profile: profiles.Profile, name: str, allowed: str) -> bool:
     if profile.toolchain:
         result = docker.run(
@@ -125,6 +167,14 @@ def _emit_agent_artifacts(profile: profiles.Profile, name: str, allowed: str) ->
     if result.returncode != 0:
         print(f"/agent/AGENTS.md не записан (rc={result.returncode}): {result.stderr.strip()[:200]}", file=sys.stderr)
         return False
+    workspace = profile.project_dir.replace("\\", "/")
+    result = docker.run(
+        "run", "--rm", "-i", "-v", f"{workspace}:/workspace", "alpine", "sh", "-c",
+        "mkdir -p /workspace/.devbox && cat > /workspace/.devbox/AGENTS.md",
+        input=agents,
+    )
+    if result.returncode != 0:
+        print(f"/workspace/.devbox/AGENTS.md не записан (rc={result.returncode}): {result.stderr.strip()[:200]}", file=sys.stderr)
     return True
 
 
@@ -176,6 +226,7 @@ def apply_use(name: str) -> int:
         for error in errors:
             print(f"profile error: {error}", file=sys.stderr)
         return 1
+    base_profile = profile
     profile = _with_runner(profile, name)
     env = envfile.EnvFile.load(ENV_FILE)
     active = env.get("ACTIVE_PROFILE")
@@ -195,16 +246,8 @@ def apply_use(name: str) -> int:
         if (pathlib.Path(profile.project_dir) / mount).is_dir()
     )
     OVERRIDE_FILE.write_text(render.render_override(profile, dir_mounts), encoding="utf-8")
-    LOG_ROOT.mkdir(parents=True, exist_ok=True)
     env_map = env.as_map()
-    MANIFEST_PATH.write_text(
-        json.dumps(
-            render.build_manifest(profile, name, _ingress_url(env_map), profile.mode, list(policy.allowed), set(policy.self_authed)),
-            ensure_ascii=False,
-            indent=2,
-        ),
-        encoding="utf-8",
-    )
+    _write_manifest(base_profile, name, env_map)
     procman.restart_host_services(profile, name, HOME_DIR, env_map.get("MCP_PUBLIC_TOKEN", ""))
     procman.stop_ingress()
     procman.start_ingress(_ingress_env(env_map), HOME_DIR)
@@ -266,7 +309,13 @@ def _chat(full: bool) -> int:
     print(f"Профили:    {', '.join(_available_profiles())}")
     if not full:
         print("--- чат-блок (маскированный) ---")
-    print(tokens.chat_block(env_map, _ingress_url(env_map), full, _preview_url(env_map), _runner_port(env_map)))
+    _refresh_manifest_from_env()
+    print(
+        tokens.chat_block(
+            env_map, _ingress_url(env_map), full, _preview_url(env_map),
+            _runner_port(env_map), _self_authed_ports(env_map),
+        )
+    )
     return 0
 
 
@@ -286,9 +335,15 @@ def _start(name: str | None, with_preview: bool) -> int:
     env_map = envfile.EnvFile.load(ENV_FILE).as_map()
     if not env_map.get("PUBLIC_PREVIEW_URL") and with_preview:
         docker.compose("--profile", "preview", "up", "-d", compose_file=COMPOSE_FILE)
+    _refresh_manifest_from_env()
     print()
     print("=== Скопируй агенту (arena.ai и любой агентский сайт) ===")
-    print(tokens.chat_block(env_map, _ingress_url(env_map), True, _preview_url(env_map), _runner_port(env_map)))
+    print(
+        tokens.chat_block(
+            env_map, _ingress_url(env_map), True, _preview_url(env_map),
+            _runner_port(env_map), _self_authed_ports(env_map),
+        )
+    )
     print("=== Затем напиши задачу. ===")
     print(f"(хост) профили: {', '.join(_available_profiles())}")
     return 0
@@ -333,7 +388,13 @@ def _issue_tokens() -> int:
                 procman.restart_host_services(profile, active, HOME_DIR, env_map.get("MCP_PUBLIC_TOKEN", ""))
     procman.stop_ingress()
     procman.start_ingress(_ingress_env(env_map), HOME_DIR)
-    print(tokens.chat_block(env_map, _ingress_url(env_map), True, _preview_url(env_map), _runner_port(env_map)))
+    _refresh_manifest_from_env()
+    print(
+        tokens.chat_block(
+            env_map, _ingress_url(env_map), True, _preview_url(env_map),
+            _runner_port(env_map), _self_authed_ports(env_map),
+        )
+    )
     return 0
 
 
@@ -357,7 +418,12 @@ def _ingress(action: str) -> int:
 
 def _block(masked: bool) -> int:
     env_map = envfile.EnvFile.load(ENV_FILE).as_map()
-    print(tokens.chat_block(env_map, _ingress_url(env_map), not masked, _preview_url(env_map), _runner_port(env_map)))
+    print(
+        tokens.chat_block(
+            env_map, _ingress_url(env_map), not masked, _preview_url(env_map),
+            _runner_port(env_map), _self_authed_ports(env_map),
+        )
+    )
     return 0
 
 
@@ -427,20 +493,8 @@ def _allow(port: int, ui: bool) -> int:
     if ui:
         env.set("UI_PORT", str(port))
     env.write(ENV_FILE)
-    LOG_ROOT.mkdir(parents=True, exist_ok=True)
     env_map = env.as_map()
-    manifest_profile = ports.with_runner_service(profile)
-    MANIFEST_PATH.write_text(
-        json.dumps(
-            render.build_manifest(
-                manifest_profile, active, _ingress_url(env_map), manifest_profile.mode,
-                list(policy.allowed), set(policy.self_authed),
-            ),
-            ensure_ascii=False,
-            indent=2,
-        ),
-        encoding="utf-8",
-    )
+    _write_manifest(profile, active, env_map)
     procman.stop_ingress()
     procman.start_ingress(_ingress_env(env_map), HOME_DIR)
     print(f"{active}: порт {port} открыт" + (" как UI" if ui else ""))

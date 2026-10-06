@@ -6,12 +6,26 @@ import base64
 import hashlib
 
 from rdm import ports
-from rdm.profiles import BRIDGE_PORT, Profile
+from rdm.profiles import BRIDGE_PORT, Profile, runner_tool_name
 
 _PERMISSIONS_JSON = {
-    "readonly": '{"write":"deny","edit":"deny","apply_patch":"deny","bash":"deny"}',
-    "full": '{"write":"allow","edit":"allow","apply_patch":"allow","bash":"allow"}',
+    "readonly": '{"write":"deny","edit":"deny","apply_patch":"deny","bash":"deny","webfetch":"deny"}',
+    "full": '{"write":"allow","edit":"allow","apply_patch":"allow","bash":"allow","webfetch":"allow"}',
 }
+
+_BRIDGE_TOOLS: list[dict[str, object]] = [
+    {"name": "read", "mutating": False},
+    {"name": "write", "mutating": True},
+    {"name": "edit", "mutating": True},
+    {"name": "apply_patch", "mutating": True},
+    {"name": "glob", "mutating": False},
+    {"name": "grep", "mutating": False},
+    {"name": "bash", "mutating": True},
+    {"name": "lsp", "mutating": False},
+    {"name": "todowrite", "mutating": False},
+    {"name": "opencode_permission_reply", "mutating": False},
+    {"name": "opencode_job_result", "mutating": False},
+]
 
 
 def env_fields(profile: Profile, name: str, tunnel_token: str) -> dict[str, str | None]:
@@ -75,7 +89,22 @@ def build_manifest(
 ) -> dict[str, object]:
     ports = list(profile.allowed_ports) if allowed_ports is None else list(allowed_ports)
     endpoints: list[dict[str, object]] = [
-        {"name": "bridge", "port": BRIDGE_PORT, "auth": "bearer", "path": f"/p/{BRIDGE_PORT}/mcp"}
+        {
+            "name": "manifest",
+            "port": 9000,
+            "auth": "ingress",
+            "token": "INGRESS_TOKEN",
+            "header": "Authorization: Bearer",
+            "path": "/p/9000/manifest.json",
+        },
+        {
+            "name": "bridge",
+            "port": BRIDGE_PORT,
+            "auth": "bearer",
+            "token": "BRIDGE_TOKEN",
+            "header": "Authorization: Bearer",
+            "path": f"/p/{BRIDGE_PORT}/mcp",
+        },
     ]
     for service in profile.host_services:
         if service.port in self_authed:
@@ -85,18 +114,51 @@ def build_manifest(
         else:
             auth = "ingress"
         endpoints.append(
-            {"name": f"host-{service.port}", "port": service.port, "auth": auth, "path": f"/p/{service.port}/mcp"}
+            {
+                "name": f"host-{service.port}",
+                "port": service.port,
+                "auth": auth,
+                "token": "HOST_TOKEN" if auth in ("self", "bearer") else "INGRESS_TOKEN",
+                "header": "Authorization: Bearer",
+                "path": f"/p/{service.port}/mcp",
+            }
         )
     for port in ports:
-        endpoints.append({"name": f"allowed-{port}", "port": port, "auth": "ingress", "path": f"/p/{port}"})
+        endpoints.append(
+            {
+                "name": f"allowed-{port}",
+                "port": port,
+                "auth": "ingress",
+                "token": "INGRESS_TOKEN",
+                "header": "Authorization: Bearer",
+                "path": f"/p/{port}",
+            }
+        )
     return {
         "profile": profile_name,
         "project": profile.project_dir,
         "ingress_url": ingress_url,
         "endpoints": endpoints,
         "allowed_ports": ports,
-        "runner_commands": [command.name for command in profile.runner_commands],
-        "scripts": [script.name for script in profile.scripts],
+        "runner_commands": [
+            {
+                "name": command.name,
+                "tool": runner_tool_name(command.name),
+                "description": command.description,
+                "kill_tool": f"{runner_tool_name(command.name)}_kill" if command.background else None,
+            }
+            for command in profile.runner_commands
+        ],
+        "scripts": [
+            {
+                "name": script.name,
+                "tool": runner_tool_name(f"script:{script.name}"),
+                "description": script.description,
+                "kill_tool": None,
+            }
+            for script in profile.scripts
+        ],
+        "bridge_tools": _BRIDGE_TOOLS,
         "preview_origin": profile.preview_origin,
         "mode": mode,
         "host_requirements": {
@@ -116,10 +178,13 @@ def render_agents_md(
     available_profiles: list[str] | None = None,
 ) -> str:
     runner_lines = [
-        f"- run_{command.name.replace(':', '_').replace('-', '_')}: {command.description}"
+        f"- {runner_tool_name(command.name)}: {command.description}"
         for command in profile.runner_commands
     ]
-    script_lines = [f"- run_script_{script.name}: {script.description}" for script in profile.scripts]
+    script_lines = [
+        f"- {runner_tool_name(f'script:{script.name}')}: {script.description}"
+        for script in profile.scripts
+    ]
     parts = [
         f"<!-- auto-generated: devbox.py use {profile_name} -->",
         "## Environment",
@@ -130,6 +195,11 @@ def render_agents_md(
         "\n".join(runner_lines) or "- (нет)",
         "## Scripts",
         "\n".join(script_lines) or "- (нет)",
+        "## Back-pointers",
+        "- repo: https://github.com/WhiteBite/remote-devbox-mcp",
+        "- skill: skills/remote-devbox/SKILL.md",
+        "- manifest: /p/9000/manifest.json",
+        "- если читаешь копию из /agent и read её не берёт: `bash cat /agent/AGENTS.md`",
     ]
     if available_profiles is not None:
         parts += ["## Projects", ", ".join(available_profiles) or "- (нет)"]

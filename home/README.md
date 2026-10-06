@@ -183,7 +183,7 @@ python -m http.server 8791 --bind 127.0.0.1 --directory <папка со скр�
 Read-only сессия (оценки, аудит):
 
 ```
-OPENCODE_MCP_PERMISSIONS={"edit":"deny","write":"deny","apply_patch":"deny","bash":"deny"}
+OPENCODE_MCP_PERMISSIONS={"edit":"deny","write":"deny","apply_patch":"deny","bash":"deny","webfetch":"deny"}
 ```
 
 **Страховка**: токен ротируется правкой `.env` + `up -d`; после сессии доступ

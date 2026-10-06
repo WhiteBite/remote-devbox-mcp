@@ -127,9 +127,15 @@ def test_manifest_uses_computed_allowlist():
     profile = Profile(host_services=(HostService(port=8792, auth="bearer"),), allowed_ports=(8765,))
     manifest = render.build_manifest(profile, "p", "https://x", "standard", [8765, 8796], {8787, 8792, 8796})
     assert manifest["allowed_ports"] == [8765, 8796]
+    assert manifest["endpoints"][0]["name"] == "manifest"
     auth = {entry["port"]: entry["auth"] for entry in manifest["endpoints"]}
     assert auth[8792] == "self"
     assert auth[8796] == "ingress"
+    token = {entry["port"]: entry["token"] for entry in manifest["endpoints"]}
+    assert token[8787] == "BRIDGE_TOKEN"
+    assert token[8792] == "HOST_TOKEN"
+    assert token[8796] == "INGRESS_TOKEN"
+    assert all(entry["header"] == "Authorization: Bearer" for entry in manifest["endpoints"])
 
 
 def test_validate_warns_host_shell_operator():

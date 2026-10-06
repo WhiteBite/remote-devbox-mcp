@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import re
 import time
 
 from tests.proxy_fakes import FakeUpstream, raw_request, request, responder, start_ingress, start_target
@@ -7,6 +9,26 @@ from tests.proxy_fakes import FakeUpstream, raw_request, request, responder, sta
 
 def _chunk(data: bytes) -> bytes:
     return f"{len(data):x}\r\n".encode() + data + b"\r\n"
+
+
+def _head_body(out: bytes) -> tuple[bytes, bytes]:
+    head, _, body = out.partition(b"\r\n\r\n")
+    return head, body
+
+
+def _content_length(head: bytes) -> int:
+    for line in head.split(b"\r\n")[1:]:
+        name, _, value = line.partition(b":")
+        if name.strip().lower() == b"content-length":
+            return int(value.strip())
+    raise AssertionError("content-length missing")
+
+
+def _assert_generic_error(head: bytes, body: bytes, tmp_path) -> None:
+    assert _content_length(head) == len(body)
+    assert re.search(rb"\d{2,}", body) is None
+    assert b"muffin" not in body
+    assert str(tmp_path).encode() not in body
 
 
 def test_connect_timeout_does_not_cut_slow_streams(monkeypatch, tmp_path):
@@ -64,7 +86,14 @@ def test_wrong_token_401(tmp_path):
     server, port = start_ingress(tmp_path, allowed={fake.port})
     try:
         out = raw_request(port, request("GET", _url(fake.port), headers=[("Authorization", "Bearer nope")]))
-        assert b"401 Unauthorized" in out
+        head, body = _head_body(out)
+        assert b"401 Unauthorized" in head
+        assert b'www-authenticate: bearer realm="devbox"' in head.lower()
+        data = json.loads(body)
+        assert data["error"] == "unauthorized"
+        assert "hint" in data
+        assert str(fake.port).encode() not in body
+        _assert_generic_error(head, body, tmp_path)
         assert fake.seen == []
     finally:
         fake.close()
@@ -98,7 +127,13 @@ def test_not_allowed_port_403(tmp_path):
     server, port = start_ingress(tmp_path, allowed=set())
     try:
         out = raw_request(port, request("GET", _url(fake.port), headers=[("Authorization", "Bearer tok")]))
-        assert b"403 Forbidden" in out
+        head, body = _head_body(out)
+        assert b"403 Forbidden" in head
+        data = json.loads(body)
+        assert data["error"] == "forbidden"
+        assert "hint" in data
+        assert str(fake.port).encode() not in body
+        _assert_generic_error(head, body, tmp_path)
     finally:
         fake.close()
         server.shutdown()
@@ -119,7 +154,26 @@ def test_unknown_path_404(tmp_path):
     server, port = start_ingress(tmp_path)
     try:
         out = raw_request(port, request("GET", "/nope"))
-        assert b"404 Not Found" in out
+        head, body = _head_body(out)
+        assert b"404 Not Found" in head
+        data = json.loads(body)
+        assert data["error"] == "not_found"
+        assert "hint" in data
+        _assert_generic_error(head, body, tmp_path)
+    finally:
+        server.shutdown()
+
+
+def test_manifest_missing_404(tmp_path):
+    server, port = start_ingress(tmp_path, manifest_path=str(tmp_path / "absent.json"))
+    try:
+        out = raw_request(port, request("GET", "/p/9000/manifest.json", headers=[("Authorization", "Bearer tok")]))
+        head, body = _head_body(out)
+        assert b"404 Not Found" in head
+        data = json.loads(body)
+        assert data["error"] == "not_found"
+        assert "hint" in data
+        _assert_generic_error(head, body, tmp_path)
     finally:
         server.shutdown()
 
@@ -151,7 +205,13 @@ def test_manifest_without_token_401(tmp_path):
     server, port = start_ingress(tmp_path, manifest_path=str(manifest))
     try:
         out = raw_request(port, request("GET", "/p/9000/manifest.json"))
-        assert b"401 Unauthorized" in out
+        head, body = _head_body(out)
+        assert b"401 Unauthorized" in head
+        assert b'www-authenticate: bearer realm="devbox"' in head.lower()
+        data = json.loads(body)
+        assert data["error"] == "unauthorized"
+        assert "hint" in data
+        _assert_generic_error(head, body, tmp_path)
     finally:
         server.shutdown()
 
