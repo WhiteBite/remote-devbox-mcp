@@ -18,9 +18,27 @@
       "name": "start_infra",
       "cmd": ["pwsh", "-NoProfile", "-File", "run.ps1", "infra"],
       "description": "поднять локальные postgres+redis (docker compose в apps/backend); backend — через supervisor op backend.run"
+    },
+    {
+      "name": "staging_status",
+      "cmd": ["pwsh", "-NoProfile", "-File", "scripts/staging-status.ps1"],
+      "timeout": 180,
+      "description": "статус staging VDS: docker compose ps + cloudflared systemd (ssh из .env.staging)"
+    },
+    {
+      "name": "staging_logs",
+      "cmd": ["pwsh", "-NoProfile", "-File", "scripts/staging-logs.ps1"],
+      "args": {
+        "service": { "type": "str", "position": "append" },
+        "tail": { "type": "str", "position": "append" }
+      },
+      "timeout": 180,
+      "description": "логи staging-сервиса (args: service, tail) через ssh к VDS"
     }
   ],
   "runner_port": 8796,
-  "allowed_ports": [47080, 47090, 47092, 47095, 47096, 47765],
+  "allowed_ports": [47090, 47765],
+  "port_ranges": [[47080, 47100], [47760, 47770]],
+  "port_deny": [47091, 47093, 47094],
   "deny_mounts": [".env.staging", "apps/backend/.env"]
 }
