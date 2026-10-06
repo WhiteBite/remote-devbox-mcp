@@ -3,6 +3,7 @@ import hashlib
 import pathlib
 from dataclasses import replace
 
+from rdm import ports
 from rdm.envfile import _CANONICAL_ORDER
 from rdm.profiles import HostService, Profile, RunnerCommand, Script, SetupCommand
 from rdm.render import (
@@ -134,18 +135,10 @@ def test_manifest_endpoints():
             {
                 "name": "host-8792",
                 "port": 8792,
-                "auth": "bearer",
+                "auth": "self",
                 "token": "HOST_TOKEN",
                 "header": "Authorization: Bearer",
                 "path": "/p/8792/mcp",
-            },
-            {
-                "name": "allowed-8765",
-                "port": 8765,
-                "auth": "ingress",
-                "token": "INGRESS_TOKEN",
-                "header": "Authorization: Bearer",
-                "path": "/p/8765",
             },
             {
                 "name": "allowed-8080",
@@ -155,8 +148,18 @@ def test_manifest_endpoints():
                 "header": "Authorization: Bearer",
                 "path": "/p/8080",
             },
+            {
+                "name": "allowed-8765",
+                "port": 8765,
+                "auth": "ingress",
+                "token": "INGRESS_TOKEN",
+                "header": "Authorization: Bearer",
+                "path": "/p/8765",
+            },
         ],
-        "allowed_ports": [8765, 8080],
+        "allowed_ports": [8080, 8765],
+        "port_ranges": [],
+        "port_deny": [],
         "runner_commands": [
             {"name": "gradle-test", "tool": "run_gradle_test", "description": "run tests", "kill_tool": None},
             {"name": "psql:dump", "tool": "run_psql_dump", "description": "dump db", "kill_tool": None},
@@ -278,3 +281,40 @@ def test_agents_md_projects_section():
     text = render_agents_md(PROFILE, "muffin", "java21", "standard", "8080", ["muffin", "midasai"])
     assert "## Projects" in text
     assert "muffin, midasai" in text
+
+
+def test_env_fields_emit_ranges_and_deny():
+    profile = replace(PROFILE, port_ranges=((47000, 47999), (48000, 48010)), port_deny=(47500,))
+
+    fields = env_fields(profile, "muffin", "")
+
+    assert fields["ALLOWED_PORT_RANGES"] == "47000-47999,48000-48010"
+    assert fields["DENIED_PORTS"] == "47500"
+
+
+def test_env_fields_empty_ranges_and_deny():
+    fields = env_fields(PROFILE, "muffin", "")
+
+    assert fields["ALLOWED_PORT_RANGES"] == ""
+    assert fields["DENIED_PORTS"] == ""
+
+
+def test_manifest_includes_ranges_and_deny():
+    profile = replace(PROFILE, port_ranges=((47000, 47999),), port_deny=(47500,))
+
+    manifest = build_manifest(profile, "muffin", "https://x", "standard")
+
+    assert manifest["port_ranges"] == [[47000, 47999]]
+    assert manifest["port_deny"] == [47500]
+
+
+def test_manifest_allowed_matches_computed_policy():
+    profile = replace(
+        PROFILE,
+        host_services=PROFILE.host_services + (HostService(port=9100, auth=""),),
+        runner_commands=(RunnerCommand(name="srv", cmd=("npm", "start"), port=9001),),
+    )
+
+    manifest = build_manifest(profile, "muffin", "https://x", "standard")
+
+    assert manifest["allowed_ports"] == list(ports.compute_port_policy(profile).allowed)

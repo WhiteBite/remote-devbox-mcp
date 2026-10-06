@@ -28,7 +28,7 @@ from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 
 from rdm import hostos
-from rdm.profiles import runner_tool_name
+from rdm.profiles import runner_kill_tool_name, runner_tool_name
 from rdm.runner.audit import _audit
 from rdm.runner.policy import _check_args, _check_cmd_shim, _redact_argv
 
@@ -240,7 +240,7 @@ def _make_kill_tool(name: str, ctx: _Ctx):
         _audit(f"{name}_kill pid={pid}", ctx.run_dir)
         return json.dumps({"killed": True, "pid": pid})
 
-    kill.__name__ = _tool_name(name) + "_kill"
+    kill.__name__ = runner_kill_tool_name(name)
     kill.__doc__ = f"kill background runner: {name}"
     kill.__signature__ = inspect.Signature(return_annotation=str)
     kill.__annotations__ = {"return": str}

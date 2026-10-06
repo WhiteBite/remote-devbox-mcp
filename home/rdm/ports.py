@@ -20,10 +20,24 @@ class PortPolicy:
     self_authed: tuple[int, ...]
     allowed: tuple[int, ...]
     runner_port: int | None = None
+    ranges: tuple[tuple[int, int], ...] = ()
+    denied: tuple[int, ...] = ()
 
     @property
     def runner_http_port(self) -> int | None:
         return self.runner_port + 1 if self.runner_port is not None else None
+
+
+def is_port_allowed(policy: PortPolicy, port: int) -> bool:
+    """Ingress-доступ: явный allowed или диапазон, deny сильнее обоих.
+
+    self-authed сервис форвардит на порт+1 без своей авторизации — этот бэкенд
+    закрыт всегда, диапазон его не открывает.
+    """
+    protected = {p for service_port in policy.self_authed for p in (service_port, service_port + 1)}
+    if port in policy.denied or port in protected:
+        return False
+    return port in policy.allowed or any(lo <= port <= hi for lo, hi in policy.ranges)
 
 
 def with_runner_service(profile: Profile) -> Profile:
@@ -49,4 +63,10 @@ def compute_port_policy(profile: Profile) -> PortPolicy:
     allowed = set(profile.allowed_ports)
     allowed |= {service.port for service in profile.host_services if service.auth != "bearer"}
     allowed |= {command.port for command in profile.runner_commands if command.port}
-    return PortPolicy(tuple(sorted(self_authed)), tuple(sorted(allowed)), runner_port)
+    return PortPolicy(
+        tuple(sorted(self_authed)),
+        tuple(sorted(allowed)),
+        runner_port,
+        tuple(profile.port_ranges),
+        tuple(profile.port_deny),
+    )

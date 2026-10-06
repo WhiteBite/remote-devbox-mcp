@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 import os
 import pathlib
@@ -113,20 +114,18 @@ def _ingress_env(env_map: dict[str, str]) -> dict[str, str]:
         "PROXY_PORT": str(INGRESS_PORT),
         "SELF_AUTHED_PORTS": env_map.get("SELF_AUTHED_PORTS", ""),
         "ALLOWED_PORTS": env_map.get("ALLOWED_PORTS", ""),
+        "ALLOWED_PORT_RANGES": env_map.get("ALLOWED_PORT_RANGES", ""),
+        "DENIED_PORTS": env_map.get("DENIED_PORTS", ""),
         "RDM_MANIFEST_PATH": str(MANIFEST_PATH),
     }
 
 
 def _write_manifest(profile: profiles.Profile, name: str, env_map: dict[str, str]) -> None:
-    policy = ports.compute_port_policy(profile)
     manifest_profile = ports.with_runner_service(profile)
     LOG_ROOT.mkdir(parents=True, exist_ok=True)
     MANIFEST_PATH.write_text(
         json.dumps(
-            render.build_manifest(
-                manifest_profile, name, _ingress_url(env_map), manifest_profile.mode,
-                list(policy.allowed), set(policy.self_authed),
-            ),
+            render.build_manifest(manifest_profile, name, _ingress_url(env_map), manifest_profile.mode),
             ensure_ascii=False,
             indent=2,
         ),
@@ -473,28 +472,48 @@ def _allow(port: int, ui: bool) -> int:
         print(f"profile error: {error}", file=sys.stderr)
         return 1
     policy = ports.compute_port_policy(profile)
+    if port == BRIDGE_PORT:
+        print(f"порт {port} — порт моста; открывать его наружу нельзя", file=sys.stderr)
+        return 1
     if policy.runner_http_port == port:
         print(f"порт {port} — HTTP раннера без авторизации; открывать его наружу нельзя", file=sys.stderr)
         return 1
     if port in policy.self_authed:
         print(f"порт {port} уже в SELF_AUTHED_PORTS (сервис со своей авторизацией)", file=sys.stderr)
         return 1
+    if any(service.port == port for service in profile.host_services if service.auth != "bearer"):
+        print(f"порт {port} — host-сервис без своей авторизации; открывать его наружу нельзя", file=sys.stderr)
+        return 1
+    if port in policy.denied:
+        print(f"порт {port} в port_deny; сначала убери его оттуда", file=sys.stderr)
+        return 1
     data = json.loads(path.read_text(encoding="utf-8"))
-    allowed = {int(p) for p in (data.get("allowed_ports") or [])}
+    allowed = set(profile.allowed_ports)
     allowed.add(port)
     data["allowed_ports"] = sorted(allowed)
     if ui:
         data["ui_port"] = port
+    mutated = dataclasses.replace(
+        profile,
+        allowed_ports=tuple(sorted(allowed)),
+        ui_port=port if ui else profile.ui_port,
+    )
+    problems = [problem for problem in profiles.validate(mutated) if not problem.startswith("WARN")]
+    if problems:
+        for problem in problems:
+            print(f"profile error: {problem}", file=sys.stderr)
+        return 1
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    profile = profiles.load(path)
-    policy = ports.compute_port_policy(profile)
+    policy = ports.compute_port_policy(mutated)
     env.set("SELF_AUTHED_PORTS", ",".join(str(p) for p in policy.self_authed))
     env.set("ALLOWED_PORTS", ",".join(str(p) for p in policy.allowed))
+    env.set("ALLOWED_PORT_RANGES", ",".join(f"{lo}-{hi}" for lo, hi in policy.ranges))
+    env.set("DENIED_PORTS", ",".join(str(p) for p in policy.denied))
     if ui:
         env.set("UI_PORT", str(port))
     env.write(ENV_FILE)
     env_map = env.as_map()
-    _write_manifest(profile, active, env_map)
+    _write_manifest(mutated, active, env_map)
     procman.stop_ingress()
     procman.start_ingress(_ingress_env(env_map), HOME_DIR)
     print(f"{active}: порт {port} открыт" + (" как UI" if ui else ""))

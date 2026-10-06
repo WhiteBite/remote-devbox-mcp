@@ -10,6 +10,8 @@
   "runner_commands": [],
   "runner_port": 8796,
   "allowed_ports": [],
+  "port_ranges": [],
+  "port_deny": [],
   "deny_mounts": [],
   "setup_cmds": [],
   "scripts": []

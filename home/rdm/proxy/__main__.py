@@ -22,6 +22,25 @@ def _ports(value: str) -> set[int]:
     return ports
 
 
+def _ranges(value: str) -> set[tuple[int, int]]:
+    ranges: set[tuple[int, int]] = set()
+    for part in value.split(","):
+        token = part.strip()
+        if not token:
+            continue
+        lo, sep, hi = token.partition("-")
+        if not sep:
+            sys.exit(f"некорректный диапазон портов: {token!r}")
+        try:
+            lo_port, hi_port = int(lo), int(hi)
+        except ValueError:
+            sys.exit(f"некорректный диапазон портов: {token!r}")
+        if not 1 <= lo_port <= hi_port <= 65535:
+            sys.exit(f"некорректный диапазон портов: {token!r}")
+        ranges.add((lo_port, hi_port))
+    return ranges
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="rdm.proxy")
     parser.add_argument("--mode", choices=("ingress", "target"), required=True)
@@ -34,8 +53,10 @@ def main() -> None:
         port = int(os.environ.get("PROXY_PORT", "8799"))
         self_authed = _ports(os.environ.get("SELF_AUTHED_PORTS", ""))
         allowed = _ports(os.environ.get("ALLOWED_PORTS", ""))
+        ranges = _ranges(os.environ.get("ALLOWED_PORT_RANGES", ""))
+        denied = _ports(os.environ.get("DENIED_PORTS", ""))
         manifest = os.environ.get("RDM_MANIFEST_PATH") or None
-        serve_ingress("127.0.0.1", port, token, self_authed, allowed, manifest)
+        serve_ingress("127.0.0.1", port, token, self_authed, allowed, manifest, ranges, denied)
         return
 
     token = os.environ.get("MCP_PUBLIC_TOKEN")

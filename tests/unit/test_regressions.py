@@ -124,8 +124,12 @@ def test_cmd_shim_rejects_cmd_unsafe_arg():
 
 
 def test_manifest_uses_computed_allowlist():
-    profile = Profile(host_services=(HostService(port=8792, auth="bearer"),), allowed_ports=(8765,))
-    manifest = render.build_manifest(profile, "p", "https://x", "standard", [8765, 8796], {8787, 8792, 8796})
+    profile = Profile(
+        host_services=(HostService(port=8792, auth="bearer"),),
+        runner_commands=(RunnerCommand(name="t", cmd=("npm",), port=8796),),
+        allowed_ports=(8765,),
+    )
+    manifest = render.build_manifest(profile, "p", "https://x", "standard")
     assert manifest["allowed_ports"] == [8765, 8796]
     assert manifest["endpoints"][0]["name"] == "manifest"
     auth = {entry["port"]: entry["auth"] for entry in manifest["endpoints"]}

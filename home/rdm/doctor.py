@@ -6,13 +6,14 @@ import json
 import pathlib
 import secrets
 
-from rdm import docker, hostos, netprobe, profiles
+from rdm import docker, hostos, netprobe, ports, profiles
 from rdm.freeze import app_dir
 
 _HOME = app_dir()
 _PROJECTS = profiles.PROJECTS_DIR
 _DEFAULT_COMPOSE = str(_HOME / "docker-compose.yml")
 _INGRESS_PORT = 8799
+_LOOPBACK_IPS = frozenset({"127.0.0.1", "::1", "0.0.0.0", "::"})
 
 
 def _first_entry(path: pathlib.Path) -> tuple[int, float | None, str] | None:
@@ -44,6 +45,92 @@ class _Report:
             print(f"[FAIL] {name} — {hint}")
 
 
+def _port_allowed(profile: profiles.Profile, port: int) -> bool:
+    if port in profile.port_deny:
+        return False
+    return port in profile.allowed_ports or any(lo <= port <= hi for lo, hi in profile.port_ranges)
+
+
+def _registry_ports(project_dir: str) -> frozenset[int] | None:
+    if not project_dir:
+        return None
+    found: set[int] = set()
+    seen = False
+    for path in pathlib.Path(project_dir).glob("tools/*/registry.json"):
+        seen = True
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        ops = data.get("ops") if isinstance(data, dict) else None
+        if not isinstance(ops, dict):
+            continue
+        found.update(
+            spec["port"] for spec in ops.values() if isinstance(spec, dict) and isinstance(spec.get("port"), int)
+        )
+    return frozenset(found) if seen else None
+
+
+def _runner_check(profile: profiles.Profile, report: _Report) -> None:
+    if not profile.runner_commands:
+        return
+    port = profile.runner_port or ports.DEFAULT_RUNNER_PORT
+    try:
+        listening = netprobe.can_connect(port)
+    except OSError:
+        print(f"[WARN] runner {port}: проба невозможна")
+        return
+    report.check(f"runner listen {port}", listening, "devbox.py start-host, затем devbox.py doctor")
+
+
+def _ui_port_check(profile: profiles.Profile, report: _Report) -> None:
+    if profile.ui_port is None:
+        return
+    ui_port = profile.ui_port
+    allowed = ui_port in profile.allowed_ports or any(lo <= ui_port <= hi for lo, hi in profile.port_ranges)
+    report.check(
+        f"ui_port {ui_port}",
+        allowed and ui_port not in profile.port_deny,
+        f"devbox.py allow {ui_port} --ui",
+    )
+
+
+def _drift_warns(profile: profiles.Profile, registry: frozenset[int]) -> None:
+    for port in sorted(registry):
+        if port in profile.port_deny:
+            continue
+        if not _port_allowed(profile, port):
+            print(f"[WARN] drift: порт {port} в registry, но не в политике профиля — devbox.py allow {port}")
+    for port in profile.allowed_ports:
+        if port in profile.port_deny:
+            continue
+        if any(lo <= port <= hi for lo, hi in profile.port_ranges):
+            continue
+        if port not in registry:
+            print(f"[WARN] drift: порт {port} в allowed_ports без потребителя в registry — перенеси в port_ranges или убери")
+
+
+def _reverse_scan_warns(profile: profiles.Profile, registry: frozenset[int] | None) -> None:
+    if hostos.psutil is None:
+        return
+    live: set[int] = set()
+    try:
+        connections = hostos.psutil.net_connections(kind="tcp")
+    except (OSError, hostos.psutil.AccessDenied):
+        print("[WARN] scan: net_connections недоступен — пропуск")
+        return
+    for conn in connections:
+        if conn.status != hostos.psutil.CONN_LISTEN or not conn.laddr:
+            continue
+        if conn.laddr.ip in _LOOPBACK_IPS:
+            live.add(conn.laddr.port)
+    for port in sorted(live):
+        if any(lo <= port <= hi for lo, hi in profile.port_ranges) and port in profile.port_deny:
+            print(f"[WARN] scan: порт {port} жив, в port_ranges и port_deny — диапазон его не открывает")
+        if registry is not None and port in registry and port not in profile.port_deny and not _port_allowed(profile, port):
+            print(f"[WARN] scan: порт {port} жив (loopback, registry), но закрыт политикой — devbox.py allow {port}")
+
+
 def run(env_map: dict[str, str], compose_file: str | None = None, prober=None) -> int:
     compose_file = compose_file or _DEFAULT_COMPOSE
     probe = prober or netprobe.probe_http
@@ -60,8 +147,10 @@ def run(env_map: dict[str, str], compose_file: str | None = None, prober=None) -
     active = env_map.get("ACTIVE_PROFILE", "")
     profile_path = _PROJECTS / f"{active}.json"
     report.check("profile exists", bool(active) and profile_path.exists(), "devbox.py use <имя>")
+    profile: profiles.Profile | None = None
     if active and profile_path.exists():
-        problems = [p for p in profiles.validate(profiles.load(profile_path)) if not p.startswith("WARN")]
+        profile = profiles.load(profile_path)
+        problems = [p for p in profiles.validate(profile) if not p.startswith("WARN")]
         report.check("profile validation", not problems, "; ".join(problems))
     report.check("override yml", (_HOME / "docker-compose.override.yml").exists(), "devbox.py use <имя>")
     toolbox = docker.compose("ps", "toolbox", "--format", "{{.Status}}", compose_file=compose_file).stdout
@@ -108,6 +197,13 @@ def run(env_map: dict[str, str], compose_file: str | None = None, prober=None) -
     except FileNotFoundError:
         pass
     report.check("host services alive", dead == 0, "devbox.py use <имя> перезапустит")
+    if profile is not None:
+        _runner_check(profile, report)
+        _ui_port_check(profile, report)
+        registry = _registry_ports(profile.project_dir)
+        if registry is not None:
+            _drift_warns(profile, registry)
+        _reverse_scan_warns(profile, registry)
     gitleaks = hostos.tempdir() / "rdm-host" / f"gitleaks-{active}.json"
     if gitleaks.exists():
         try:

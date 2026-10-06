@@ -4,17 +4,25 @@ from __future__ import annotations
 
 import http.client
 import pathlib
+import re
 import socketserver
 import threading
 from dataclasses import dataclass
 from http import HTTPStatus
 
+from rdm import ports
 from rdm.proxy import access_log, auth, framing, router, upstream
 
 MAX_CONNECTIONS = 256
 CONNECT_TIMEOUT = 15.0
 IDLE_TIMEOUT = 120.0
+MAX_HTML_REWRITE = 8 * 1024 * 1024
 _TOO_BIG = b"\x00too-big"
+
+_BASE_TAG = re.compile(
+    rb"<base\b[^>]*?\shref\s*=\s*(?:\"[^\"]*\"|'[^']*'|[^\s>]+)[^>]*>", re.IGNORECASE
+)
+_HEAD_TAG = re.compile(rb"<head\b[^>]*>", re.IGNORECASE)
 
 _BODY_UNAUTHORIZED = b'{"error":"unauthorized","hint":"send Authorization: Bearer <token>"}'
 _BODY_FORBIDDEN = b'{"error":"forbidden","hint":"port is not in the allowed list for this profile"}'
@@ -37,6 +45,17 @@ def _is_websocket(pairs: list[tuple[bytes, bytes]]) -> bool:
     return any(name == b"upgrade" and b"websocket" in value.lower() for name, value in pairs)
 
 
+def _rewrite_base_href(body: bytes, prefix: bytes) -> bytes:
+    tag = b'<base href="' + prefix + b'">'
+    rewritten, count = _BASE_TAG.subn(tag, body, count=1)
+    if count:
+        return rewritten
+    head = _HEAD_TAG.search(body)
+    if head is None:
+        return body
+    return body[: head.end()] + tag + body[head.end() :]
+
+
 @dataclass(frozen=True)
 class Config:
     mode: str
@@ -47,6 +66,14 @@ class Config:
     manifest_path: str | None = None
     target_host: str = "127.0.0.1"
     target_port: int = 0
+    ranges: frozenset[tuple[int, int]] = frozenset()
+    denied: frozenset[int] = frozenset()
+
+    @property
+    def policy(self) -> ports.PortPolicy:
+        return ports.PortPolicy(
+            tuple(self.self_authed), tuple(self.allowed), None, tuple(self.ranges), tuple(self.denied)
+        )
 
 
 def _read_body(sock, carry: bytes, length: int) -> tuple[bytes, bytes, bool]:
@@ -193,7 +220,7 @@ class _Handler(socketserver.BaseRequestHandler):
                 if not auth.check_token(pairs, server.config.token):
                     self._simple(401, body=_BODY_UNAUTHORIZED, headers=_AUTH_CHALLENGE)
                     return False
-                if route.port not in server.config.allowed:
+                if not ports.is_port_allowed(server.config.policy, route.port):
                     self._simple(403, body=_BODY_FORBIDDEN)
                     return False
             host, port, path = "127.0.0.1", route.port, route.rest
@@ -247,7 +274,7 @@ class _Handler(socketserver.BaseRequestHandler):
             upstream.send_head(connection, method, path, forward)
             upstream.send_body(connection, body)
             response = connection.getresponse()
-            return self._relay(sock, method, response, request_close)
+            return self._relay(sock, method, response, request_close, port, path)
         except (OSError, http.client.HTTPException):
             self._simple(502, body=_BODY_BAD_GATEWAY)
             return False
@@ -357,7 +384,7 @@ class _Handler(socketserver.BaseRequestHandler):
         first.join()
         second.join()
 
-    def _relay(self, sock, method: str, response, request_close: bool) -> bool:
+    def _relay(self, sock, method: str, response, request_close: bool, port: int, path: bytes) -> bool:
         raw = [
             (name.lower().encode("latin-1"), value.encode("latin-1"))
             for name, value in response.getheaders()
@@ -369,7 +396,27 @@ class _Handler(socketserver.BaseRequestHandler):
             if name not in hop and name not in (b"content-length", b"transfer-encoding")
         ]
         bodyless = method == "HEAD" or response.status in (204, 304)
-        if bodyless:
+        content_type = next((value for name, value in raw if name == b"content-type"), b"")
+        content_encoding = next((value for name, value in raw if name == b"content-encoding"), None)
+        rewritable = (
+            not bodyless
+            and self.server.config.mode == "ingress"
+            and response.length is not None
+            and response.length <= MAX_HTML_REWRITE
+            and content_type.strip().lower().startswith(b"text/html")
+            and (content_encoding is None or content_encoding.strip().lower() == b"identity")
+        )
+        rewritten: bytes | None = None
+        if rewritable:
+            prefix = b"/p/" + str(port).encode("ascii") + path.rpartition(b"/")[0] + b"/"
+            try:
+                rewritten = _rewrite_base_href(response.read(response.length), prefix)
+            except (OSError, http.client.HTTPException):
+                return False
+        if rewritten is not None:
+            out.append((b"content-length", str(len(rewritten)).encode()))
+            close = request_close
+        elif bodyless:
             original = next((value for name, value in raw if name == b"content-length"), None)
             if original is not None:
                 out.append((b"content-length", original))
@@ -397,7 +444,9 @@ class _Handler(socketserver.BaseRequestHandler):
         head += b"\r\n"
         try:
             sock.sendall(head)
-            if not bodyless:
+            if rewritten is not None:
+                sock.sendall(rewritten)
+            elif not bodyless:
                 if response.chunked:
                     self._stream_chunked(sock, response)
                 elif response.length is not None:
@@ -469,6 +518,8 @@ def build_ingress_server(
     allowed: set[int] | frozenset[int],
     manifest_path: str | None,
     access_log_path: pathlib.Path,
+    ranges: set[tuple[int, int]] | frozenset[tuple[int, int]] = frozenset(),
+    denied: set[int] | frozenset[int] = frozenset(),
 ) -> ProxyServer:
     token_bytes = token if isinstance(token, bytes) else token.encode()
     config = Config(
@@ -478,6 +529,8 @@ def build_ingress_server(
         self_authed=frozenset(self_authed),
         allowed=frozenset(allowed),
         manifest_path=manifest_path,
+        ranges=frozenset(ranges),
+        denied=frozenset(denied),
     )
     return ProxyServer((host, port), config)
 
@@ -508,9 +561,11 @@ def serve_ingress(
     self_authed: set[int],
     allowed: set[int],
     manifest_path: str | None,
+    ranges: set[tuple[int, int]] | frozenset[tuple[int, int]] = frozenset(),
+    denied: set[int] | frozenset[int] = frozenset(),
 ) -> None:
     server = build_ingress_server(
-        host, port, token, self_authed, allowed, manifest_path, access_log.default_path()
+        host, port, token, self_authed, allowed, manifest_path, access_log.default_path(), ranges, denied
     )
     server.serve_forever()
 

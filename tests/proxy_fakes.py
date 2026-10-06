@@ -45,9 +45,12 @@ def start_ingress(
     self_authed: set[int] | tuple[int, ...] = (),
     allowed: set[int] | tuple[int, ...] = (),
     manifest_path: str | None = None,
+    ranges: set[tuple[int, int]] | tuple[tuple[int, int], ...] = (),
+    denied: set[int] | tuple[int, ...] = (),
 ) -> tuple[object, int]:
     server = build_ingress_server(
-        "127.0.0.1", 0, token, set(self_authed), set(allowed), manifest_path, tmp_path / "access.log"
+        "127.0.0.1", 0, token, set(self_authed), set(allowed), manifest_path, tmp_path / "access.log",
+        ranges, denied,
     )
     threading.Thread(target=server.serve_forever, daemon=True).start()
     return server, int(server.server_address[1])

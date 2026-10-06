@@ -263,6 +263,43 @@ def test_allow_rejects_port_out_of_range(monkeypatch, tmp_path):
     assert data["allowed_ports"] == [1]
 
 
+def test_allow_rejects_bridge_port(monkeypatch, tmp_path, capsys):
+    projects, calls = _setup(monkeypatch, tmp_path)
+    cli.ENV_FILE.write_text("ACTIVE_PROFILE=p1\n", encoding="utf-8")
+    (projects / "p1.json").write_text(_profile_json(tmp_path), encoding="utf-8")
+    assert cli.main(["allow", "8787"]) == 1
+    assert "моста" in capsys.readouterr().err
+    data = json.loads((projects / "p1.json").read_text(encoding="utf-8"))
+    assert 8787 not in data["allowed_ports"]
+    assert calls["ingress"] == []
+
+
+def test_allow_rejects_non_bearer_host_service_port(monkeypatch, tmp_path):
+    projects, calls = _setup(monkeypatch, tmp_path)
+    cli.ENV_FILE.write_text("ACTIVE_PROFILE=p1\n", encoding="utf-8")
+    (projects / "p1.json").write_text(
+        _profile_json(
+            tmp_path,
+            host_services=[{"port": 9100, "auth": "", "cwd": "", "cmd": "python srv.py"}],
+        ),
+        encoding="utf-8",
+    )
+    assert cli.main(["allow", "9100"]) == 1
+    data = json.loads((projects / "p1.json").read_text(encoding="utf-8"))
+    assert 9100 not in data["allowed_ports"]
+    assert calls["ingress"] == []
+
+
+def test_allow_aborts_on_profile_problem_without_write(monkeypatch, tmp_path):
+    projects, calls = _setup(monkeypatch, tmp_path)
+    cli.ENV_FILE.write_text("ACTIVE_PROFILE=p1\n", encoding="utf-8")
+    (projects / "p1.json").write_text(_profile_json(tmp_path, ui_port=9999), encoding="utf-8")
+    assert cli.main(["allow", "12345"]) == 1
+    data = json.loads((projects / "p1.json").read_text(encoding="utf-8"))
+    assert data["allowed_ports"] == [1]
+    assert calls["ingress"] == []
+
+
 def test_use_fails_when_compose_up_fails(monkeypatch, tmp_path):
     projects, _ = _setup(monkeypatch, tmp_path)
     monkeypatch.setattr(

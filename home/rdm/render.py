@@ -6,7 +6,7 @@ import base64
 import hashlib
 
 from rdm import ports
-from rdm.profiles import BRIDGE_PORT, Profile, runner_tool_name
+from rdm.profiles import BRIDGE_PORT, Profile, runner_kill_tool_name, runner_tool_name
 
 _PERMISSIONS_JSON = {
     "readonly": '{"write":"deny","edit":"deny","apply_patch":"deny","bash":"deny","webfetch":"deny"}',
@@ -40,6 +40,8 @@ def env_fields(profile: Profile, name: str, tunnel_token: str) -> dict[str, str 
         "UI_PORT": str(profile.ui_port) if profile.ui_port else None,
         "SELF_AUTHED_PORTS": ",".join(str(port) for port in policy.self_authed),
         "ALLOWED_PORTS": ",".join(str(port) for port in policy.allowed),
+        "ALLOWED_PORT_RANGES": ",".join(f"{lo}-{hi}" for lo, hi in policy.ranges),
+        "DENIED_PORTS": ",".join(str(port) for port in policy.denied),
         "OPENCODE_MCP_PERMISSIONS": _PERMISSIONS_JSON.get(profile.mode),
         "SETUP_SCRIPT_B64": setup_script_b64(profile, name),
         "TUNNEL_TAIL": tunnel_tail(tunnel_token),
@@ -84,10 +86,9 @@ def build_manifest(
     profile_name: str,
     ingress_url: str,
     mode: str,
-    allowed_ports: list[int] | None = None,
-    self_authed: frozenset[int] | set[int] = frozenset(),
 ) -> dict[str, object]:
-    ports = list(profile.allowed_ports) if allowed_ports is None else list(allowed_ports)
+    policy = ports.compute_port_policy(profile)
+    allowed = list(policy.allowed)
     endpoints: list[dict[str, object]] = [
         {
             "name": "manifest",
@@ -107,7 +108,7 @@ def build_manifest(
         },
     ]
     for service in profile.host_services:
-        if service.port in self_authed:
+        if service.port in policy.self_authed:
             auth = "self"
         elif service.auth == "bearer":
             auth = "bearer"
@@ -123,7 +124,7 @@ def build_manifest(
                 "path": f"/p/{service.port}/mcp",
             }
         )
-    for port in ports:
+    for port in allowed:
         endpoints.append(
             {
                 "name": f"allowed-{port}",
@@ -139,13 +140,15 @@ def build_manifest(
         "project": profile.project_dir,
         "ingress_url": ingress_url,
         "endpoints": endpoints,
-        "allowed_ports": ports,
+        "allowed_ports": allowed,
+        "port_ranges": [[lo, hi] for lo, hi in profile.port_ranges],
+        "port_deny": list(profile.port_deny),
         "runner_commands": [
             {
                 "name": command.name,
                 "tool": runner_tool_name(command.name),
                 "description": command.description,
-                "kill_tool": f"{runner_tool_name(command.name)}_kill" if command.background else None,
+                "kill_tool": runner_kill_tool_name(command.name) if command.background else None,
             }
             for command in profile.runner_commands
         ],

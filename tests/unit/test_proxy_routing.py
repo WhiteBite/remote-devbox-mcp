@@ -139,6 +139,45 @@ def test_not_allowed_port_403(tmp_path):
         server.shutdown()
 
 
+def test_port_inside_range_allowed(tmp_path):
+    fake = FakeUpstream(responder)
+    server, port = start_ingress(tmp_path, allowed=set(), ranges={(fake.port, fake.port)})
+    try:
+        out = raw_request(port, request("GET", _url(fake.port), headers=[("Authorization", "Bearer tok")]))
+        assert b"200 OK" in out and out.endswith(b"ok")
+    finally:
+        fake.close()
+        server.shutdown()
+
+
+def test_port_outside_range_403(tmp_path):
+    fake = FakeUpstream(responder)
+    server, port = start_ingress(tmp_path, allowed=set(), ranges={(1, fake.port - 1)})
+    try:
+        out = raw_request(port, request("GET", _url(fake.port), headers=[("Authorization", "Bearer tok")]))
+        head, body = _head_body(out)
+        assert b"403 Forbidden" in head
+        assert json.loads(body)["error"] == "forbidden"
+        assert fake.seen == []
+    finally:
+        fake.close()
+        server.shutdown()
+
+
+def test_denied_port_beats_allowed_and_range_403(tmp_path):
+    fake = FakeUpstream(responder)
+    server, port = start_ingress(
+        tmp_path, allowed={fake.port}, ranges={(fake.port, fake.port)}, denied={fake.port}
+    )
+    try:
+        out = raw_request(port, request("GET", _url(fake.port), headers=[("Authorization", "Bearer tok")]))
+        assert b"403 Forbidden" in out
+        assert fake.seen == []
+    finally:
+        fake.close()
+        server.shutdown()
+
+
 def test_self_authed_passthrough(tmp_path):
     fake = FakeUpstream(responder)
     server, port = start_ingress(tmp_path, self_authed={fake.port})
@@ -270,6 +309,137 @@ def test_hop_by_hop_stripped(tmp_path):
             ),
         )
         assert b"x-foo" not in out
+    finally:
+        fake.close()
+        server.shutdown()
+
+
+def _static_response(
+    payload: bytes, content_type: bytes, extra_headers: tuple[tuple[bytes, bytes], ...] = ()
+):
+    def respond(conn, method, path, pairs, body):
+        head = (
+            b"HTTP/1.1 200 OK\r\nContent-Type: "
+            + content_type
+            + b"\r\nContent-Length: "
+            + str(len(payload)).encode()
+            + b"\r\n"
+        )
+        for name, value in extra_headers:
+            head += name + b": " + value + b"\r\n"
+        head += b"Connection: close\r\n\r\n"
+        conn.sendall(head + payload)
+
+    return respond
+
+
+def test_ingress_rewrites_html_base_href(tmp_path):
+    html = b'<html><head><base href="/"><title>t</title></head><body>ok</body></html>'
+    fake = FakeUpstream(_static_response(html, b"text/html"))
+    server, port = start_ingress(tmp_path, allowed={fake.port})
+    try:
+        out = raw_request(
+            port, request("GET", _url(fake.port, b"/x"), headers=[("Authorization", "Bearer tok")])
+        )
+        head, body = _head_body(out)
+        assert f'<base href="/p/{fake.port}/">'.encode() in body
+        assert b'<base href="/">' not in body
+        assert _content_length(head) == len(body)
+        assert b"transfer-encoding" not in head.lower()
+    finally:
+        fake.close()
+        server.shutdown()
+
+
+def test_ingress_base_href_anchored_to_document_dir(tmp_path):
+    html = b'<html><head><base href="/"></head><body>ok</body></html>'
+    fake = FakeUpstream(_static_response(html, b"text/html"))
+    server, port = start_ingress(tmp_path, allowed={fake.port})
+    try:
+        out = raw_request(
+            port,
+            request(
+                "GET",
+                _url(fake.port, b"/docs/review/index.html"),
+                headers=[("Authorization", "Bearer tok")],
+            ),
+        )
+        head, body = _head_body(out)
+        assert f'<base href="/p/{fake.port}/docs/review/">'.encode() in body
+        assert _content_length(head) == len(body)
+    finally:
+        fake.close()
+        server.shutdown()
+
+
+def test_ingress_injects_base_after_head(tmp_path):
+    html = b"<html><head><title>t</title></head><body>ok</body></html>"
+    fake = FakeUpstream(_static_response(html, b"text/html"))
+    server, port = start_ingress(tmp_path, allowed={fake.port})
+    try:
+        out = raw_request(
+            port, request("GET", _url(fake.port, b"/x"), headers=[("Authorization", "Bearer tok")])
+        )
+        head, body = _head_body(out)
+        expected = (
+            f'<html><head><base href="/p/{fake.port}/"><title>t</title></head><body>ok</body></html>'
+        ).encode()
+        assert body == expected
+        assert _content_length(head) == len(body)
+    finally:
+        fake.close()
+        server.shutdown()
+
+
+def test_ingress_non_html_unchanged(tmp_path):
+    css = b'<base href="/"> body { color: red; }'
+    data = b'{"ok":true}'
+
+    def serve(conn, method, path, pairs, body):
+        if path.endswith(b".css"):
+            payload, ctype = css, b"text/css"
+        else:
+            payload, ctype = data, b"application/json"
+        conn.sendall(
+            b"HTTP/1.1 200 OK\r\nContent-Type: "
+            + ctype
+            + b"\r\nContent-Length: "
+            + str(len(payload)).encode()
+            + b"\r\nConnection: close\r\n\r\n"
+            + payload
+        )
+
+    fake = FakeUpstream(serve)
+    server, port = start_ingress(tmp_path, allowed={fake.port})
+    try:
+        out = raw_request(
+            port, request("GET", _url(fake.port, b"/s.css"), headers=[("Authorization", "Bearer tok")])
+        )
+        head, body = _head_body(out)
+        assert body == css
+        assert _content_length(head) == len(css)
+        out = raw_request(
+            port, request("GET", _url(fake.port, b"/d.json"), headers=[("Authorization", "Bearer tok")])
+        )
+        head, body = _head_body(out)
+        assert body == data
+        assert _content_length(head) == len(data)
+    finally:
+        fake.close()
+        server.shutdown()
+
+
+def test_ingress_gzip_html_unchanged(tmp_path):
+    html = b'<html><head><base href="/"></head><body>ok</body></html>'
+    fake = FakeUpstream(_static_response(html, b"text/html", ((b"Content-Encoding", b"gzip"),)))
+    server, port = start_ingress(tmp_path, allowed={fake.port})
+    try:
+        out = raw_request(
+            port, request("GET", _url(fake.port, b"/x"), headers=[("Authorization", "Bearer tok")])
+        )
+        head, body = _head_body(out)
+        assert body == html
+        assert _content_length(head) == len(html)
     finally:
         fake.close()
         server.shutdown()

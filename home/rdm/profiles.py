@@ -1,4 +1,4 @@
-"""Типизированные профили projects/*.json и валидация R1-R26.
+"""Типизированные профили projects/*.json и валидация R1-R33.
 
 Ключи JSON нормализуются регистронезависимо (наследие профилей
 PowerShell ConvertTo-Json).
@@ -17,11 +17,16 @@ from pathlib import Path
 from rdm.freeze import app_dir
 
 BRIDGE_PORT = 8787
+MAX_PORT_RANGES = 32
 PROJECTS_DIR = app_dir().parent / "projects"
 
 
 def runner_tool_name(name: str) -> str:
     return f"run_{name.replace(':', '_').replace('-', '_')}"
+
+
+def runner_kill_tool_name(name: str) -> str:
+    return f"{runner_tool_name(name)}_kill"
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,6 +81,8 @@ class Profile:
     runner_commands: tuple[RunnerCommand, ...] = ()
     runner_port: int | None = None
     allowed_ports: tuple[int, ...] = ()
+    port_ranges: tuple[tuple[int, int], ...] = ()
+    port_deny: tuple[int, ...] = ()
     deny_mounts: tuple[str, ...] = ()
     setup_cmds: tuple[SetupCommand, ...] = ()
     scripts: tuple[Script, ...] = ()
@@ -93,6 +100,8 @@ _TOP_KEYS = {
     "runnercommands": "runner_commands",
     "runnerport": "runner_port",
     "allowedports": "allowed_ports",
+    "portranges": "port_ranges",
+    "portdeny": "port_deny",
     "denymounts": "deny_mounts",
     "setupcmds": "setup_cmds",
     "scripts": "scripts",
@@ -163,6 +172,12 @@ def _cmd(values: Mapping[str, object]) -> tuple[str, ...]:
     return tuple(str(item) for item in _seq(values, "cmd"))
 
 
+def _port_range(raw: object) -> tuple[int, int]:
+    if not isinstance(raw, (list, tuple)) or len(raw) != 2:
+        raise ValueError("port_ranges: ожидался [lo, hi]")
+    return (_int(raw[0]), _int(raw[1]))
+
+
 def _host_service(raw: object) -> HostService:
     values = _fields(raw, _HOST_KEYS, "hostservice")
     return HostService(
@@ -226,6 +241,8 @@ def _build(values: Mapping[str, object]) -> Profile:
         runner_commands=tuple(_runner(item) for item in _seq(values, "runner_commands")),
         runner_port=_opt_int(values, "runner_port"),
         allowed_ports=tuple(_int(item) for item in _seq(values, "allowed_ports")),
+        port_ranges=tuple(_port_range(item) for item in _seq(values, "port_ranges")),
+        port_deny=tuple(_int(item) for item in _seq(values, "port_deny")),
         deny_mounts=tuple(str(item) for item in _seq(values, "deny_mounts")),
         setup_cmds=tuple(_setup(item) for item in _seq(values, "setup_cmds")),
         scripts=tuple(_script(item) for item in _seq(values, "scripts")),
@@ -321,6 +338,46 @@ def validate(profile: Profile) -> list[str]:
     for port in ports:
         if port in allowed:
             problems.append(f"R13: порт {port} и в HostServices, и в AllowedPorts")
+
+    ranges = profile.port_ranges
+    if len(ranges) > MAX_PORT_RANGES:
+        problems.append(f"R29: port_ranges: не более {MAX_PORT_RANGES} диапазонов")
+    protected = {BRIDGE_PORT, BRIDGE_PORT + 1}
+    for service in profile.host_services:
+        if service.auth == "bearer":
+            protected.update((service.port, service.port + 1))
+    if runner_port:
+        protected.update((runner_port, runner_port + 1))
+    ordered: list[tuple[int, int]] = []
+    for lo, hi in ranges:
+        if not 1 <= lo <= 65535 or not 1 <= hi <= 65535:
+            problems.append(f"R27: диапазон {lo}-{hi} вне 1-65535")
+            continue
+        if lo > hi:
+            problems.append(f"R28: диапазон {lo}-{hi}: lo > hi")
+            continue
+        if lo <= BRIDGE_PORT <= hi:
+            problems.append(f"R31: диапазон {lo}-{hi} содержит порт моста {BRIDGE_PORT}")
+        for guard in sorted(protected):
+            if guard != BRIDGE_PORT and lo <= guard <= hi:
+                problems.append(f"R34: диапазон {lo}-{hi} содержит защищённый порт {guard}")
+        ordered.append((lo, hi))
+    ordered.sort()
+    for (lo1, hi1), (lo2, hi2) in zip(ordered, ordered[1:], strict=False):
+        if lo2 <= hi1:
+            problems.append(f"R30: диапазоны {lo1}-{hi1} и {lo2}-{hi2} пересекаются")
+    for deny_port in profile.port_deny:
+        if deny_port < 1 or deny_port > 65535:
+            problems.append(f"R32: порт {deny_port} в PortDeny вне 1-65535")
+
+    if profile.ui_port is not None:
+        in_policy = profile.ui_port in profile.allowed_ports or any(
+            lo <= profile.ui_port <= hi for lo, hi in profile.port_ranges
+        )
+        if not in_policy or profile.ui_port in profile.port_deny:
+            problems.append(
+                f"R33: ui_port {profile.ui_port} не входит в AllowedPorts и port_ranges или закрыт PortDeny"
+            )
 
     if runner_port:
         if runner_port in allowed:
