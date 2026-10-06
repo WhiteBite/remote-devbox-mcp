@@ -18,6 +18,11 @@
    раз, и только если снова персистентно — остановись и сообщи пользователю
    (проси проверить `docker compose logs cloudflared-ingress` и vpn).
 
+Конфиг — один механизм: по умолчанию `~/.remote-devbox-mcp.conf`, другой файл
+задаётся `MCP_CONF=<путь>`, шорткат `./mcp --conf NAME` читает
+`~/.devbox/NAME.conf`. Реестр эндпоинтов (порты, команды раннера):
+`curl <INGRESS>/p/9000/manifest.json -H "Authorization: Bearer <INGRESS_TOKEN>"`.
+
 Факты о моей песочнице (замерено, не по памяти) — `SANDBOX_FACTS.md`:
 root + apt, исходящая сеть открыта, Docker нет, Java только 11, персистентен
 только `/home/user`, bash-таймаут 30 с по умолчанию (максимум 1800 с).
@@ -28,8 +33,10 @@ Trycloudflare-URL меняется после любого рестарта Dock
 такого рестарта `./mcp check` персистентно даёт 530 — прошу у пользователя
 новый URL и правлю `MCP_URL` в конфиге.
 
-После клона `cd devbox/arena && ./mcp check` сам чинит exec-бит; playwright
-ставится один раз за сессию: `pip install playwright && python -m playwright install chromium`.
+Самолечение exec-битов живёт внутри `arena/mcp` и срабатывает только при запуске
+через `bash mcp`; после снапшота песочницы переставляю бит вручную:
+`chmod +x mcp` (ARENA.md §1). playwright ставится один раз за сессию:
+`pip install playwright && python -m playwright install chromium`.
 
 ## 1. Окружение
 
@@ -79,6 +86,8 @@ Trycloudflare-URL меняется после любого рестарта Dock
 
 ## 2. Инструменты (нативные имена OpenCode)
 
+Канонический список (9 native + 2 control): `arena/TOOLS.md`.
+
 | Тул | Аргументы | Замечание |
 |---|---|---|
 | `read` | `filePath`, `offset`, `limit` | `offset` **с единицы**, не с нуля |
@@ -94,9 +103,10 @@ Trycloudflare-URL меняется после любого рестарта Dock
 ## 3. Протокол джобов и разрешений
 
 Каждый вызов возвращает джоб: `job_id` + статус `running | awaiting_permission |
-cancelling | completed | failed | cancelled`. `opencode_job_result` принимает
-`wait_seconds` (до 50) — клиент уже использует серверное ожидание, поэтому
-долгие сборки опрашиваются редко, а не каждую секунду.
+cancelling | completed | failed | cancelled`. Джобом управляют два control-тула:
+`opencode_permission_reply` (ответ на запрос разрешения; обёртка `./mcp reply`)
+и `opencode_job_result` (`wait_seconds` до 50 — клиент использует серверное
+ожидание, поэтому долгие сборки опрашиваются редко, а не каждую секунду).
 
 По умолчанию `read`/`glob`/`grep`/`todowrite`/`lsp` разрешены, а
 `write`/`edit`/`apply_patch`/`bash`/`webfetch` **уходят в `awaiting_permission`**.
@@ -205,10 +215,14 @@ flutter run -d web-server --web-hostname 0.0.0.0 --web-port 8788   # headless-с
 | metadata.exit≠0 | exit 5 клиента, читать outputPath если обрезан |
 | Статус cancelling | не опрашивать, завести заново |
 | 'нет такого джоба' | мост перезапущен, завести заново |
+| Сброс песочницы, джобы могли остаться открытыми на мосту | `./mcp resume` — дозапросить незавершённые джобы из файла состояния |
 | 403 на /p/<port> | порт не в allowlist профиля, попросить добавить |
 | 401 на /p/<port> | сверить токен |
 | Клиент убит по таймауту | джоб жив на сервере, дозапросить `./mcp job <id>` |
 | Нет TTY/interactive | не использовать интерактивные команды |
+
+Команда восстановления после сброса песочницы: `./mcp resume [--auto]` —
+берёт открытые джобы из файла состояния и дозапрашивает их результаты на мосту.
 
 ## 9. Классы вызовов и таймауты
 

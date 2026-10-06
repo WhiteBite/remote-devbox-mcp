@@ -27,3 +27,7 @@ This file follows the llms.txt convention: a short, LLM-friendly index of the pr
 ## Hand-written notes
 
 <!-- Everything below the end marker is preserved by `rdk fix`. Put hand-written context here; the block above is regenerated from .discoverability/project.yml. -->
+
+- [ARENA.md](./ARENA.md): onboarding for the external coding agent (bootstrap, rules, hand-off template)
+- [skills/remote-devbox/SKILL.md](./skills/remote-devbox/SKILL.md): installable agent skill for driving the devbox
+- Endpoint registry: `GET <INGRESS>/p/9000/manifest.json` with `Authorization: Bearer <INGRESS_TOKEN>` — machine-readable list of endpoints, ports and runner commands

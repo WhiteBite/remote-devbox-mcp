@@ -1,0 +1,27 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "devbox-runner": {
+      "type": "remote",
+      "url": "https://xxxx.trycloudflare.com/p/<runner-port>/mcp",
+      "headers": {
+        "Authorization": "Bearer {env:MCP_PUBLIC_TOKEN}"
+      }
+    },
+    "devbox-supervisor": {
+      "type": "remote",
+      "url": "https://xxxx.trycloudflare.com/p/<supervisor-port>/mcp",
+      "headers": {
+        "Authorization": "Bearer {env:MCP_PUBLIC_TOKEN}"
+      }
+    },
+    "devbox-bridge": {
+      "type": "local",
+      "command": ["python3", "arena/mcp-stdio-adapter.py", "--trust"],
+      "environment": {
+        "MCP_URL": "https://xxxx.trycloudflare.com/p/8787/mcp",
+        "MCP_TOKEN": "{env:MCP_BEARER_TOKEN}"
+      }
+    }
+  }
+}

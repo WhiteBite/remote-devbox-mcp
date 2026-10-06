@@ -15,7 +15,11 @@
 | `mcp_client.py` | MCP-клиент: streamable HTTP и stdio, только стандартная библиотека Python |
 | `mcp` | обёртка: берёт URL и токен из `~/.remote-devbox-mcp.conf` |
 | `mcp.conf.example` | шаблон конфига |
+| `mcp-stdio-adapter.py` | мост devbox как обычный MCP-сервер по stdio (OpenCode/Claude-класс); мутации — с `--trust`, `--readonly` отказывает |
+| `mcp-config.example.json` | готовый MCP-конфиг для OpenCode/Claude-класса: runner/supervisor напрямую, мост через stdio-адаптер |
+| `opencode-plugin/` | опциональный OpenCode-плагин (пример): проброс env-переменных и блокировка чтения секретов |
 | `AGENT_INSTRUCTIONS.md` | правила работы агента с машиной пользователя (тулы, джобы, ограничения) |
+| `TOOLS.md` | канонический список тулов моста: 9 native + 2 control |
 | `SANDBOX_FACTS.md` | замеренные факты о песочнице агента: права, сеть, персистентность, лимиты |
 
 Вспомогательные тулы (playwright + chromium, codegraph и т.п.) агент ставит
@@ -28,7 +32,7 @@
 строки (URL + токен):
 
 ```
-MCP_URL=https://xxxxx.trycloudflare.com/mcp
+MCP_URL=https://xxxxx.trycloudflare.com/p/8787/mcp
 MCP_TOKEN=<тот же, что MCP_BEARER_TOKEN в .env>
 MCP_TIMEOUT=300
 MCP_RETRIES=6

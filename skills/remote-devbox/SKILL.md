@@ -24,9 +24,58 @@ host-side action.
 ## What you get
 
 A bridge exposing OpenCode-native tools over the tunnel:
-`read/write/edit/apply_patch/glob/grep/bash/lsp/todowrite`, with a job +
-permission protocol. You call them through a stdlib-only Python client
+`read/write/edit/apply_patch/glob/grep/bash/lsp/todowrite`, plus the control
+tools `opencode_permission_reply` and `opencode_job_result`, with a job +
+permission protocol. Canonical list (9 native + 2 control): `arena/TOOLS.md`.
+You call them through a stdlib-only Python client
 (`arena/mcp_client.py` + the `mcp` wrapper).
+
+## Client capability matrix
+
+| Client | Reads | Mutations |
+|---|---|---|
+| arena `./mcp` client | yes | yes — `--auto` answers the permission request itself |
+| stdio adapter `arena/mcp-stdio-adapter.py` | yes | yes with `--trust` (auto-approve); `--readonly` refuses them |
+| stock MCP client straight at the bridge `/p/8787/mcp` | yes | only in profile mode `full` (auto-allow); in `standard` the job stalls in `awaiting_permission`; in `readonly` mutations are rejected |
+| stock MCP client at runner / supervisor | yes | yes — plain MCP, no job protocol |
+
+The bridge answers every call with a job (JobView), so a client that cannot
+answer permission requests sees a stalled job instead of a result.
+
+## Runtime discovery
+
+Three surfaces, all discoverable from the INGRESS alone:
+
+- Endpoint registry — `GET <INGRESS>/p/9000/manifest.json` with
+  `Authorization: Bearer <INGRESS_TOKEN>`: every endpoint with its port, path
+  and token role (`INGRESS_TOKEN` / `BRIDGE_TOKEN` / `HOST_TOKEN`), the
+  runner's `run_*` tool names, and the bridge tool list. Read it instead of
+  guessing ports.
+- Environment manifest — `/workspace/.devbox/AGENTS.md` (active profile,
+  toolchain, mode, allowed ports, runner commands), readable via the bridge
+  `read` tool. The `/agent/AGENTS.md` copy lives outside the bridge root —
+  reach it with `bash cat /agent/AGENTS.md`.
+- Supervisor / host services — plain MCP at `<INGRESS>/p/<port>/mcp` with
+  `HOST_TOKEN`: call tools with `./mcp call`, not `./mcp run` (no job
+  protocol there).
+
+## Environment manifest
+
+`devbox use` writes the environment manifest (active profile, toolchain, mode,
+allowed ports, runner commands) to `/workspace/.devbox/AGENTS.md` — open it
+with the bridge `read` tool. The `/agent/AGENTS.md` copy lives outside the
+bridge root, so `read` rejects it; use `bash cat /agent/AGENTS.md` there.
+`.devbox/` is generated — do not commit it.
+
+## Skill distribution
+
+Canonical distribution is URL-fetch: `git clone --depth 1` the repo, then read
+this file. Install paths if you want it loaded as a native skill:
+
+- Claude Code: `~/.claude/skills/remote-devbox/SKILL.md` (or project-level
+  `.claude/skills/remote-devbox/SKILL.md`)
+- OpenCode: `~/.config/opencode/skills/remote-devbox/SKILL.md` (or project-level
+  `.opencode/skills/remote-devbox/SKILL.md`)
 
 ## What the user must give you
 
@@ -86,6 +135,32 @@ working (401 with a full-length token).
   The tokens are NOT interchangeable: a 401 on one endpoint means you sent the
   other conf's token.
 
+Conf resolution is one mechanism: the `mcp` wrapper reads
+`~/.remote-devbox-mcp.conf` by default, `MCP_CONF=<path>` selects another
+file, and `./mcp --conf NAME` reads `~/.devbox/NAME.conf`.
+
+Endpoint registry (ports, runner commands):
+`curl <INGRESS>/p/9000/manifest.json -H "Authorization: Bearer <INGRESS_TOKEN>"`.
+
+## Quick reference
+
+```bash
+git clone --depth 1 <repo> devbox && cd devbox/arena && chmod +x mcp
+# write ~/.remote-devbox-mcp.conf: MCP_URL=<INGRESS>/p/8787/mcp, MCP_TOKEN=<BRIDGE_TOKEN>, MCP_TIMEOUT=300
+./mcp check            # handshake + tool list
+python devbox.py doctor   # user-side full-chain PASS/FAIL check (run by the user, in home/)
+```
+
+| Error / state | Action |
+|---|---|
+| 401 on an endpoint | wrong conf's token sent — tokens are not interchangeable, re-check |
+| 403 on `/p/<port>` | port not in profile allowlist; ask the user to add it |
+| persistent 530 >3 min (single 530 is normal) | wait 2-3 min, retry `check` once, then stop and ask the user |
+| 1033 tunnel errors | VLESS/DPI rotation; same as persistent 530 |
+| `metadata.exit != 0` | client exits 5; read `metadata.outputPath` if output is truncated |
+| job stuck in `awaiting_permission` | rerun with `--auto`, or print `./mcp reply <job> <perm> once` to the user |
+| sandbox reset, jobs may still be open | `./mcp resume` — re-fetches unfinished jobs from the state file |
+
 ## Client commands
 
 ```bash
@@ -97,11 +172,44 @@ working (401 with a full-length token).
 ./mcp run --auto bash '{"command":"./gradlew test"}'
 ./mcp reply <job_id> <permission_id> once     # approve one request
 ./mcp job <job_id>                            # re-fetch a long job's result
+./mcp resume                                  # recover open jobs after a sandbox reset
 ./mcp run --auto --wait-seconds auto --polls auto bash '{"command":"./gradlew test"}'
 ```
 
 Mutations (`write/edit/apply_patch/bash/webfetch`) default to
 `awaiting_permission`; `--auto` replies `once` and waits.
+
+## Stock MCP clients (OpenCode / Claude family)
+
+`arena/mcp-config.example.json` is a ready-made config: `devbox-runner` and
+`devbox-supervisor` as `type: "remote"` servers with
+`Authorization: Bearer {env:MCP_PUBLIC_TOKEN}` headers (plain MCP, work
+directly); `devbox-bridge` as a `type: "local"` stdio server running
+`arena/mcp-stdio-adapter.py --trust` with `MCP_URL` / `MCP_TOKEN` in its
+environment. `--trust` auto-approves mutations; `--readonly` refuses them.
+Take the real ports from the endpoint manifest. Token name mapping: arena
+conf `MCP_TOKEN` == `MCP_BEARER_TOKEN` in `home/.env` (bridge); `HOST_TOKEN`
+== `MCP_PUBLIC_TOKEN` (runner and self-authed host services); `INGRESS_TOKEN`
+guards all `/p/<port>` HTTP including `/p/9000/manifest.json`. Stdio-only
+clients (Codex-class):
+`npx mcp-remote <url> --header "Authorization: Bearer <token>"`.
+
+## OpenCode integration
+
+For a **local** OpenCode install driving the devbox:
+
+- Skill install: `~/.config/opencode/skills/remote-devbox/` or project
+  `.opencode/skills/remote-devbox/` (see Skill distribution).
+- Config: `arena/mcp-config.example.json` — runner/supervisor as `type: "remote"`
+  (work as-is); the bridge via the stdio adapter. MCP tools are prefixed
+  `<server>_<tool>`; gate them with `permission` globs (e.g. `"devboxbridge_*": false`).
+- Optional plugin `arena/opencode-plugin/devbox.ts`: injects `MCP_URL`/`MCP_TOKEN`
+  into the agent shell (so `./mcp` works without a conf file) and blocks secret
+  reads. Example, not covered by the repo test suite.
+- A running `opencode serve` can register a server dynamically via its API
+  `POST /mcp` with `{name, config}`.
+- `.well-known/opencode` is an organization announce channel for MCP defaults —
+  never put a bearer token in it.
 
 ## Where the rules live
 
@@ -185,3 +293,4 @@ Notes:
 | `metadata.exit != 0` | exit 5, read `metadata.outputPath` if truncated |
 | status `cancelling` | don't poll; start a new job |
 | client killed by timeout | the job is alive on the devbox; `./mcp job <id>` |
+| sandbox reset, jobs may still be open on the bridge | `./mcp resume` — re-fetches unfinished jobs from the state file |
