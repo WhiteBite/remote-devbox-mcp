@@ -23,11 +23,12 @@ def test_load_muffin_json():
     assert profile.toolchain == "java21 flutter:3.44.9"
     assert profile.git_name == "WhiteBite"
     assert profile.git_email == "ad.lord9000@yandex.ru"
-    assert profile.preview_origin == "http://host.docker.internal:8080"
-    assert profile.allowed_ports == (8765, 8080)
+    assert profile.preview_origin == "http://host.docker.internal:47095"
+    assert profile.allowed_ports == (47080, 47090, 47092, 47095, 47096, 47765)
     assert profile.deny_mounts == (".env.staging", "apps/backend/.env")
     assert profile.mode == "standard"
-    assert profile.runner_commands == ()
+    assert profile.runner_port == 8796
+    assert [c.name for c in profile.runner_commands] == ["start_infra"]
 
     assert len(profile.host_services) == 1
     service = profile.host_services[0]

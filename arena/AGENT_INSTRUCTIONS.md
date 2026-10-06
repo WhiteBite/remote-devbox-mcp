@@ -64,8 +64,8 @@ Trycloudflare-URL меняется после любого рестарта Dock
   Invoke-Expression, curl|sh и т.п.) отклоняются; path-аргументы только
   относительные без `..`. bash моста в таких проектах — git и read-only.
 - Супервайзер (`/p/<port>/mcp` из профиля, токен HOST_TOKEN): `overview`/`ops` —
-  что есть; `server_ensure`/`server_start`/`server_stop` — серверы (gallery 8765,
-  widgetbook 8080, parity-board 8098); `task_run` + `task_wait` — задачи
+  что есть; `server_ensure`/`server_start`/`server_stop` — серверы (gallery 47765,
+  widgetbook 47080, live-gallery 47092); `task_run` + `task_wait` — задачи
   (screenshots.regen с params changed_only/flows/themes, gallery.rebuild и т.д.);
   `logs`/`task_status`/`task_cancel`/`notifications`. Разрешений на каждый вызов
   там нет: гейт — реестр ops + этот список. `screenshots.promote` (смена

@@ -3,8 +3,8 @@
   "toolchain": "java21 flutter:3.44.9",
   "git_name": "WhiteBite",
   "git_email": "ad.lord9000@yandex.ru",
-  "preview_origin": "http://host.docker.internal:8080",
-  "ui_port": 8080,
+  "preview_origin": "http://host.docker.internal:47095",
+  "ui_port": 47095,
   "host_services": [
     {
       "port": 8792,
@@ -13,6 +13,14 @@
       "cmd": "python tools/muffin-supervisor/server.py"
     }
   ],
-  "allowed_ports": [8765, 8080],
+  "runner_commands": [
+    {
+      "name": "start_infra",
+      "cmd": ["pwsh", "-NoProfile", "-File", "run.ps1", "infra"],
+      "description": "поднять локальные postgres+redis (docker compose в apps/backend); backend — через supervisor op backend.run"
+    }
+  ],
+  "runner_port": 8796,
+  "allowed_ports": [47080, 47090, 47092, 47095, 47096, 47765],
   "deny_mounts": [".env.staging", "apps/backend/.env"]
 }

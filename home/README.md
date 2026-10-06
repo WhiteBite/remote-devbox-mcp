@@ -225,8 +225,8 @@ Ingress rout'ит только порты из `$AllowedPorts` профиля + 
 вычисляет его сам, контейнеры не плодятся, никто никого не ждёт.
 
 Примеры (Muffin):
-- галерея: `<INGRESS>/p/8765/docs/review/index.html#tab=screens&theme=mpearl`
-- виджетбук: `<INGRESS>/p/8080/`
+- галерея: `<INGRESS>/p/47765/docs/review/index.html#tab=screens&theme=mpearl`
+- виджетбук: `<INGRESS>/p/47080/`
 - supervisor MCP: `<INGRESS>/p/8792/mcp` (порт в SELF_AUTHED_PORTS: авторизует
   нижний auth-proxy своим MCP_PUBLIC_TOKEN, ingress-токен не подставляется)
 
@@ -278,7 +278,7 @@ Quick-туннель даёт новый hostname при каждом перес
    (отрендерит `TUNNEL_TAIL` из токена) и
    `docker compose up -d --force-recreate cloudflared-ingress`.
 4. Все эндпоинты навсегда: `https://devbox.<домен>/p/<порт>/...`
-   (MCP `/p/8787/mcp`, супервайзер `/p/8792/mcp`, галерея `/p/8765`, …).
+   (MCP `/p/8787/mcp`, супервайзер `/p/8792/mcp`, галерея `/p/47765`, …).
    Конфиг агента больше никогда не меняется. `doctor` проверяет цепь по этому URL.
 
 Без `TUNNEL_TOKEN` всё работает как раньше через trycloudflare (URL дрейфует).
