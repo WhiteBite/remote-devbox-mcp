@@ -55,6 +55,25 @@ then `tray.cmd`.
 - **Don't** bump versions, create tags, publish, force-push or delete files without explicit human confirmation.
 - **Don't** rewrite unrelated files while fixing a specific finding.
 
+## Порт-политика и онбординг проекта
+
+- Доступ агента к сервисам проекта задаётся политикой, а не перечислением портов:
+  `allowed_ports` (явные) плюс `port_ranges` (диапазоны-потолки) минус `port_deny`.
+  Ingress пускает порт из диапазона автоматически (token-gated), вне диапазона — 403.
+  Так сервис/микросервис, поднятый агентом на любом порту диапазона, виден без правок профиля.
+- Граница ответственности: долгоживущие серверы принадлежат supervisor-MCP проекта
+  (`server_ensure`/`server_start`, напр. muffin-supervisor); host-runner (`runner_commands`) —
+  для разовых host-команд (docker infra, staging ssh). Один сервер не поднимать обоими путями.
+- Web под префиксом `/p/<port>/`: ingress переписывает `<base href>` для length-framed
+  HTML-ответов, поэтому Flutter web (уважающий `<base>`) грузит ассеты без `--base-href`;
+  chunked/gzip HTML и приложения с корне-абсолютными путями (Vite/React) — нет.
+- Дрейф «профиль ↔ реальность» ловит `devbox.py doctor`: сверяет порты профиля с
+  `tools/*/registry.json` проекта и печатает точный `devbox.py allow <port>`; реверс-скан
+  показывает живые loopback-порты.
+- Новый проект: скопировать `projects/_template.json`, задать `project_dir`, `toolchain`,
+  `host_services`/`runner_commands` и диапазоны портов; `devbox.py use <имя>` валидирует
+  профиль (R1–R33) fail-fast.
+
 ## Discoverability (RDK)
 
 - On-demand only: run these when the user explicitly asks; never proactively.

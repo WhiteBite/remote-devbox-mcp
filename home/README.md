@@ -224,6 +224,13 @@ Ingress rout'ит только порты из `$AllowedPorts` профиля + 
 `python -m http.server`, dev-сервер и т.п.). URL детерминированный, агент
 вычисляет его сам, контейнеры не плодятся, никто никого не ждёт.
 
+Порт открывается явным `allowed_ports` либо попаданием в `port_ranges` (диапазоны-потолки
+профиля); `port_deny` — точный список всегда закрытых портов. Новый сервис на любом порту
+диапазона виден без правок профиля, вне диапазона — 403 (fail-closed). HTML-ответы под
+префиксом: ingress переписывает `<base href>` на `/p/<порт>/` (только length-framed, без gzip),
+поэтому Flutter web грузит ассеты без `--base-href`; chunked HTML и корне-абсолютные пути
+(Vite/React) — нет.
+
 Примеры (Muffin):
 - галерея: `<INGRESS>/p/47765/docs/review/index.html#tab=screens&theme=mpearl`
 - виджетбук: `<INGRESS>/p/47080/`
@@ -250,7 +257,7 @@ Ingress rout'ит только порты из `$AllowedPorts` профиля + 
 - `share` — только чат-блок с полными текущими значениями.
 - `issue-tokens` — ротация трёх токенов + рестарт цепи + чат-блок.
   Каденция: на каждую новую сессию агента; revocation = stop-host + ingress stop.
-- `use` дополнительно: валидация профиля R1–R26 fail-fast; рендер
+- `use` дополнительно: валидация профиля R1–R33 fail-fast; рендер
   `OPENCODE_MCP_PERMISSIONS` из `$Mode` (readonly/standard/full); gitleaks
   скан секретов проекта в фоне (отчёт `%TEMP%\rdm-host\gitleaks-<profile>.json`,
   doctor показывает WARN/PASS; `SKIP_GITLEAKS=1` отключает);
