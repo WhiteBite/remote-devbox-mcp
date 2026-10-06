@@ -322,6 +322,112 @@ def _retries_args(retries):
     )
 
 
+class DoctorClient:
+    def __init__(self, tools=None, init_error=None, call_error=None):
+        self.server_info = {"name": "opencode-toolbox"}
+        self._tools = tools if tools is not None else [{"name": "bash"}]
+        self._init_error = init_error
+        self._call_error = call_error
+        self.calls = []
+
+    def initialize(self):
+        if self._init_error:
+            raise RuntimeError(self._init_error)
+        return {}
+
+    def list_tools(self):
+        return self._tools
+
+    def call(self, tool, arguments):
+        self.calls.append(tool)
+        if self._call_error:
+            raise RuntimeError(self._call_error)
+        return {"content": []}
+
+    def close(self):
+        pass
+
+
+def _patch_doctor_main(monkeypatch, client):
+    mod = load_client()
+    for var in ("MCP_RUNNER_URL", "MCP_RUNNER_TOKEN", "MCP_CONF"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setattr(mod, "build_client", lambda args: client)
+    monkeypatch.setattr(sys, "argv", ["mcp_client", "--url", "http://x/mcp", "doctor"])
+    return mod
+
+
+def test_doctor_reports_ok_and_exits_zero(monkeypatch, capsys):
+    mod = _patch_doctor_main(monkeypatch, DoctorClient())
+    with pytest.raises(SystemExit) as exc:
+        mod.main()
+    assert exc.value.code == mod.EX_OK
+    out = capsys.readouterr().out
+    assert "OK" in out
+    assert "FAIL" not in out
+
+
+def test_doctor_reports_fail_and_exits_config_on_401(monkeypatch, capsys):
+    mod = _patch_doctor_main(
+        monkeypatch, DoctorClient(init_error="HTTP 401 Unauthorized: bad token"))
+    with pytest.raises(SystemExit) as exc:
+        mod.main()
+    assert exc.value.code == mod.EX_CONFIG
+    out = capsys.readouterr().out
+    assert "FAIL" in out
+
+
+def test_doctor_exits_tunnel_on_connection_error(monkeypatch, capsys):
+    mod = _patch_doctor_main(
+        monkeypatch, DoctorClient(init_error="нет соединения: getaddrinfo failed"))
+    with pytest.raises(SystemExit) as exc:
+        mod.main()
+    assert exc.value.code == mod.EX_TUNNEL
+    assert "FAIL" in capsys.readouterr().out
+
+
+def test_doctor_calls_runner_list_when_conf_is_runner(monkeypatch, capsys):
+    client = DoctorClient()
+    mod = _patch_doctor_main(monkeypatch, client)
+    monkeypatch.setenv("MCP_CONF", str(Path.home() / ".mcp-runner.conf"))
+    with pytest.raises(SystemExit) as exc:
+        mod.main()
+    assert exc.value.code == mod.EX_OK
+    assert client.calls == ["runner_list"]
+    out = capsys.readouterr().out
+    assert out.count("OK") == 2
+
+
+def test_doctor_probes_second_endpoint_from_runner_env(monkeypatch, capsys):
+    primary = DoctorClient()
+    runner = DoctorClient()
+    mod = _patch_doctor_main(monkeypatch, primary)
+    monkeypatch.setenv("MCP_RUNNER_URL", "http://runner/mcp")
+    monkeypatch.setenv("MCP_RUNNER_TOKEN", "rt")
+    seen = []
+    monkeypatch.setattr(mod, "MCPClient",
+                        lambda t: seen.append(t) or runner)
+    with pytest.raises(SystemExit) as exc:
+        mod.main()
+    assert exc.value.code == mod.EX_OK
+    assert seen[0].url == "http://runner/mcp"
+    assert seen[0].token == "rt"
+    assert primary.calls == []
+    assert runner.calls == ["runner_list"]
+    assert "FAIL" not in capsys.readouterr().out
+
+
+def test_doctor_runner_failure_exits_config_when_primary_ok(monkeypatch, capsys):
+    client = DoctorClient(call_error="HTTP 401 Unauthorized: foreign token")
+    mod = _patch_doctor_main(monkeypatch, client)
+    monkeypatch.setenv("MCP_CONF", str(Path.home() / ".mcp-runner.conf"))
+    with pytest.raises(SystemExit) as exc:
+        mod.main()
+    assert exc.value.code == mod.EX_CONFIG
+    out = capsys.readouterr().out
+    assert "OK" in out and "FAIL" in out
+
+
 def test_mcp_retries_env_default(monkeypatch):
     mod = load_client()
     monkeypatch.setenv("MCP_RETRIES", "9")

@@ -494,6 +494,14 @@ def resolve_polls(s: str, wait: int) -> int:
 # CLI
 # ──────────────────────────────────────────────────────────────────────
 
+def classify_exit(msg: str) -> int:
+    if "HTTP 401" in msg or "HTTP 403" in msg:
+        return EX_CONFIG
+    if "530" in msg or "нет соединения" in msg:
+        return EX_TUNNEL
+    return EX_GENERIC
+
+
 def build_client(args) -> MCPClient:
     if args.command_stdio:
         t = StdioTransport(args.command_stdio, cwd=args.cwd)
@@ -509,6 +517,45 @@ def build_client(args) -> MCPClient:
             os.environ.get("MCP_RETRIES", "6"))
         t = HttpTransport(url, token, header, bearer, args.timeout, retries)
     return MCPClient(t)
+
+
+def _doctor_line(label: str, ok: bool, detail: str) -> None:
+    mark = ("OK" if ok else "FAIL").ljust(4)
+    if sys.stdout.isatty():
+        mark = f"\033[{'32' if ok else '31'}m{mark}\033[0m"
+    print(f"{mark} {label}: {detail}")
+
+
+def doctor(args, client: MCPClient) -> int:
+    """Префлайт: валидация токена по каждому настроенному эндпоинту."""
+    try:
+        client.initialize()
+        tools = client.list_tools()
+        _doctor_line("mcp", True,
+                     f"{client.server_info.get('name', '?')}, инструментов: {len(tools)}")
+    except RuntimeError as e:
+        _doctor_line("mcp", False, str(e))
+        return classify_exit(str(e))
+    runner_url = os.environ.get("MCP_RUNNER_URL")
+    is_runner_conf = "runner" in os.path.basename(os.environ.get("MCP_CONF") or "")
+    if not runner_url and not is_runner_conf:
+        return EX_OK
+    probe = client
+    if runner_url:
+        probe = MCPClient(HttpTransport(runner_url, os.environ.get("MCP_RUNNER_TOKEN"),
+                                        args.header or "Authorization", not args.no_bearer,
+                                        args.timeout, 0))
+    try:
+        probe.initialize()
+        probe.call("runner_list", {})
+        _doctor_line("runner", True, "runner_list")
+    except RuntimeError as e:
+        _doctor_line("runner", False, str(e))
+        return classify_exit(str(e))
+    finally:
+        if probe is not client:
+            probe.close()
+    return EX_OK
 
 
 def _add_progress_flags(sub):
@@ -540,6 +587,7 @@ def main():
 
     sub = p.add_subparsers(dest="action", required=True)
     sub.add_parser("check", help="health + initialize + счётчик тулов")
+    sub.add_parser("doctor", help="префлайт: проверить каждый настроенный эндпоинт")
     sub.add_parser("init", help="только рукопожатие")
     sub.add_parser("list", help="список инструментов")
     s = sub.add_parser("call", help="вызвать инструмент")
@@ -575,6 +623,9 @@ def main():
     args = p.parse_args()
     client = build_client(args)
     try:
+        if args.action == "doctor":
+            sys.exit(doctor(args, client))
+
         handshake = client.initialize()
 
         if args.action in ("init", "check"):
@@ -682,11 +733,8 @@ def main():
                     jobs[job_id]["status"] = status
             save_job_states(jobs)
     except RuntimeError as e:
-        msg = str(e)
-        if "530" in msg or "нет соединения" in msg:
-            print(f"ОШИБКА: {e}", file=sys.stderr)
-            sys.exit(EX_TUNNEL)
-        sys.exit(f"ОШИБКА: {e}")
+        print(f"ОШИБКА: {e}", file=sys.stderr)
+        sys.exit(classify_exit(str(e)))
     finally:
         client.close()
 

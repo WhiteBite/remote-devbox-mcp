@@ -38,12 +38,21 @@ def test_entrypoints_link_the_skill():
         assert "skills/remote-devbox/SKILL.md" in text
 
 
-def test_mcp_client_is_stdlib_only():
-    tree = ast.parse((REPO / "arena/mcp_client.py").read_text(encoding="utf-8"))
+def _top_level_imports(path: pathlib.Path) -> set[str]:
+    tree = ast.parse(path.read_text(encoding="utf-8"))
     modules: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             modules.update(alias.name.split(".")[0] for alias in node.names)
         elif isinstance(node, ast.ImportFrom) and node.module:
             modules.add(node.module.split(".")[0])
-    assert modules <= set(sys.stdlib_module_names)
+    return modules
+
+
+def test_mcp_client_is_stdlib_only():
+    assert _top_level_imports(REPO / "arena/mcp_client.py") <= set(sys.stdlib_module_names)
+
+
+def test_stdio_adapter_is_stdlib_only():
+    modules = _top_level_imports(REPO / "arena/mcp-stdio-adapter.py")
+    assert modules <= set(sys.stdlib_module_names) | {"mcp_client"}
