@@ -37,8 +37,10 @@ cd home
 devbox.exe use <имя профиля из ..\\projects>
 devbox.exe start <имя>
 devbox.exe doctor
+devbox.exe cockpit
 ```
 
+`devbox.exe cockpit` — локальная веб-панель на 127.0.0.1, открывается в браузере.
 Без консоли — `devbox-tray.exe` (трей-пульт: статус, старт/стоп, блок агенту).
 """
 
@@ -54,6 +56,7 @@ def _pyinstaller(entry: Path, name: str, *, console: bool) -> None:
         "--paths", str(HOME),
         "--hidden-import", "rdm.proxy.__main__",
         "--hidden-import", "rdm.runner.__main__",
+        "--hidden-import", "rdm.ui.__main__",
         # idna импортируется лениво из socket.getaddrinfo — без него LookupError в рантайме
         "--hidden-import", "encodings.idna",
         # sentry_sdk в графе транзитивный и его pyinstaller-хук падает — рантайму не нужен
@@ -86,6 +89,7 @@ def build() -> Path:
     shutil.copy2(HOME / "docker-compose.yml", home_out)
     shutil.copy2(HOME / ".env.example", home_out)
     shutil.copytree(HOME / "docker", home_out / "docker", ignore=shutil.ignore_patterns("__pycache__"))
+    shutil.copytree(HOME / "ui-static", home_out / "ui-static")
     shutil.copytree(REPO / "projects", out / "projects", ignore=shutil.ignore_patterns("__pycache__"))
     (out / "INSTALL.md").write_text(_INSTALL_MD, encoding="utf-8")
 
