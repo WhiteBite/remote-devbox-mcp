@@ -283,6 +283,9 @@ def load(path: str | os.PathLike[str]) -> Profile:
 
 
 def validate(profile: Profile) -> list[str]:
+    # отложенный импорт: ports импортирует profiles на уровне модуля
+    from rdm.ports import COCKPIT_PORT
+
     problems: list[str] = []
     if not profile.project_dir:
         problems.append("R1: задай $ProjectDir")
@@ -397,6 +400,19 @@ def validate(profile: Profile) -> list[str]:
     for deny_port in profile.port_deny:
         if deny_port < 1 or deny_port > 65535:
             problems.append(f"R32: порт {deny_port} в PortDeny вне 1-65535")
+
+    if COCKPIT_PORT in profile.allowed_ports:
+        problems.append(f"R35: AllowedPorts содержит cockpit-порт {COCKPIT_PORT}")
+    for lo, hi in ordered:
+        if lo <= COCKPIT_PORT <= hi:
+            problems.append(f"R35: диапазон {lo}-{hi} содержит cockpit-порт {COCKPIT_PORT}")
+    if any(service.port == COCKPIT_PORT for service in profile.host_services):
+        problems.append(f"R35: HostService содержит cockpit-порт {COCKPIT_PORT}")
+    if runner_port == COCKPIT_PORT:
+        problems.append(f"R35: RunnerPort содержит cockpit-порт {COCKPIT_PORT}")
+    for i, command in enumerate(profile.runner_commands, 1):
+        if command.port == COCKPIT_PORT:
+            problems.append(f"R35: RunnerCommand[{i}] Port содержит cockpit-порт {COCKPIT_PORT}")
 
     if profile.ui_port is not None:
         in_policy = profile.ui_port in profile.allowed_ports or any(

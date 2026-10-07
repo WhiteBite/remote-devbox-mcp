@@ -447,6 +447,9 @@ def _health() -> int:
 
 
 def _allow(port: int, ui: bool) -> int:
+    if port == ports.COCKPIT_PORT:
+        print(f"порт {port} — cockpit; открывать его наружу нельзя", file=sys.stderr)
+        return 1
     env = envfile.EnvFile.load(ENV_FILE)
     active = env.get("ACTIVE_PROFILE")
     if not active:

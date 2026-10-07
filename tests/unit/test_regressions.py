@@ -194,3 +194,12 @@ def test_envfile_get_strips_render_preserves(tmp_path):
 def test_profile_ui_port():
     repo = pathlib.Path(__file__).resolve().parents[2]
     assert load(repo / "projects" / "example-service.json").ui_port == 48095
+
+
+def test_ingress_403s_cockpit_port_even_when_listed_allowed(tmp_path):
+    server, port = start_ingress(tmp_path, allowed={8793})
+    try:
+        out = raw_request(port, request("GET", "/p/8793/", headers=_auth()))
+        assert b"403 Forbidden" in out
+    finally:
+        server.shutdown()

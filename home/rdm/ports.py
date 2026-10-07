@@ -13,6 +13,7 @@ from rdm import freeze
 from rdm.profiles import BRIDGE_PORT, HostService, Profile
 
 DEFAULT_RUNNER_PORT = 8796
+COCKPIT_PORT = 8793
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -34,7 +35,8 @@ def is_port_allowed(policy: PortPolicy, port: int) -> bool:
     self-authed сервис форвардит на порт+1 без своей авторизации — этот бэкенд
     закрыт всегда, диапазон его не открывает.
     """
-    protected = {p for service_port in policy.self_authed for p in (service_port, service_port + 1)}
+    protected = {COCKPIT_PORT}
+    protected |= {p for service_port in policy.self_authed for p in (service_port, service_port + 1)}
     if port in policy.denied or port in protected:
         return False
     return port in policy.allowed or any(lo <= port <= hi for lo, hi in policy.ranges)
