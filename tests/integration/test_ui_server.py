@@ -339,3 +339,18 @@ def _start_in_process(monkeypatch, tmp_path: pathlib.Path, *, with_session: bool
     thread.start()
     _wait_listening(httpd.server_address[1])
     return httpd, thread, httpd.server_address[1], session
+
+
+def test_ui_main_accepts_bare_server_sentinel(monkeypatch):
+    import rdm.ui.__main__ as ui_main
+
+    class _Fake:
+        def serve_forever(self) -> None:
+            return None
+
+    monkeypatch.setattr(server, "build_server", lambda host, port, sessions=None: _Fake())
+    stdout, stderr = sys.stdout, sys.stderr
+    try:
+        assert ui_main.main(["--server"]) == 0
+    finally:
+        sys.stdout, sys.stderr = stdout, stderr

@@ -30,12 +30,13 @@ class _RedactingStream:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="rdm.ui")
-    parser.add_argument("--server", default=server.LOOPBACK_HOST)
+    parser.add_argument("--server", action="store_true", help="run the cockpit server (spawn marker)")
+    parser.add_argument("--host", default=server.LOOPBACK_HOST)
     parser.add_argument("--port", type=int, default=ports.COCKPIT_PORT)
     args = parser.parse_args(argv)
     sys.stdout = _RedactingStream(sys.stdout)
     sys.stderr = _RedactingStream(sys.stderr)
-    cockpit = server.build_server(args.server, args.port)
+    cockpit = server.build_server(args.host, args.port)
     cockpit.serve_forever()
     return 0
 
