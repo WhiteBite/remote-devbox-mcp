@@ -429,6 +429,20 @@ def test_ingress_non_html_unchanged(tmp_path):
         server.shutdown()
 
 
+def test_routed_request_logs_single_access_line(tmp_path):
+    fake = FakeUpstream(responder)
+    server, port = start_ingress(tmp_path, allowed={fake.port})
+    try:
+        out = raw_request(port, request("GET", _url(fake.port), headers=[("Authorization", "Bearer tok")]))
+        assert b"200 OK" in out
+        lines = (tmp_path / "access.log").read_text(encoding="utf-8").splitlines()
+        assert len(lines) == 1
+        assert lines[0].endswith(f" {fake.port} GET /p/{fake.port}/ok ingress")
+    finally:
+        fake.close()
+        server.shutdown()
+
+
 def test_ingress_gzip_html_unchanged(tmp_path):
     html = b'<html><head><base href="/"></head><body>ok</body></html>'
     fake = FakeUpstream(_static_response(html, b"text/html", ((b"Content-Encoding", b"gzip"),)))

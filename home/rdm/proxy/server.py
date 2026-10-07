@@ -236,7 +236,6 @@ class _Handler(socketserver.BaseRequestHandler):
         body, carry = consumed
         self._carry = carry
 
-        access_log.log(server.config.access_log_path, port, method, target, "forward")
         if _is_websocket(pairs):
             return self._forward_websocket(sock, method, path, pairs, host, port, carry)
         return self._forward(sock, method, path, pairs, body, host, port, request_close)
