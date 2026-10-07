@@ -44,6 +44,7 @@ def cockpit(monkeypatch, tmp_path: pathlib.Path):
     env = {
         **os.environ,
         "RDM_UI_STATE_DIR": str(state_dir),
+        "RDM_EVENTS_PATH": str(tmp_path / "events.jsonl"),
         "TMPDIR": str(tmp_path),
         "TEMP": str(tmp_path),
         "TMP": str(tmp_path),
@@ -204,3 +205,77 @@ def test_handoff_masked_by_default_reveal_needs_header_token(cockpit):
 def test_build_server_refuses_non_loopback_host():
     with pytest.raises(ValueError):
         server.build_server("0.0.0.0", _ephemeral_port())
+
+
+def _seed_events(path: pathlib.Path, events: list[dict]) -> None:
+    path.write_text("".join(json.dumps(event) + "\n" for event in events), encoding="utf-8")
+
+
+def test_events_sse_streams_seeded_line(cockpit, tmp_path):
+    port = cockpit
+    seeded = {"kind": "mcp_request", "rpc_method": "tools/call", "tool": "edit", "rpc_id": 1}
+    _seed_events(tmp_path / "events.jsonl", [seeded])
+
+    session = _session(_bootstrap_cookie(port))
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+    conn.request("GET", "/api/events", headers={"Cookie": f"rdm_ui={session}"})
+    response = conn.getresponse()
+    try:
+        assert response.status == 200
+        assert response.getheader("Content-Type", "").startswith("text/event-stream")
+        line = response.readline()
+    finally:
+        conn.close()
+    assert line.startswith(b"data: ")
+    assert json.loads(line[len(b"data: ") :]) == seeded
+
+
+def test_jobs_and_permissions_correlated_view(cockpit, tmp_path):
+    port = cockpit
+    _seed_events(
+        tmp_path / "events.jsonl",
+        [
+            {"kind": "mcp_request", "ts": 100.0, "session": "s1", "rpc_method": "tools/call", "tool": "edit", "rpc_id": 1},
+            {
+                "kind": "mcp_response",
+                "ts": 101.0,
+                "session": "s1",
+                "job_id": "job-1",
+                "status": "awaiting_permission",
+                "permission": "edit",
+            },
+            {
+                "kind": "mcp_request",
+                "ts": 105.0,
+                "session": "s1",
+                "rpc_method": "tools/call",
+                "tool": "opencode_permission_reply",
+                "rpc_id": 2,
+            },
+            {"kind": "mcp_response", "ts": 106.0, "session": "s1", "job_id": "job-1", "status": "completed", "exit": 0},
+        ],
+    )
+
+    session = _session(_bootstrap_cookie(port))
+    with _get(port, "/api/jobs", session) as response:
+        assert response.status == 200
+        payload = json.load(response)
+    assert [job["job_id"] for job in payload["jobs"]] == ["job-1"]
+    assert payload["jobs"][0]["tool"] == "edit"
+    assert payload["jobs"][0]["status"] == "completed"
+    assert payload["jobs"][0]["permission"] == "edit"
+    assert payload["stalled"] == []
+
+    with _get(port, "/api/permissions", session) as response:
+        assert response.status == 200
+        permissions = json.load(response)
+    assert [job["job_id"] for job in permissions["permissions"]] == ["job-1"]
+    assert permissions["permissions"][0]["permission"] == "edit"
+
+
+def test_events_jobs_permissions_require_session(cockpit):
+    port = cockpit
+    for path in ("/api/events", "/api/jobs", "/api/permissions"):
+        with pytest.raises(urllib.error.HTTPError) as denied:
+            urllib.request.urlopen(f"http://127.0.0.1:{port}{path}", timeout=10)
+        assert denied.value.code == 401

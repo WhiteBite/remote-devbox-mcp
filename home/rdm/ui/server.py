@@ -10,11 +10,16 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from rdm import cli, docker, envfile, hostos, netprobe, procman, profiles, redact, tokens
+from rdm.events import jobs, sink
 from rdm.ui import auth, static
 
 LOOPBACK_HOST = "127.0.0.1"
 STATUS_TTL_SECONDS = 3.0
 _TAIL_LINES = 200
+_EVENTS_TAIL_LINES = 2000
+_SSE_MAX_CONNECTIONS = 8
+_SSE_POLL_SECONDS = 0.25
+_SSE_HEARTBEAT_SECONDS = 15.0
 _LOG_SOURCES: dict[str, tuple[str, ...]] = {
     "host": ("rdm-host/*.out", "rdm-host/*.err"),
     "ingress": ("rdm-ingress/ingress.out", "rdm-ingress/ingress.err"),
@@ -141,6 +146,41 @@ def _exposure_payload() -> dict[str, object] | None:
     }
 
 
+def _read_events() -> list[dict[str, object]]:
+    try:
+        text = sink.default_events_path().read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    events: list[dict[str, object]] = []
+    for line in text.splitlines()[-_EVENTS_TAIL_LINES:]:
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(event, dict):
+            events.append(event)
+    return events
+
+
+def _jobs_payload() -> dict[str, object]:
+    events = _read_events()
+    return {
+        "jobs": jobs.correlate(events)["jobs"],
+        "stalled": jobs.stall_alarm(events, time.time()),
+    }
+
+
+def _permissions_payload() -> dict[str, object]:
+    events = _read_events()
+    correlated = jobs.correlate(events)
+    permissions = [
+        job
+        for job in correlated["jobs"]
+        if job.get("permission") is not None or job.get("status") == "awaiting_permission"
+    ]
+    return {"permissions": permissions, "stalled": jobs.stall_alarm(events, time.time())}
+
+
 class CockpitServer(ThreadingHTTPServer):
     daemon_threads = True
 
@@ -149,6 +189,8 @@ class CockpitServer(ThreadingHTTPServer):
         self._status_lock = threading.Lock()
         self._status_cache: dict[str, object] | None = None
         self._status_at = 0.0
+        self._sse_lock = threading.Lock()
+        self._sse_connections = 0
         super().__init__((LOOPBACK_HOST, port), _Handler)
 
     def status(self) -> dict[str, object]:
@@ -159,6 +201,17 @@ class CockpitServer(ThreadingHTTPServer):
             self._status_cache = payload
             self._status_at = time.monotonic()
             return payload
+
+    def sse_acquire(self) -> bool:
+        with self._sse_lock:
+            if self._sse_connections >= _SSE_MAX_CONNECTIONS:
+                return False
+            self._sse_connections += 1
+            return True
+
+    def sse_release(self) -> None:
+        with self._sse_lock:
+            self._sse_connections -= 1
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -217,6 +270,12 @@ class _Handler(BaseHTTPRequestHandler):
                 self._json(404, {"error": "no active profile"})
             else:
                 self._json(200, payload)
+        elif path == "/api/events":
+            self._api_events()
+        elif path == "/api/jobs":
+            self._json(200, _jobs_payload())
+        elif path == "/api/permissions":
+            self._json(200, _permissions_payload())
         else:
             self._json(404, {"error": "not found"})
 
@@ -235,6 +294,64 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(403, {"error": "reveal requires a valid header token"})
             return
         self._json(200, _handoff_payload(reveal))
+
+    def _api_events(self) -> None:
+        if not self.server.sse_acquire():
+            self._json(503, {"error": "sse connection limit reached"})
+            return
+        try:
+            self._sse_stream()
+        finally:
+            self.server.sse_release()
+
+    def _sse_stream(self) -> None:
+        self.close_connection = True
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "close")
+        self.end_headers()
+        path = sink.default_events_path()
+        offset = 0
+        last_heartbeat = time.monotonic()
+        while True:
+            try:
+                offset = self._sse_drain(path, offset)
+                now = time.monotonic()
+                if now - last_heartbeat >= _SSE_HEARTBEAT_SECONDS:
+                    self.wfile.write(b": heartbeat\n\n")
+                    self.wfile.flush()
+                    last_heartbeat = now
+            except OSError:
+                return
+            time.sleep(_SSE_POLL_SECONDS)
+
+    def _sse_drain(self, path: pathlib.Path, offset: int) -> int:
+        try:
+            size = path.stat().st_size
+        except OSError:
+            return offset
+        if size < offset:
+            offset = 0
+        if size == offset:
+            return offset
+        try:
+            with path.open("rb") as handle:
+                handle.seek(offset)
+                chunk = handle.read()
+        except OSError:
+            return offset
+        end = chunk.rfind(b"\n")
+        if end < 0:
+            return offset
+        payload = bytearray()
+        for line in chunk[: end + 1].splitlines():
+            if line.strip():
+                payload += b"data: " + line + b"\n\n"
+        if payload:
+            self.wfile.write(bytes(payload))
+            self.wfile.flush()
+        return offset + end + 1
 
     def _serve_index(self, extra_headers: tuple[tuple[str, str], ...] = ()) -> None:
         resolved = static.resolve("/")
