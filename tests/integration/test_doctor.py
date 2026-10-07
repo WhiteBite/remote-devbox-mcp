@@ -4,7 +4,7 @@ import json
 import subprocess
 import types
 
-from rdm import doctor, hostos
+from rdm import doctor, hostos, ports
 
 
 def _env(tmp_path, profile="p1"):
@@ -49,7 +49,9 @@ def _wire(monkeypatch, tmp_path, *, healthy=True, profile_json=None):
     (tmp_path / "proj").mkdir()
     (tmp_path / "docker-compose.override.yml").write_text("services: {}\n", encoding="utf-8")
     monkeypatch.setenv("RDM_PROJECTS_DIR", str(projects))
+    monkeypatch.setenv("RDM_EVENTS_PATH", str(tmp_path / "events.jsonl"))
     monkeypatch.setattr(doctor, "_HOME", tmp_path)
+    monkeypatch.setattr(hostos, "tempdir", lambda: tmp_path)
     monkeypatch.setattr(doctor.netprobe, "ingress_url", lambda env_map, compose_file=None: env_map.get("PUBLIC_URL", ""))
     monkeypatch.setattr(doctor.netprobe, "can_connect", lambda port: healthy)
     monkeypatch.setattr(doctor, "_first_entry", lambda path: (12345, None, "rdm.proxy"))
@@ -164,3 +166,50 @@ def test_doctor_warns_scan_for_live_blocked_registry_port(monkeypatch, tmp_path,
     out = capsys.readouterr().out
     assert "[WARN] scan" in out
     assert "devbox.py allow 9100" in out
+
+
+def _fake_psutil(*conns):
+    return types.SimpleNamespace(CONN_LISTEN="LISTEN", net_connections=lambda kind="tcp": list(conns))
+
+
+def _listen_conn(ip, port):
+    return types.SimpleNamespace(status="LISTEN", laddr=types.SimpleNamespace(ip=ip, port=port))
+
+
+def test_doctor_cockpit_loopback_fail_when_wildcard_bind(monkeypatch, tmp_path, capsys):
+    _wire(monkeypatch, tmp_path)
+    monkeypatch.setattr(hostos, "psutil", _fake_psutil(_listen_conn("0.0.0.0", ports.COCKPIT_PORT)))
+    assert doctor.run(_env(tmp_path), prober=_prober) == 1
+    out = capsys.readouterr().out
+    assert "[FAIL] cockpit loopback" in out
+
+
+def test_doctor_cockpit_loopback_pass_when_loopback_bind(monkeypatch, tmp_path, capsys):
+    _wire(monkeypatch, tmp_path)
+    monkeypatch.setattr(hostos, "psutil", _fake_psutil(_listen_conn("127.0.0.1", ports.COCKPIT_PORT)))
+    assert doctor.run(_env(tmp_path), prober=_prober) == 0
+    assert "[PASS] cockpit loopback" in capsys.readouterr().out
+
+
+def test_doctor_cockpit_protected_fail_when_manifest_lists_port(monkeypatch, tmp_path, capsys):
+    _wire(monkeypatch, tmp_path)
+    manifest = tmp_path / "rdm-host" / "rdm-manifest.json"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text(json.dumps({"allowed_ports": [1, ports.COCKPIT_PORT]}), encoding="utf-8")
+    assert doctor.run(_env(tmp_path), prober=_prober) == 1
+    out = capsys.readouterr().out
+    assert "[FAIL] cockpit port protected" in out
+
+
+def test_doctor_events_warn_on_high_drop_rate(monkeypatch, tmp_path, capsys):
+    _wire(monkeypatch, tmp_path)
+    events = tmp_path / "dropped-events.jsonl"
+    lines = [json.dumps({"kind": "rpc", "job_id": str(i)}) for i in range(3)]
+    lines.append(json.dumps({"kind": "rpc", "unparsed": True}))
+    lines.append(json.dumps({"kind": "rpc", "truncated": True}))
+    events.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    monkeypatch.setenv("RDM_EVENTS_PATH", str(events))
+    assert doctor.run(_env(tmp_path), prober=_prober) == 0
+    out = capsys.readouterr().out
+    assert "[WARN] events parse-rate" in out
+    assert "[FAIL]" not in out

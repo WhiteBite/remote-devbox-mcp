@@ -7,12 +7,15 @@ import pathlib
 import secrets
 
 from rdm import docker, hostos, netprobe, ports, profiles
+from rdm.events import sink
 from rdm.freeze import app_dir
 
 _HOME = app_dir()
 _DEFAULT_COMPOSE = str(_HOME / "docker-compose.yml")
 _INGRESS_PORT = 8799
 _LOOPBACK_IPS = frozenset({"127.0.0.1", "::1", "0.0.0.0", "::"})
+_COCKPIT_LOOPBACK_IPS = frozenset({"127.0.0.1", "::1"})
+_EVENTS_DROP_WARN_RATIO = 0.2
 
 
 def _first_entry(path: pathlib.Path) -> tuple[int, float | None, str] | None:
@@ -92,6 +95,85 @@ def _ui_port_check(profile: profiles.Profile, report: _Report) -> None:
         allowed and ui_port not in profile.port_deny,
         f"devbox.py allow {ui_port} --ui",
     )
+
+
+def _cockpit_loopback_check(report: _Report) -> None:
+    if hostos.psutil is None:
+        return
+    try:
+        connections = hostos.psutil.net_connections(kind="tcp")
+    except (OSError, hostos.psutil.AccessDenied):
+        print("[WARN] cockpit loopback: net_connections недоступен — пропуск")
+        return
+    binds = [
+        conn.laddr.ip
+        for conn in connections
+        if conn.status == hostos.psutil.CONN_LISTEN and conn.laddr and conn.laddr.port == ports.COCKPIT_PORT
+    ]
+    if not binds:
+        report.check("cockpit loopback", True)
+        return
+    foreign = sorted({ip for ip in binds if ip not in _COCKPIT_LOOPBACK_IPS})
+    report.check(
+        "cockpit loopback",
+        not foreign,
+        f"порт {ports.COCKPIT_PORT} слушает на {', '.join(foreign)} — cockpit требует только 127.0.0.1/::1",
+    )
+
+
+def _cockpit_protected_check(report: _Report) -> None:
+    manifest_path = hostos.tempdir() / "rdm-host" / "rdm-manifest.json"
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        print("[SKIP] cockpit port protected: манифест ещё не опубликован")
+        return
+    except (OSError, ValueError):
+        print("[WARN] cockpit port protected: манифест нечитаем — пропуск")
+        return
+    allowed = manifest.get("allowed_ports") if isinstance(manifest, dict) else None
+    published = allowed if isinstance(allowed, list) else []
+    report.check(
+        "cockpit port protected",
+        ports.COCKPIT_PORT not in published,
+        f"cockpit-порт {ports.COCKPIT_PORT} в allowed_ports манифеста — devbox.py use <имя>",
+    )
+
+
+def _events_parse_rate_warn() -> None:
+    path = sink.default_events_path()
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        print("[SKIP] events parse-rate: файл событий ещё не создан")
+        return
+    except (OSError, UnicodeDecodeError):
+        print("[WARN] events parse-rate: файл нечитаем — пропуск")
+        return
+    total = 0
+    dropped = 0
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(event, dict):
+            continue
+        total += 1
+        if event.get("unparsed") or event.get("truncated"):
+            dropped += 1
+    if total == 0:
+        print("[SKIP] events parse-rate: событий ещё нет")
+        return
+    if dropped / total > _EVENTS_DROP_WARN_RATIO:
+        print(
+            f"[WARN] events parse-rate: {dropped}/{total} не распознано —"
+            " возможен дрейф формы JobView в ответах моста"
+        )
+    else:
+        print(f"[PASS] events parse-rate: {dropped}/{total} не распознано")
 
 
 def _drift_warns(profile: profiles.Profile, registry: frozenset[int]) -> None:
@@ -196,6 +278,9 @@ def run(env_map: dict[str, str], compose_file: str | None = None, prober=None) -
     except FileNotFoundError:
         pass
     report.check("host services alive", dead == 0, "devbox.py use <имя> перезапустит")
+    _cockpit_loopback_check(report)
+    _cockpit_protected_check(report)
+    _events_parse_rate_warn()
     if profile is not None:
         _runner_check(profile, report)
         _ui_port_check(profile, report)
