@@ -534,6 +534,12 @@ def _embedded(argv: list[str]) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Windows-консоль на CI — cp1252; кириллица в профилях/блоке валит print
+    for _stream in (sys.stdout, sys.stderr):
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
     argv = sys.argv[1:] if argv is None else list(argv)
     # скрытые подкоманды: spawn_entry запускает proxy/runner через этот же CLI
     if argv and argv[0] in ("proxy", "runner"):
