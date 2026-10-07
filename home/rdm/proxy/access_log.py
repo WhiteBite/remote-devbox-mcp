@@ -34,25 +34,29 @@ def _escape(raw: bytes) -> str:
     return "".join(out)
 
 
-def log(path: pathlib.Path, port: int, method: str, target: str, auth_mode: str) -> None:
+def append_text(path: pathlib.Path, line: str) -> None:
     global _writes
+    with _lock:
+        handle = _handles.get(path)
+        if handle is None:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            handle = open(path, "a", encoding="utf-8")
+            _handles[path] = handle
+        handle.write(line)
+        handle.flush()
+        _writes += 1
+        if _writes % _CHECK_EVERY == 0 and path.stat().st_size > _MAX_BYTES:
+            handle.close()
+            del _handles[path]
+            path.replace(path.with_name(path.name + ".1"))
+
+
+def log(path: pathlib.Path, port: int, method: str, target: str, auth_mode: str) -> None:
     try:
         line = (
             f"{datetime.datetime.now().isoformat()} {port} "
             f"{_escape(method.encode('latin-1'))} {_escape(target.encode('latin-1'))[:120]} {auth_mode}\n"
         )
-        with _lock:
-            handle = _handles.get(path)
-            if handle is None:
-                path.parent.mkdir(parents=True, exist_ok=True)
-                handle = open(path, "a", encoding="utf-8")
-                _handles[path] = handle
-            handle.write(line)
-            handle.flush()
-            _writes += 1
-            if _writes % _CHECK_EVERY == 0 and path.stat().st_size > _MAX_BYTES:
-                handle.close()
-                del _handles[path]
-                path.replace(path.with_name(path.name + ".1"))
+        append_text(path, line)
     except OSError:
         pass
