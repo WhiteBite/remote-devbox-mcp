@@ -175,10 +175,15 @@ def test_manifest_endpoints():
             {"name": "glob", "mutating": False},
             {"name": "grep", "mutating": False},
             {"name": "bash", "mutating": True},
-            {"name": "lsp", "mutating": False},
+            {"name": "webfetch", "mutating": True},
             {"name": "todowrite", "mutating": False},
-            {"name": "opencode_permission_reply", "mutating": False},
+            {"name": "lsp", "mutating": False},
+            {"name": "opencode_native_info", "mutating": False},
+            {"name": "opencode_job_list", "mutating": False},
             {"name": "opencode_job_result", "mutating": False},
+            {"name": "opencode_job_cancel", "mutating": False},
+            {"name": "opencode_permissions_pending", "mutating": False},
+            {"name": "opencode_permission_reply", "mutating": False},
         ],
         "preview_origin": "http://host.docker.internal:8080",
         "mode": "standard",
@@ -218,7 +223,7 @@ def test_manifest_bridge_tools_mutating_set():
 
     mutating = {tool["name"] for tool in manifest["bridge_tools"] if tool["mutating"]}
 
-    assert mutating == {"write", "edit", "apply_patch", "bash"}
+    assert mutating == {"write", "edit", "apply_patch", "bash", "webfetch"}
 
 
 def test_tunnel_tail_named_vs_quick():

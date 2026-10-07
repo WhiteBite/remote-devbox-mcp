@@ -26,7 +26,7 @@ python devbox.py start muffin     # профиль + стек + ingress + бло
 ```
 ┌─ home/  → ставится на ТВОЙ комп (Windows + Docker Desktop)
 │   docker-compose.yml             toolbox + встроенный VPN (VLESS) + туннели cloudflared
-│   docker/toolbox.Dockerfile      образ: мост к 9 нативным тулам OpenCode (стеково-нейтральный)
+│   docker/toolbox.Dockerfile      образ: мост к 10 нативным тулам OpenCode (стеково-нейтральный)
 │   docker/toolchain.sh            идемпотентная установка TOOLCHAIN в /opt/tools (volume)
 │   docker/toolchains/            java21.sh, flutter.sh — опциональные тулчейны
 │   docker/vpn.Dockerfile          sing-box TUN-сайдкар: туннели едут через VLESS,
@@ -53,7 +53,7 @@ python devbox.py start muffin     # профиль + стек + ingress + бло
 │   mcp-config.example.json   готовый MCP-конфиг для OpenCode/Claude-класса
 │   opencode-plugin/          опциональный OpenCode-плагин (пример)
 │   AGENT_INSTRUCTIONS.md     правила, по которым агент работает с твоим компом
-│   TOOLS.md                  канонический список тулов моста (9 native + 2 control)
+│   TOOLS.md                  канонический список тулов моста (10 native + 6 control)
 │   SANDBOX_FACTS.md          замеренные факты о песочнице агента
 │
 ├─ skills/remote-devbox/SKILL.md   агент-скилл (arena.ai и подобные MCP-клиенты)

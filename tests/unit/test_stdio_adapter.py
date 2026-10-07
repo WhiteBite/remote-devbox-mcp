@@ -105,10 +105,13 @@ def test_tools_list_falls_back_to_known_tools_when_upstream_down():
     resp = mod.handle(request("tools/list"), client, trust=False, readonly=False)
     tools = {t["name"]: t for t in resp["result"]["tools"]}
     assert set(tools) == {
-        "read", "write", "edit", "apply_patch", "glob", "grep", "bash", "lsp",
-        "todowrite", "opencode_permission_reply", "opencode_job_result",
+        "read", "write", "edit", "apply_patch", "glob", "grep", "bash",
+        "webfetch", "todowrite", "lsp", "opencode_native_info",
+        "opencode_job_list", "opencode_job_result", "opencode_job_cancel",
+        "opencode_permissions_pending", "opencode_permission_reply",
     }
     assert tools["edit"]["mutating"] is True
+    assert tools["webfetch"]["mutating"] is True
     assert tools["opencode_permission_reply"]["mutating"] is False
 
 

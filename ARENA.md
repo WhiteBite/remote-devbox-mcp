@@ -13,9 +13,11 @@
 ## 0. К чему ты подключаешься
 
 - **devbox на машине пользователя**: контейнер toolbox с проектом (`/workspace`)
-   и тулчейнами; внутри opencode-mcp-bridge — 9 native тулов
-   (read/write/edit/apply_patch/glob/grep/bash/lsp/todowrite) и 2 control
-   (opencode_permission_reply/opencode_job_result) с джоб-протоколом;
+   и тулчейнами; внутри opencode-mcp-bridge — 10 native тулов
+   (read/write/edit/apply_patch/glob/grep/bash/todowrite/lsp и
+   permission-gated webfetch) и 6 control (opencode_native_info,
+   opencode_job_list, opencode_job_result, opencode_job_cancel,
+   opencode_permissions_pending, opencode_permission_reply) с джоб-протоколом;
    канонический список — `arena/TOOLS.md`.
 - **манифест окружения**: `devbox use` пишет `AGENTS.md` (профиль, тулчейны,
    режим, порты, команды раннера) в `/workspace/.devbox/AGENTS.md` — открой его
@@ -42,7 +44,7 @@ MCP_URL=<INGRESS>/p/8787/mcp
 MCP_TOKEN=<BRIDGE_TOKEN>
 MCP_TIMEOUT=300
 EOF
-./mcp check        # ожидаешь opencode-mcp-bridge и список из 9 native + 2 control тулов
+./mcp check        # ожидаешь opencode-mcp-bridge и список из 10 native + 6 control тулов (16)
 ```
 
 Конфиги сразу скопируй в свой **Workspace** (песочница сбрасывается, Workspace —

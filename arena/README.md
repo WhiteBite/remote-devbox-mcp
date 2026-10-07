@@ -19,7 +19,7 @@
 | `mcp-config.example.json` | готовый MCP-конфиг для OpenCode/Claude-класса: runner/supervisor напрямую, мост через stdio-адаптер |
 | `opencode-plugin/` | опциональный OpenCode-плагин (пример): проброс env-переменных, блокировка чтения секретов, регистрация моста через `client.mcp.add` |
 | `AGENT_INSTRUCTIONS.md` | правила работы агента с машиной пользователя (тулы, джобы, ограничения) |
-| `TOOLS.md` | канонический список тулов моста: 9 native + 2 control |
+| `TOOLS.md` | канонический список тулов моста: 10 native + 6 control (16) |
 | `SANDBOX_FACTS.md` | замеренные факты о песочнице агента: права, сеть, персистентность, лимиты |
 
 Вспомогательные тулы (playwright + chromium, codegraph и т.п.) агент ставит

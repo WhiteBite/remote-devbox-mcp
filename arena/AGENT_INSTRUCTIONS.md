@@ -86,7 +86,7 @@ Trycloudflare-URL меняется после любого рестарта Dock
 
 ## 2. Инструменты (нативные имена OpenCode)
 
-Канонический список (9 native + 2 control): `arena/TOOLS.md`.
+Канонический список (10 native + 6 control): `arena/TOOLS.md`.
 
 | Тул | Аргументы | Замечание |
 |---|---|---|
@@ -97,16 +97,20 @@ Trycloudflare-URL меняется после любого рестарта Dock
 | `glob` | `pattern` | поиск имён файлов |
 | `grep` | `pattern`, `path` | ripgrep по содержимому |
 | `bash` | `command` | только `command`, никакого `description` |
+| `webfetch` | `url` | permission-gated: по умолчанию уходит в `awaiting_permission` |
 | `lsp` | `operation`, `filePath`, `line`, `character`, `query` | `operation`: `hover`, `findReferences`, … |
 | `todowrite` | записи с `content`, `status`, `priority` | мой рабочий список |
 
 ## 3. Протокол джобов и разрешений
 
 Каждый вызов возвращает джоб: `job_id` + статус `running | awaiting_permission |
-cancelling | completed | failed | cancelled`. Джобом управляют два control-тула:
-`opencode_permission_reply` (ответ на запрос разрешения; обёртка `./mcp reply`)
-и `opencode_job_result` (`wait_seconds` до 50 — клиент использует серверное
-ожидание, поэтому долгие сборки опрашиваются редко, а не каждую секунду).
+cancelling | completed | failed | cancelled`. Джобом управляют control-тулы:
+`opencode_job_list` (список джобов), `opencode_job_result` (`wait_seconds`
+до 50 — клиент использует серверное ожидание, поэтому долгие сборки
+опрашиваются редко, а не каждую секунду), `opencode_job_cancel` (отмена),
+`opencode_permissions_pending` (ожидающие разрешения),
+`opencode_permission_reply` (ответ на запрос разрешения; обёртка `./mcp reply`).
+Шестой control-тул `opencode_native_info` — информация о мосте.
 
 По умолчанию `read`/`glob`/`grep`/`todowrite`/`lsp` разрешены, а
 `write`/`edit`/`apply_patch`/`bash`/`webfetch` **уходят в `awaiting_permission`**.

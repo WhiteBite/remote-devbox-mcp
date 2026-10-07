@@ -21,10 +21,15 @@ _BRIDGE_TOOLS: list[dict[str, object]] = [
     {"name": "glob", "mutating": False},
     {"name": "grep", "mutating": False},
     {"name": "bash", "mutating": True},
-    {"name": "lsp", "mutating": False},
+    {"name": "webfetch", "mutating": True},
     {"name": "todowrite", "mutating": False},
-    {"name": "opencode_permission_reply", "mutating": False},
+    {"name": "lsp", "mutating": False},
+    {"name": "opencode_native_info", "mutating": False},
+    {"name": "opencode_job_list", "mutating": False},
     {"name": "opencode_job_result", "mutating": False},
+    {"name": "opencode_job_cancel", "mutating": False},
+    {"name": "opencode_permissions_pending", "mutating": False},
+    {"name": "opencode_permission_reply", "mutating": False},
 ]
 
 

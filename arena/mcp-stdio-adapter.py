@@ -10,8 +10,8 @@ stdout, логи — только в stderr. Джобы и разрешения 
   * initialize → protocolVersion/capabilities/serverInfo; capabilities клиента
     запоминаются в CLIENT_CAPABILITIES.
   * tools/list → прокси апстрима, каждому тулу добавляется поле "mutating"
-    (true для write/edit/apply_patch/bash); если апстрим недоступен —
-    минимальный список из TOOLS.md (9 native + 2 control).
+    (true для write/edit/apply_patch/bash/webfetch); если апстрим недоступен —
+    минимальный список из TOOLS.md (10 native + 6 control).
   * tools/call → ответ-джоб доводится до конца и возвращается конкретным
     результатом {"content": [{"type": "text", ...}], "isError": ...};
     не-джоб → mc.flatten(raw). Мутация без --trust: если клиент заявил
@@ -19,8 +19,8 @@ stdout, логи — только в stderr. Джобы и разрешения 
     elicitation/create (accept → "once", decline/cancel → "reject",
     отказ → isError «мутация отклонена»); без elicitation джоб в
     awaiting_permission → isError с подсказкой включить trust.
-  * --readonly отказывает write/edit/apply_patch/bash isError-результатом,
-    не вызывая апстрим.
+  * --readonly отказывает write/edit/apply_patch/bash/webfetch
+    isError-результатом, не вызывая апстрим.
   * неизвестный метод → JSON-RPC -32601.
 
   python3 arena/mcp-stdio-adapter.py --url https://x.trycloudflare.com/p/8787/mcp \
@@ -41,7 +41,7 @@ import mcp_client as mc
 
 SERVER_NAME = "devbox-bridge-adapter"
 SERVER_VERSION = "1.0.0"
-MUTATING_TOOLS = frozenset({"write", "edit", "apply_patch", "bash"})
+MUTATING_TOOLS = frozenset({"write", "edit", "apply_patch", "bash", "webfetch"})
 
 CLIENT_CAPABILITIES: dict = {}
 
@@ -55,10 +55,15 @@ FALLBACK_TOOLS = [
         ("glob", "поиск имён файлов по шаблону"),
         ("grep", "ripgrep по содержимому"),
         ("bash", "команды на devbox (command)"),
-        ("lsp", "языковые операции (hover, findReferences, …)"),
+        ("webfetch", "загрузка URL (permission-gated)"),
         ("todowrite", "рабочий список агента"),
-        ("opencode_permission_reply", "ответить на запрос разрешения джоба"),
+        ("lsp", "языковые операции (hover, findReferences, …)"),
+        ("opencode_native_info", "информация о мосте и окружении"),
+        ("opencode_job_list", "список джобов"),
         ("opencode_job_result", "состояние/результат джоба (wait_seconds до 50)"),
+        ("opencode_job_cancel", "отмена джоба"),
+        ("opencode_permissions_pending", "ожидающие разрешения запросы"),
+        ("opencode_permission_reply", "ответить на запрос разрешения джоба"),
     )
 ]
 
@@ -274,7 +279,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--trust", action="store_true",
                         help="авто-одобрение разрешений (аналог --auto у mcp_client)")
     parser.add_argument("--readonly", action="store_true",
-                        help="отказывать write/edit/apply_patch/bash с isError")
+                        help="отказывать write/edit/apply_patch/bash/webfetch с isError")
     args = parser.parse_args(argv)
     url = args.url or os.environ.get("MCP_URL")
     token = args.token if args.token is not None else os.environ.get("MCP_TOKEN")

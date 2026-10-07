@@ -24,9 +24,11 @@ host-side action.
 ## What you get
 
 A bridge exposing OpenCode-native tools over the tunnel:
-`read/write/edit/apply_patch/glob/grep/bash/lsp/todowrite`, plus the control
-tools `opencode_permission_reply` and `opencode_job_result`, with a job +
-permission protocol. Canonical list (9 native + 2 control): `arena/TOOLS.md`.
+`read/write/edit/apply_patch/glob/grep/bash/todowrite/lsp` plus the
+permission-gated `webfetch`, and the control tools `opencode_native_info`,
+`opencode_job_list`, `opencode_job_result`, `opencode_job_cancel`,
+`opencode_permissions_pending` and `opencode_permission_reply`, with a job +
+permission protocol. Canonical list (10 native + 6 control): `arena/TOOLS.md`.
 You call them through a stdlib-only Python client
 (`arena/mcp_client.py` + the `mcp` wrapper).
 
