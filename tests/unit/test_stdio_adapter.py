@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import importlib.util
+import io
 import json
+import sys
 from pathlib import Path
+
+import pytest
 
 MODULE_PATH = Path(__file__).resolve().parents[2] / "arena" / "mcp-stdio-adapter.py"
 
@@ -68,7 +72,7 @@ def test_initialize_returns_protocol_and_server_info():
     assert mod.CLIENT_CAPABILITIES == {"roots": {}}
 
 
-def test_initialize_logs_elicitation_limitation(capsys):
+def test_initialize_notes_elicitation_support(capsys):
     mod = load_adapter()
     mod.handle(request("initialize", {"capabilities": {"elicitation": {}}}),
                FakeClient(), trust=False, readonly=False)
@@ -181,3 +185,182 @@ def test_unknown_method_returns_method_not_found():
                       trust=False, readonly=False)
     assert resp["error"]["code"] == -32601
     assert resp["id"] == 1
+
+
+def elicit_recorder(action: str):
+    calls = []
+
+    def elicit(message, requested_schema):
+        calls.append((message, requested_schema))
+        return {"action": action}
+
+    return elicit, calls
+
+
+def run_serve(mod, client, messages, *, trust=False, readonly=False,
+              monkeypatch, capsys):
+    stdin = io.StringIO("".join(json.dumps(m) + "\n" for m in messages))
+    monkeypatch.setattr(sys, "stdin", stdin)
+    mod.serve(client, trust=trust, readonly=readonly)
+    return [json.loads(line) for line in capsys.readouterr().out.splitlines() if line]
+
+
+AWAITING_EDIT = {
+    "job_id": "j-1", "status": "awaiting_permission",
+    "permission": {"id": "p-1", "permission": "edit", "patterns": ["src/Main.java"]},
+}
+
+
+def test_tools_call_edit_elicits_and_accepts():
+    mod = load_adapter()
+    mod.handle(request("initialize", {"capabilities": {"elicitation": {}}}),
+               FakeClient(), trust=False, readonly=False)
+    client = FakeClient(responses=[
+        job_response(AWAITING_EDIT),
+        job_response({"job_id": "j-1", "status": "completed",
+                      "result": {"output": "patched src/Main.java",
+                                 "metadata": {"exit": 0}}}),
+    ])
+    elicit, calls = elicit_recorder("accept")
+    resp = mod.handle(request("tools/call", {"name": "edit", "arguments": {}}),
+                      client, trust=False, readonly=False, elicit=elicit)
+    assert resp["result"]["isError"] is False
+    assert resp["result"]["content"][0]["text"] == "patched src/Main.java"
+    assert client.calls[1] == ("opencode_permission_reply",
+                               {"job_id": "j-1", "permission_id": "p-1",
+                                "reply": "once"})
+    assert len(calls) == 1
+    assert "edit" in calls[0][0]
+    assert "src/Main.java" in calls[0][0]
+    assert calls[0][1]["type"] == "object"
+
+
+@pytest.mark.parametrize("action", ["decline", "cancel"])
+def test_tools_call_edit_elicits_and_declines(action):
+    mod = load_adapter()
+    mod.handle(request("initialize", {"capabilities": {"elicitation": {}}}),
+               FakeClient(), trust=False, readonly=False)
+    client = FakeClient(responses=[
+        job_response(AWAITING_EDIT),
+        job_response({"job_id": "j-1", "status": "cancelled"}),
+    ])
+    elicit, _ = elicit_recorder(action)
+    resp = mod.handle(request("tools/call", {"name": "edit", "arguments": {}}),
+                      client, trust=False, readonly=False, elicit=elicit)
+    assert resp["result"]["isError"] is True
+    assert "отклонена" in resp["result"]["content"][0]["text"]
+    assert client.calls[1] == ("opencode_permission_reply",
+                               {"job_id": "j-1", "permission_id": "p-1",
+                                "reply": "reject"})
+
+
+def test_tools_call_edit_without_elicitation_capability_keeps_trust_error():
+    mod = load_adapter()
+    mod.handle(request("initialize", {"capabilities": {"roots": {}}}),
+               FakeClient(), trust=False, readonly=False)
+    client = FakeClient(responses=[job_response(AWAITING_EDIT)])
+    elicit, calls = elicit_recorder("accept")
+    resp = mod.handle(request("tools/call", {"name": "edit", "arguments": {}}),
+                      client, trust=False, readonly=False, elicit=elicit)
+    assert resp["result"]["isError"] is True
+    assert "--trust" in resp["result"]["content"][0]["text"]
+    assert calls == []
+    assert client.calls == [("edit", {})]
+
+
+def test_serve_elicitation_accept_roundtrip(monkeypatch, capsys):
+    mod = load_adapter()
+    client = FakeClient(responses=[
+        job_response(AWAITING_EDIT),
+        job_response({"job_id": "j-1", "status": "completed",
+                      "result": {"output": "patched src/Main.java",
+                                 "metadata": {"exit": 0}}}),
+    ])
+    out = run_serve(mod, client, [
+        request("initialize", {"capabilities": {"elicitation": {}}}, req_id=1),
+        request("tools/call", {"name": "edit", "arguments": {}}, req_id=2),
+        {"jsonrpc": "2.0", "id": "elicit-1", "result": {"action": "accept"}},
+    ], monkeypatch=monkeypatch, capsys=capsys)
+    assert [m.get("method") for m in out] == [None, "elicitation/create", None]
+    elicit_req = out[1]
+    assert elicit_req["id"] == "elicit-1"
+    assert "edit" in elicit_req["params"]["message"]
+    assert "src/Main.java" in elicit_req["params"]["message"]
+    assert elicit_req["params"]["requestedSchema"]["type"] == "object"
+    assert out[2]["id"] == 2
+    assert out[2]["result"]["isError"] is False
+    assert out[2]["result"]["content"][0]["text"] == "patched src/Main.java"
+    assert client.calls[1] == ("opencode_permission_reply",
+                               {"job_id": "j-1", "permission_id": "p-1",
+                                "reply": "once"})
+
+
+def test_serve_elicitation_decline_roundtrip(monkeypatch, capsys):
+    mod = load_adapter()
+    client = FakeClient(responses=[
+        job_response(AWAITING_EDIT),
+        job_response({"job_id": "j-1", "status": "cancelled"}),
+    ])
+    out = run_serve(mod, client, [
+        request("initialize", {"capabilities": {"elicitation": {}}}, req_id=1),
+        request("tools/call", {"name": "edit", "arguments": {}}, req_id=2),
+        {"jsonrpc": "2.0", "id": "elicit-1", "result": {"action": "decline"}},
+    ], monkeypatch=monkeypatch, capsys=capsys)
+    assert out[1]["method"] == "elicitation/create"
+    assert out[2]["id"] == 2
+    assert out[2]["result"]["isError"] is True
+    assert "отклонена" in out[2]["result"]["content"][0]["text"]
+    assert client.calls[1] == ("opencode_permission_reply",
+                               {"job_id": "j-1", "permission_id": "p-1",
+                                "reply": "reject"})
+
+
+def test_serve_trust_skips_elicitation(monkeypatch, capsys):
+    mod = load_adapter()
+    client = FakeClient(responses=[
+        job_response(AWAITING_EDIT),
+        job_response({"job_id": "j-1", "status": "completed",
+                      "result": {"output": "patched", "metadata": {"exit": 0}}}),
+    ])
+    out = run_serve(mod, client, [
+        request("initialize", {"capabilities": {"elicitation": {}}}, req_id=1),
+        request("tools/call", {"name": "edit", "arguments": {}}, req_id=2),
+    ], trust=True, monkeypatch=monkeypatch, capsys=capsys)
+    assert [m.get("id") for m in out] == [1, 2]
+    assert all("method" not in m for m in out)
+    assert out[1]["result"]["isError"] is False
+
+
+def test_serve_handles_requests_while_elicitation_pending(monkeypatch, capsys):
+    mod = load_adapter()
+    client = FakeClient(responses=[
+        job_response(AWAITING_EDIT),
+        job_response({"job_id": "j-1", "status": "completed",
+                      "result": {"output": "patched", "metadata": {"exit": 0}}}),
+    ])
+    out = run_serve(mod, client, [
+        request("initialize", {"capabilities": {"elicitation": {}}}, req_id=1),
+        request("tools/call", {"name": "edit", "arguments": {}}, req_id=2),
+        request("tools/list", req_id=3),
+        {"jsonrpc": "2.0", "id": "elicit-1", "result": {"action": "accept"}},
+    ], monkeypatch=monkeypatch, capsys=capsys)
+    assert [m.get("id") for m in out] == [1, "elicit-1", 3, 2]
+    assert out[1]["method"] == "elicitation/create"
+    assert [t["name"] for t in out[2]["result"]["tools"]][0] == "read"
+    assert out[3]["result"]["isError"] is False
+
+
+def test_serve_elicitation_error_response_fails_closed(monkeypatch, capsys):
+    mod = load_adapter()
+    client = FakeClient(responses=[job_response(AWAITING_EDIT)])
+    out = run_serve(mod, client, [
+        request("initialize", {"capabilities": {"elicitation": {}}}, req_id=1),
+        request("tools/call", {"name": "edit", "arguments": {}}, req_id=2),
+        {"jsonrpc": "2.0", "id": "elicit-1",
+         "error": {"code": -32601, "message": "elicitation не поддержан"}},
+    ], monkeypatch=monkeypatch, capsys=capsys)
+    assert out[1]["method"] == "elicitation/create"
+    assert out[2]["id"] == 2
+    assert out[2]["result"]["isError"] is True
+    assert "elicitation" in out[2]["result"]["content"][0]["text"]
+    assert client.calls == [("edit", {})]

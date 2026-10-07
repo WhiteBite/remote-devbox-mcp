@@ -175,6 +175,79 @@ def test_run_path_keeps_unsettled_job_in_state(monkeypatch, tmp_path):
     assert mod.load_job_states()["j-hang"]["status"] == "running"
 
 
+class SequenceClient:
+    def __init__(self, responses):
+        self.responses = list(responses)
+        self.calls = []
+
+    def call(self, tool, arguments):
+        self.calls.append((tool, arguments))
+        return {"content": [{"type": "text", "text": json.dumps(self.responses.pop(0))}]}
+
+
+def _awaiting_job(job_id="j-1", perm_id="p-1"):
+    return {"job_id": job_id, "status": "awaiting_permission",
+            "permission": {"id": perm_id, "permission": "edit",
+                           "patterns": ["src/Main.java"]}}
+
+
+def test_settle_job_without_handler_stops_at_prompt():
+    mod = load_client()
+    client = SequenceClient([])
+    job = mod.settle_job(client, _awaiting_job(), auto=False,
+                         max_polls=3, delay=0, progress=False)
+    assert job["status"] == "awaiting_permission"
+    assert client.calls == []
+
+
+def test_settle_job_without_handler_auto_replies_once():
+    mod = load_client()
+    client = SequenceClient([
+        {"job_id": "j-1", "status": "completed", "result": {"output": "ok"}},
+    ])
+    job = mod.settle_job(client, _awaiting_job(), auto=True,
+                         max_polls=3, delay=0, progress=False)
+    assert job["status"] == "completed"
+    assert client.calls == [("opencode_permission_reply",
+                             {"job_id": "j-1", "permission_id": "p-1",
+                              "reply": "once"})]
+
+
+def test_settle_job_on_permission_feeds_handler_reply():
+    mod = load_client()
+    client = SequenceClient([
+        {"job_id": "j-1", "status": "completed", "result": {"output": "ok"}},
+    ])
+    seen = []
+
+    def on_permission(job):
+        seen.append(job)
+        return "once"
+
+    job = mod.settle_job(client, _awaiting_job(), auto=False,
+                         max_polls=3, delay=0, progress=False,
+                         on_permission=on_permission)
+    assert job["status"] == "completed"
+    assert seen == [_awaiting_job()]
+    assert client.calls == [("opencode_permission_reply",
+                             {"job_id": "j-1", "permission_id": "p-1",
+                              "reply": "once"})]
+
+
+def test_settle_job_on_permission_reject_denies():
+    mod = load_client()
+    client = SequenceClient([
+        {"job_id": "j-1", "status": "cancelled"},
+    ])
+    job = mod.settle_job(client, _awaiting_job(), auto=False,
+                         max_polls=3, delay=0, progress=False,
+                         on_permission=lambda job: "reject")
+    assert job["status"] == "cancelled"
+    assert client.calls == [("opencode_permission_reply",
+                             {"job_id": "j-1", "permission_id": "p-1",
+                              "reply": "reject"})]
+
+
 class FakeResponse:
     def __init__(self, body):
         self.headers = {"Content-Type": "application/json"}

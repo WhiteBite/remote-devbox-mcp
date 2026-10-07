@@ -406,12 +406,16 @@ def job_brief(job: dict) -> str:
 
 def settle_job(client, job: dict, auto: bool,
                max_polls: int = 60, delay: float = 1.0,
-               wait_seconds: int = 45, progress: bool = True) -> dict:
+               wait_seconds: int = 45, progress: bool = True,
+               on_permission: Callable[[dict], str] | None = None) -> dict:
     """Довести джоб до конца.
 
     Мост на write/edit/apply_patch/bash отвечает awaiting_permission:
     нужен opencode_permission_reply, затем opencode_job_result.
     Без auto — останавливаемся на запросе и печатаем, чем ответить.
+    on_permission, если задан, вызывается на каждом awaiting_permission
+    вместо авто-ответа/остановки: его результат ('once'/'reject') уходит
+    в opencode_permission_reply, и цикл продолжается.
 
     opencode_job_result поддерживает серверное ожидание wait_seconds (≤50),
     поэтому один опрос покрывает до 45 с сборки: 60 опросов ≈ 45 минут.
@@ -430,14 +434,18 @@ def settle_job(client, job: dict, auto: bool,
             return job
         if job.get("status") == "awaiting_permission":
             perm = (job.get("permission") or {})
-            if not auto:
+            if on_permission is not None:
+                reply = on_permission(job)
+            elif not auto:
                 print("ТРЕБУЕТСЯ РАЗРЕШЕНИЕ. Ответь:")
                 print(f"  ./mcp reply {job['job_id']} {permission_id(perm)} once")
                 return job
+            else:
+                reply = "once"
             job = parse_job(client.call("opencode_permission_reply", {
                 "job_id": job["job_id"],
                 "permission_id": permission_id(perm),
-                "reply": "once"})) or job
+                "reply": reply})) or job
             continue
         time.sleep(delay)
         job = parse_job(client.call("opencode_job_result", {

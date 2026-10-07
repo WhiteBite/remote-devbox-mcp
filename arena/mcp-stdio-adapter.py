@@ -14,14 +14,14 @@ stdout, логи — только в stderr. Джобы и разрешения 
     минимальный список из TOOLS.md (9 native + 2 control).
   * tools/call → ответ-джоб доводится до конца и возвращается конкретным
     результатом {"content": [{"type": "text", ...}], "isError": ...};
-    не-джоб → mc.flatten(raw). Без --trust джоб в awaiting_permission →
-    isError с подсказкой включить trust.
+    не-джоб → mc.flatten(raw). Мутация без --trust: если клиент заявил
+    capability elicitation, адаптер спрашивает его запросом
+    elicitation/create (accept → "once", decline/cancel → "reject",
+    отказ → isError «мутация отклонена»); без elicitation джоб в
+    awaiting_permission → isError с подсказкой включить trust.
   * --readonly отказывает write/edit/apply_patch/bash isError-результатом,
     не вызывая апстрим.
   * неизвестный метод → JSON-RPC -32601.
-
-Ограничение v1: MCP elicitation не реализован — интерактивно спросить
-разрешение адаптер не может; для мутаций нужен --trust.
 
   python3 arena/mcp-stdio-adapter.py --url https://x.trycloudflare.com/p/8787/mcp \
       --token <T> --trust
@@ -80,6 +80,57 @@ def _annotate(tools: list[dict]) -> list[dict]:
     return [{**tool, "mutating": tool.get("name") in MUTATING_TOOLS} for tool in tools]
 
 
+class ElicitationError(RuntimeError):
+    """Клиент не завершил elicitation (обрыв stdin или JSON-RPC-ошибка)."""
+
+
+class ElicitationBroker:
+    """Ожидающие ответы на исходящие запросы адаптера (elicitation/create)."""
+
+    def __init__(self):
+        self._open: set[str] = set()
+        self._responses: dict[str, dict] = {}
+        self._counter = 0
+
+    def next_id(self) -> str:
+        self._counter += 1
+        rid = f"elicit-{self._counter}"
+        self._open.add(rid)
+        return rid
+
+    def route(self, msg) -> bool:
+        if not isinstance(msg, dict) or "method" in msg:
+            return False
+        if msg.get("id") not in self._open:
+            return False
+        self._open.discard(msg["id"])
+        self._responses[msg["id"]] = msg
+        return True
+
+    def response(self, rid: str) -> dict | None:
+        return self._responses.pop(rid, None)
+
+
+class _ElicitPermission:
+    """on_permission для settle_job: вопрос клиенту через elicitation/create."""
+
+    def __init__(self, tool: str, elicit):
+        self.tool = tool
+        self.elicit = elicit
+        self.denied = False
+
+    def __call__(self, job: dict) -> str:
+        perm = job.get("permission") or {}
+        patterns = ", ".join(perm.get("patterns") or [])
+        message = f"devbox: разрешить мутацию {self.tool}"
+        if patterns:
+            message += f" ({patterns})"
+        result = self.elicit(message, {"type": "object", "properties": {}})
+        action = (result or {}).get("action")
+        self.denied = action != "accept"
+        return "once" if action == "accept" else "reject"
+
+
 @contextlib.contextmanager
 def _stdout_guard():
     # settle_job печатает запрос разрешения в stdout; в JSON-RPC-канале это фатально
@@ -96,32 +147,49 @@ def _job_result(job: dict) -> dict:
     output = ((job.get("result") or {}).get("output") or "").strip()
     is_error = status != "completed" or exit_code not in (None, 0)
     if status == "awaiting_permission":
-        text = (f"джоб {job.get('job_id')} ждёт разрешения; elicitation не "
-                f"реализован, перезапусти адаптер с --trust")
+        text = (f"джоб {job.get('job_id')} ждёт разрешения; клиент не поддерживает "
+                f"elicitation, перезапусти адаптер с --trust")
     else:
         text = output or mc.job_brief(job)
     return _tool_result(text, is_error=is_error)
 
 
-def _call_tool(client, params: dict, *, trust: bool, readonly: bool) -> dict:
+def _call_tool(client, params: dict, *, trust: bool, readonly: bool,
+               elicit=None) -> dict:
     name = params.get("name")
     if readonly and name in MUTATING_TOOLS:
         return _tool_result(f"тул {name!r} мутирующий; адаптер запущен с --readonly",
                             is_error=True)
+    handler = None
+    if elicit is not None and not trust and "elicitation" in CLIENT_CAPABILITIES:
+        handler = _ElicitPermission(name, elicit)
     try:
         raw = client.call(name, params.get("arguments") or {})
         job = mc.parse_job(raw)
         if job is None:
             return _tool_result(mc.flatten(raw), is_error=bool(raw.get("isError")))
-        with _stdout_guard():
-            job = mc.settle_job(client, job, auto=trust)
+        if handler is None and not trust:
+            with _stdout_guard():
+                job = mc.settle_job(client, job, auto=trust)
+        else:
+            job = mc.settle_job(client, job, auto=trust, on_permission=handler)
+    except ElicitationError as e:
+        return _tool_result(f"elicitation не удался: {e}", is_error=True)
     except RuntimeError as e:
         return _tool_result(f"ошибка апстрима: {e}", is_error=True)
+    if handler is not None and handler.denied:
+        return _tool_result(f"мутация {name!r} отклонена клиентом (elicitation)",
+                            is_error=True)
     return _job_result(job)
 
 
-def handle(request: dict, client, *, trust: bool, readonly: bool) -> dict | None:
-    """Диспетчер JSON-RPC 2.0: не трогает stdin/stdout; client — с call()/list_tools()."""
+def handle(request: dict, client, *, trust: bool, readonly: bool,
+           elicit=None) -> dict | None:
+    """Диспетчер JSON-RPC 2.0: не трогает stdin/stdout; client — с call()/list_tools().
+
+    elicit(message, requested_schema) — round-trip elicitation/create к клиенту
+    (брокер из serve); возвращает {action: ...} или кидает ElicitationError.
+    """
     if "id" not in request:
         return None
     method = request.get("method")
@@ -130,8 +198,8 @@ def handle(request: dict, client, *, trust: bool, readonly: bool) -> dict | None
         CLIENT_CAPABILITIES.clear()
         CLIENT_CAPABILITIES.update(capabilities)
         if "elicitation" in capabilities:
-            print("[adapter] elicitation не подключён; для мутаций нужен --trust",
-                  file=sys.stderr)
+            print("[adapter] клиент поддерживает elicitation: мутации без --trust "
+                  "будут запрашиваться", file=sys.stderr)
         return _ok(request, {
             "protocolVersion": mc.PROTOCOL_VERSION,
             "capabilities": {"tools": {}},
@@ -147,23 +215,55 @@ def handle(request: dict, client, *, trust: bool, readonly: bool) -> dict | None
         return _ok(request, {"tools": _annotate(tools or FALLBACK_TOOLS)})
     if method == "tools/call":
         return _ok(request, _call_tool(client, request.get("params") or {},
-                                       trust=trust, readonly=readonly))
+                                       trust=trust, readonly=readonly, elicit=elicit))
     return _err(request, -32601, f"метод не поддерживается: {method!r}")
 
 
+def _handle_line(line: str, broker: ElicitationBroker, dispatch) -> None:
+    try:
+        msg = json.loads(line)
+    except json.JSONDecodeError as e:
+        print(json.dumps(_err({"id": None}, -32700, f"ошибка разбора JSON: {e}")),
+              flush=True)
+        return
+    if not broker.route(msg):
+        dispatch(msg)
+
+
 def serve(client, *, trust: bool, readonly: bool) -> None:
-    for line in iter(sys.stdin.readline, ""):
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            request = json.loads(line)
-        except json.JSONDecodeError as e:
-            response = _err({"id": None}, -32700, f"ошибка разбора JSON: {e}")
-        else:
-            response = handle(request, client, trust=trust, readonly=readonly)
+    broker = ElicitationBroker()
+
+    def dispatch(msg: dict) -> None:
+        response = handle(msg, client, trust=trust, readonly=readonly, elicit=elicit)
         if response is not None:
             print(json.dumps(response), flush=True)
+
+    def elicit(message: str, requested_schema: dict) -> dict:
+        rid = broker.next_id()
+        print(json.dumps({
+            "jsonrpc": "2.0", "id": rid, "method": "elicitation/create",
+            "params": {"message": message, "requestedSchema": requested_schema},
+        }), flush=True)
+        while True:
+            response = broker.response(rid)
+            if response is not None:
+                break
+            line = sys.stdin.readline()
+            if not line:
+                raise ElicitationError("клиент закрыл поток во время elicitation")
+            line = line.strip()
+            if line:
+                _handle_line(line, broker, dispatch)
+        if "error" in response:
+            err = response["error"]
+            raise ElicitationError(
+                f"клиент ответил ошибкой: {err.get('code')} {err.get('message')}")
+        return response.get("result") or {}
+
+    for line in iter(sys.stdin.readline, ""):
+        line = line.strip()
+        if line:
+            _handle_line(line, broker, dispatch)
 
 
 def main(argv: list[str] | None = None) -> int:
