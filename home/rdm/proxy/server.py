@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from http import HTTPStatus
 
 from rdm import ports
-from rdm.proxy import access_log, auth, framing, router, upstream
+from rdm.proxy import access_log, auth, event_tap, framing, router, upstream
 
 MAX_CONNECTIONS = 256
 CONNECT_TIMEOUT = 15.0
@@ -182,6 +182,7 @@ class _Handler(socketserver.BaseRequestHandler):
             carry = self._carry
 
     _carry = b""
+    _tap_meta: dict | None = None
 
     def _dispatch(
         self,
@@ -236,6 +237,11 @@ class _Handler(socketserver.BaseRequestHandler):
         body, carry = consumed
         self._carry = carry
 
+        try:
+            self._tap_meta = event_tap.on_request(server.config, method, target, pairs, body)
+        except Exception:
+            self._tap_meta = None
+
         if _is_websocket(pairs):
             return self._forward_websocket(sock, method, path, pairs, host, port, carry)
         return self._forward(sock, method, path, pairs, body, host, port, request_close)
@@ -273,6 +279,22 @@ class _Handler(socketserver.BaseRequestHandler):
             upstream.send_head(connection, method, path, forward)
             upstream.send_body(connection, body)
             response = connection.getresponse()
+            tap_meta = self._tap_meta
+            if (
+                port == ports.BRIDGE_PORT
+                and tap_meta is not None
+                and tap_meta.get("rpc_method") == "tools/call"
+            ):
+                return event_tap.on_response(
+                    self.server.config,
+                    port,
+                    path,
+                    method,
+                    response.status,
+                    response,
+                    sock,
+                    lambda tee: self._relay(tee, method, response, request_close, port, path),
+                )
             return self._relay(sock, method, response, request_close, port, path)
         except (OSError, http.client.HTTPException):
             self._simple(502, body=_BODY_BAD_GATEWAY)
