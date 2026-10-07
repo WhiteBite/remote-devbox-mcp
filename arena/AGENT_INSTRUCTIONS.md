@@ -202,6 +202,9 @@ flutter run -d web-server --web-hostname 0.0.0.0 --web-port 8788   # headless-с
 1. Поднимаю app через supervisor (`server_start frontend.run` на 47095 или
    `frontend.run.debug` на 47096), читаю `vm_service_url` из `overview_json` (или
    `task_status frontend.run`) — host:port + auth-path вида `/AbCd=/ws`.
+   `frontend.run` (`-d web-server`) отдаёт `vm_service_url` только после подключения
+   клиента к app (DWDS ждёт соединения); `frontend.run.debug` (`-d chrome`) отдаёт сразу —
+   для профилинга поднимай его.
 2. Переписываю host на ingress: `wss://<INGRESS>/p/<port>/<auth-path>` (port — из
    `vm_service_url`) с заголовком `Authorization: Bearer <INGRESS_TOKEN>`; ingress
    туннелирует WebSocket.
