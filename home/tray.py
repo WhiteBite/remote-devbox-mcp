@@ -19,7 +19,7 @@ import webbrowser
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
-from rdm import envfile, freeze, profiles
+from rdm import envfile, freeze, ports, profiles
 
 HOME = freeze.app_dir()
 DEVBOX_ARGV = freeze.cli_entry()
@@ -274,6 +274,20 @@ def _open_url(preview: bool):
     return action
 
 
+def _open_cockpit(icon, item) -> None:
+    def work() -> None:
+        result = _devbox("cockpit")
+        prefix = f"http://127.0.0.1:{ports.COCKPIT_PORT}/?t="
+        url = next((ln for ln in result.stdout.splitlines() if ln.startswith(prefix)), "")
+        if result.returncode == 0 and url:
+            webbrowser.open(url)
+        else:
+            line = (result.stderr.strip().splitlines() or ["без вывода"])[-1]
+            _notify(icon, f"cockpit: {line[:150]}")
+
+    _background(icon, work)
+
+
 def _toggle_watch(icon, item) -> None:
     global _watch
     if _watch is not None and _watch.poll() is None:
@@ -336,6 +350,7 @@ def _build_menu():
         pystray.MenuItem("Скопировать маскированный", lambda i, it: _copy_block(i, full=False)),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("Открыть UI приложения (локально)", _open_ui),
+        pystray.MenuItem("Открыть cockpit", _open_cockpit),
         pystray.MenuItem("Остановить всё", lambda i, it: _stop_all(i)),
         pystray.MenuItem("Обновить токены", lambda i, it: _rotate(i)),
         pystray.Menu.SEPARATOR,

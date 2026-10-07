@@ -81,6 +81,51 @@ def test_tray_rotate_reports_failure(monkeypatch):
     assert notes and "не удалась" in notes[0]
 
 
+def test_tray_menu_contains_cockpit_item():
+    pytest.importorskip("pystray")
+    module = _load()
+    labels = {item.text for item in module._build_menu().items if isinstance(item.text, str)}
+    assert "Открыть cockpit" in labels
+
+
+def test_tray_open_cockpit_opens_parsed_url(monkeypatch):
+    module = _load()
+    url = f"http://127.0.0.1:{module.ports.COCKPIT_PORT}/?t=deadbeef"
+    calls: list[tuple[str, ...]] = []
+    opened: list[str] = []
+
+    class _Result:
+        returncode = 0
+        stdout = f"поднимаю ui…\n{url}\n"
+        stderr = ""
+
+    monkeypatch.setattr(module, "_devbox", lambda *args, **kwargs: calls.append(args) or _Result())
+    monkeypatch.setattr(module, "_background", lambda icon, work: work())
+    monkeypatch.setattr(module.webbrowser, "open", lambda target: opened.append(target))
+    module._open_cockpit(None, None)
+    assert calls[0] == ("cockpit",)
+    assert opened == [url]
+
+
+def test_tray_open_cockpit_failure_does_not_open(monkeypatch):
+    module = _load()
+    notes: list[str] = []
+    opened: list[str] = []
+
+    class _Result:
+        returncode = 1
+        stdout = ""
+        stderr = "cockpit не поднялся на 127.0.0.1:8793"
+
+    monkeypatch.setattr(module, "_devbox", lambda *a, **k: _Result())
+    monkeypatch.setattr(module, "_background", lambda icon, work: work())
+    monkeypatch.setattr(module, "_notify", lambda icon, message: notes.append(message))
+    monkeypatch.setattr(module.webbrowser, "open", lambda target: opened.append(target))
+    module._open_cockpit(None, None)
+    assert opened == []
+    assert notes
+
+
 def test_tray_clipboard_does_not_crash():
     module = _load()
     if sys.platform != "win32":
