@@ -196,6 +196,22 @@ flutter run -d web-server --web-hostname 0.0.0.0 --web-port 8788   # headless-с
 (`A RenderFlex overflowed by N pixels`) в выводе `flutter analyze`/`flutter test`
 через `bash` моста.
 
+**Профилирование лагов (jank) живого web-приложения.** VM service пинится флагом
+`--dds-port` (frontend.run → 47097, frontend.run.debug → 47098; оба в диапазоне профиля):
+
+1. Поднимаю app через supervisor (`server_start frontend.run` на 47095 или
+   `frontend.run.debug` на 47096), читаю `vm_service_url` из `overview_json` (или
+   `task_status frontend.run`) — host:port + auth-path вида `/AbCd=/ws`.
+2. Переписываю host на ingress: `wss://<INGRESS>/p/<port>/<auth-path>` (port — из
+   `vm_service_url`) с заголовком `Authorization: Bearer <INGRESS_TOKEN>`; ingress
+   туннелирует WebSocket.
+3. Frame timings / Timeline — в DevTools или своим vm_service-клиентом. На web честные
+   метрики только на profile-сборке (`gallery.live-host` — profile); debug искажает (jank
+   из отладочных артефактов).
+
+Если `vm_service_url` показывает порт вне 47097/47098 — `--dds-port` не сработал (DDS должен
+быть включён, порты 47097/47098 свободны): сообщи пользователю, произвольный порт сам не открывай.
+
 ## 7. Проверка свежести артефактов
 
 Перед визуальной оценкой читаю `/workspace/.devbox-artifacts.json` если есть.
