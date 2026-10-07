@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="robots" content="noindex, nofollow">
+<title>Devbox Cockpit</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2032%2032'%3E%3Crect%20width='32'%20height='32'%20rx='7'%20fill='%230b1017'/%3E%3Cpath%20d='M5%2017h4l3%207%206-16%203%209h4'%20fill='none'%20stroke='%2348b6dd'%20stroke-width='2.2'%20stroke-linecap='round'%20stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+
+<svg style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true" focusable="false"><defs>
+<symbol id="i-activity" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="2 12 6 12 9 20 15 4 18 12 22 12"/></symbol>
+<symbol id="i-folder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4.2l1.6 2h9.2A1.5 1.5 0 0 1 21 9.5v7A1.5 1.5 0 0 1 19.5 18h-15A1.5 1.5 0 0 1 3 16.5z"/></symbol>
+<symbol id="i-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5.5c0 4.3-2.9 7.4-7 8.5-4.1-1.1-7-4.2-7-8.5V6z"/></symbol>
+<symbol id="i-layers" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l9 4.5-9 4.5-9-4.5z"/><path d="M3 12.5l9 4.5 9-4.5"/><path d="M3 17l9 4.5 9-4.5"/></symbol>
+<symbol id="i-globe" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.8 3.2 2.8 14.8 0 18M12 3c-2.8 3.2-2.8 14.8 0 18"/></symbol>
+<symbol id="i-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12S6.5 5.5 12 5.5 21.5 12 21.5 12 17.5 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+<symbol id="i-eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4l16 16"/><path d="M9.9 5.9A9.7 9.7 0 0 1 12 5.5c5.5 0 9.5 6.5 9.5 6.5a17 17 0 0 1-3.4 4M6.3 8A16.7 16.7 0 0 0 2.5 12S6.5 18.5 12 18.5a9.4 9.4 0 0 0 3.4-.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></symbol>
+<symbol id="i-terminal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></symbol>
+<symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="20.5" y1="20.5" x2="16.6" y2="16.6"/></symbol>
+<symbol id="i-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8.5 11V8a3.5 3.5 0 0 1 7 0v3"/></symbol>
+<symbol id="i-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5.5 15H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v.5"/></symbol>
+<symbol id="i-refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 12a8.5 8.5 0 1 1-2.9-6.5"/><polyline points="20.5 4 20.5 9 15.5 9"/></symbol>
+<symbol id="i-zap" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 4.5 13.5 11 13.5 10 22 19.5 10 13 10 13 2"/></symbol>
+<symbol id="i-table" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="15" rx="2"/><path d="M3 9.5h18M3 14.5h18M9.5 4.5v15"/></symbol>
+<symbol id="i-map" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4.5L3.5 6.5v13L9 17.5l6 2 5.5-2v-13L15 6.5z"/><path d="M9 4.5v13M15 6.5v13"/></symbol>
+<symbol id="i-git" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.4"/><circle cx="6" cy="18" r="2.4"/><circle cx="17.5" cy="8" r="2.4"/><path d="M6 8.4v7.2"/><path d="M17.5 10.4V16a2 2 0 0 1-2 2H6"/></symbol>
+<symbol id="i-alert" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4l8.5 15.5h-17z"/><path d="M12 9.5v4.2M12 16.8h.01"/></symbol>
+<symbol id="i-inbox" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13h4l1.2 2.2h5.6L16 13h4"/><path d="M5.5 5.5h13l2.5 7.5v5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18v-5z"/></symbol>
+<symbol id="i-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><polyline points="12 7 12 12 15.5 14"/></symbol>
+<symbol id="i-enter" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 10 4 15 9 20"/><path d="M20 4v7a4 4 0 0 1-4 4H4.5"/></symbol>
+<symbol id="i-link" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10.5 13.5a4 4 0 0 0 5.7 0l2.3-2.3a4 4 0 0 0-5.7-5.7l-1.2 1.2"/><path d="M13.5 10.5a4 4 0 0 0-5.7 0l-2.3 2.3a4 4 0 0 0 5.7 5.7l1.2-1.2"/></symbol>
+</defs></svg>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark"><svg aria-hidden="true"><use href="#i-activity"/></svg></span>
+    <span class="brand-text">
+      <span class="brand-name">DEVBOX COCKPIT</span>
+      <span class="brand-sub">mission control</span>
+    </span>
+  </div>
+
+  <div class="vitals">
+    <div class="vital" title="Overall health">
+      <span class="dot idle" id="vital-health-dot"></span>
+      <span class="label">health</span>
+      <span class="mono dim" id="vital-health-text" style="font-size:11px">--</span>
+    </div>
+    <div class="vital vital-optional dot-row" title="Loopback ports: cockpit / ingress / bridge / runner">
+      <span class="dot-cell"><span class="dot idle" id="port-cockpit"></span>ckp</span>
+      <span class="dot-cell"><span class="dot idle" id="port-ingress"></span>ing</span>
+      <span class="dot-cell"><span class="dot idle" id="port-bridge"></span>brg</span>
+      <span class="dot-cell"><span class="dot idle" id="port-runner"></span>run</span>
+    </div>
+    <div class="vital vital-optional diff-widget" title="Working-tree diff heartbeat">
+      <span class="heartbeat na" id="diff-beat"></span>
+      <span class="label">diff</span>
+      <span class="diff-text" id="diff-text">n/a</span>
+    </div>
+    <div class="vital clock" title="Local time">
+      <svg width="13" height="13" aria-hidden="true"><use href="#i-clock"/></svg>
+      <span class="mono dim" id="clock" style="font-size:11px">--:--:--</span>
+    </div>
+  </div>
+
+  <div class="topbar-actions">
+    <button class="icon-btn" id="btn-refresh" title="Refresh now" aria-label="Refresh now"><svg aria-hidden="true"><use href="#i-refresh"/></svg></button>
+    <button class="btn btn-ghost" id="btn-palette" title="Command palette (Ctrl+K)">
+      <svg aria-hidden="true"><use href="#i-zap"/></svg>
+      <span>Commands</span>
+      <span class="kbd-hint"><kbd>Ctrl</kbd><kbd>K</kbd></span>
+    </button>
+  </div>
+</header>
+
+<div class="banner" id="banner" role="status">
+  <svg aria-hidden="true"><use href="#i-alert"/></svg>
+  <span id="banner-text"></span>
+</div>
+
+<main class="app">
+  <section class="hero" aria-label="Mission control status">
+    <article class="tile tile--health" id="section-health">
+      <div class="tile-head"><svg aria-hidden="true"><use href="#i-activity"/></svg><span class="label">health</span></div>
+      <div class="tile-body">
+        <div class="health-top">
+          <span class="health-badge idle" id="health-badge"><span class="dot idle"></span><span id="health-badge-text">&hellip;</span></span>
+          <span class="health-summary" id="health-summary">probing host state&hellip;</span>
+        </div>
+        <div class="health-breakdown" id="health-breakdown"></div>
+      </div>
+    </article>
+
+    <article class="tile tile--profile">
+      <div class="tile-head"><svg aria-hidden="true"><use href="#i-folder"/></svg><span class="label">profile</span></div>
+      <div class="tile-body">
+        <div class="tile-value" id="profile-name">&mdash;</div>
+        <div class="tile-sub" id="profile-source" title="resolved source_dir">source: &mdash;</div>
+      </div>
+    </article>
+
+    <article class="tile tile--mode">
+      <div class="tile-head"><svg aria-hidden="true"><use href="#i-shield"/></svg><span class="label">mode</span></div>
+      <div class="tile-body">
+        <span class="mode-badge unknown" id="mode-badge">&hellip;</span>
+        <div class="tile-sub">agent permission level</div>
+      </div>
+    </article>
+
+    <article class="tile">
+      <div class="tile-head"><svg aria-hidden="true"><use href="#i-layers"/></svg><span class="label">toolchains</span></div>
+      <div class="tile-body">
+        <div class="chips" id="toolchain-chips"><span class="chip">&hellip;</span></div>
+      </div>
+    </article>
+
+    <article class="tile tile--ingress">
+      <div class="tile-head"><svg aria-hidden="true"><use href="#i-globe"/></svg><span class="label">ingress</span></div>
+      <div class="tile-body">
+        <div class="url-line">
+          <span class="url-value" id="ingress-url">&mdash;</span>
+          <button class="icon-btn" id="ingress-copy" title="Copy INGRESS URL" aria-label="Copy INGRESS URL"><svg aria-hidden="true"><use href="#i-copy"/></svg></button>
+        </div>
+        <div class="tile-sub">public tunnel entry</div>
+      </div>
+    </article>
+
+    <article class="tile">
+      <div class="tile-head"><svg aria-hidden="true"><use href="#i-eye"/></svg><span class="label">watchdog</span></div>
+      <div class="tile-body">
+        <span class="pill-state idle" id="watchdog-state"><span class="dot idle"></span>&hellip;</span>
+        <div class="tile-sub">auto-restart supervisor</div>
+      </div>
+    </article>
+  </section>
+
+  <div class="main">
+    <div class="col">
+      <section class="panel" id="section-logs">
+        <div class="panel-head">
+          <span class="panel-icon"><svg aria-hidden="true"><use href="#i-terminal"/></svg></span>
+          <span class="panel-title">log river</span>
+          <span class="panel-meta" id="log-meta">&mdash;</span>
+          <div class="panel-actions">
+            <span class="vital"><span class="dot ok" id="log-live"></span><span class="label">live</span></span>
+          </div>
+        </div>
+        <div class="panel-body">
+          <div class="log-controls">
+            <div class="segmented" role="group" aria-label="Log source">
+              <button class="seg-btn" data-source="" aria-pressed="true">all</button>
+              <button class="seg-btn" data-source="host" aria-pressed="false">host</button>
+              <button class="seg-btn" data-source="ingress" aria-pressed="false">ingress</button>
+              <button class="seg-btn" data-source="watchdog" aria-pressed="false">watchdog</button>
+              <button class="seg-btn" data-source="runner" aria-pressed="false">runner</button>
+            </div>
+            <label class="filter-wrap">
+              <svg aria-hidden="true"><use href="#i-search"/></svg>
+              <input class="filter-input" id="log-filter" type="search" placeholder="filter lines (substring)&hellip;" autocomplete="off" spellcheck="false" aria-label="Filter log lines">
+            </label>
+          </div>
+        </div>
+        <div class="log-river" id="log-river" aria-live="polite">
+          <div class="empty"><svg aria-hidden="true"><use href="#i-inbox"/></svg><span>waiting for logs&hellip;</span></div>
+        </div>
+      </section>
+    </div>
+
+    <div class="col">
+      <section class="panel" id="section-handoff">
+        <div class="panel-head">
+          <span class="panel-icon"><svg aria-hidden="true"><use href="#i-lock"/></svg></span>
+          <span class="panel-title">hand-off</span>
+          <span class="badge masked" id="handoff-badge">masked</span>
+          <div class="panel-actions">
+            <button class="btn" id="btn-reveal"><svg aria-hidden="true"><use href="#i-eye"/></svg><span id="reveal-label">Reveal</span></button>
+            <button class="icon-btn" id="btn-copy-handoff" title="Copy hand-off" aria-label="Copy hand-off"><svg aria-hidden="true"><use href="#i-copy"/></svg></button>
+          </div>
+        </div>
+        <div class="panel-body">
+          <pre class="handoff-pre" id="handoff-pre">loading hand-off&hellip;</pre>
+          <div class="handoff-note"><svg aria-hidden="true"><use href="#i-shield"/></svg><span>Reveal re-fetches with an in-memory header token (X-RDM-Token). Never stored, never in a URL.</span></div>
+        </div>
+      </section>
+
+      <section class="panel" id="section-manifest">
+        <div class="panel-head">
+          <span class="panel-icon"><svg aria-hidden="true"><use href="#i-table"/></svg></span>
+          <span class="panel-title">manifest</span>
+          <span class="panel-meta" id="manifest-meta">&mdash;</span>
+          <div class="panel-actions">
+            <div class="tabs" role="tablist" aria-label="Manifest view">
+              <button class="tab" role="tab" id="tab-structured" aria-selected="true">table</button>
+              <button class="tab" role="tab" id="tab-raw" aria-selected="false">json</button>
+            </div>
+          </div>
+        </div>
+        <div class="panel-body" id="manifest-body">
+          <div class="empty"><svg aria-hidden="true"><use href="#i-inbox"/></svg><span>loading manifest&hellip;</span></div>
+        </div>
+      </section>
+
+      <section class="panel" id="section-exposure">
+        <div class="panel-head">
+          <span class="panel-icon"><svg aria-hidden="true"><use href="#i-map"/></svg></span>
+          <span class="panel-title">exposure map</span>
+          <span class="panel-meta" id="exposure-meta">&mdash;</span>
+        </div>
+        <div class="panel-body" id="exposure-body">
+          <div class="empty"><svg aria-hidden="true"><use href="#i-inbox"/></svg><span>loading exposure&hellip;</span></div>
+        </div>
+      </section>
+    </div>
+  </div>
+</main>
+
+<div class="palette-overlay" id="palette-overlay">
+  <div class="palette" role="dialog" aria-modal="true" aria-label="Command palette">
+    <div class="palette-input-wrap">
+      <svg aria-hidden="true"><use href="#i-search"/></svg>
+      <input class="palette-input" id="palette-input" type="text" placeholder="Type a command or search&hellip;" autocomplete="off" spellcheck="false" role="combobox" aria-expanded="true" aria-controls="palette-list" aria-autocomplete="list">
+    </div>
+    <div class="palette-list" id="palette-list" role="listbox" aria-label="Commands"></div>
+    <div class="palette-foot">
+      <span><kbd>&uarr;</kbd><kbd>&darr;</kbd> navigate</span>
+      <span><kbd>&crarr;</kbd> select</span>
+      <span><kbd>esc</kbd> close</span>
+    </div>
+  </div>
+</div>
+
+<noscript>
+  <p style="padding:24px;font-family:system-ui,sans-serif;color:#e8798a">Devbox Cockpit requires JavaScript. Enable it to load mission control.</p>
+</noscript>
+
+<script type="module" src="./app.js"></script>
+</body>
+</html>
