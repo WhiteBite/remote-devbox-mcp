@@ -22,10 +22,16 @@ const state = {
   beat: 0,
   inFlight: false,
   unreachable: false,
+  actionBusy: false,
+  submittedId: "",
+  editorName: "",
+  editorPath: "",
+  editorDirty: false,
 };
 
 let sessionToken = null;
 let pollerCount = 0;
+let eventsSource = null;
 
 function h(tag, cls, text) {
   const n = document.createElement(tag);
@@ -166,6 +172,10 @@ function renderHero(s) {
   el.profileName.textContent = prof.active || "no profile";
   el.profileSource.textContent = "source: " + (prof.source_dir || "unresolved");
   el.profileSource.title = prof.source_dir || "";
+  if (prof.active) {
+    if (!el.useName.value) el.useName.value = prof.active;
+    if (!el.editorNameInput.value) el.editorNameInput.value = prof.active;
+  }
 
   const env = s.env || {};
   const man = s.manifest || {};
@@ -480,24 +490,180 @@ function renderExposure() {
 function renderDiff(res) {
   const beat = el.diffBeat;
   const text = el.diffText;
-  if (!res.ok) {
+  const d = res.ok ? res.data || {} : {};
+  if (!res.ok || !d.git) {
     beat.className = "heartbeat na";
     text.replaceChildren(document.createTextNode("n/a (not a git repo)"));
     return;
   }
-  const d = res.data || {};
   beat.className = "heartbeat live";
-  text.replaceChildren();
-  const add = d.insertions != null ? d.insertions : d.additions;
-  const del = d.deletions != null ? d.deletions : d.removals;
-  const files = d.files_changed != null ? d.files_changed : d.files;
-  if (add == null && del == null && files == null) {
-    text.appendChild(document.createTextNode(typeof d.summary === "string" ? d.summary : "clean"));
+  const lines = Array.isArray(d.porcelain) ? d.porcelain : [];
+  if (!lines.length) {
+    text.replaceChildren(document.createTextNode("clean"));
     return;
   }
-  if (files != null) text.appendChild(document.createTextNode(files + "f "));
-  if (add != null) { const s = h("span", "add", "+" + add); text.appendChild(s); text.appendChild(document.createTextNode(" ")); }
-  if (del != null) text.appendChild(h("span", "del", "-" + del));
+  let untracked = 0;
+  for (const line of lines) if (String(line).startsWith("??")) untracked += 1;
+  const changed = lines.length - untracked;
+  text.replaceChildren();
+  if (changed) text.appendChild(h("span", "add", changed + " mod"));
+  if (changed && untracked) text.appendChild(document.createTextNode(" · "));
+  if (untracked) text.appendChild(h("span", "unt", untracked + " new"));
+}
+
+function setActionBusy(busy) {
+  state.actionBusy = busy;
+  for (const b of document.querySelectorAll("[data-action]")) b.disabled = busy;
+  if (el.btnEditorSave) el.btnEditorSave.disabled = busy;
+}
+
+function setActionStatus(kind, text) {
+  el.actionStatus.className = "action-status " + kind;
+  const dotKind = kind === "ok" ? "ok" : kind === "err" ? "err" : kind === "run" ? "warn" : kind === "busy" ? "warn" : "idle";
+  el.actionStatusDot.className = "dot " + dotKind;
+  el.actionStatusText.textContent = text;
+  el.actionMeta.textContent = kind === "run" ? "running" : kind === "busy" ? "busy" : kind === "ok" ? "done" : kind === "err" ? "error" : "single-flight";
+}
+
+function handleActionEvent(ev) {
+  if (!ev || ev.kind !== "action") return;
+  const tool = ev.tool || "action";
+  const id = ev.job_id || "";
+  if (ev.status === "started") {
+    setActionBusy(true);
+    setActionStatus("run", "running " + tool + "…");
+  } else if (ev.status === "finished") {
+    setActionBusy(false);
+    const exit = ev.exit;
+    const okExit = exit === 0 || exit == null;
+    setActionStatus(okExit ? "ok" : "err", tool + " finished · exit " + (exit == null ? "?" : exit));
+    if (id && id === state.submittedId) {
+      state.submittedId = "";
+      tick();
+    }
+  }
+}
+
+function connectEvents() {
+  if (eventsSource || typeof EventSource === "undefined") return;
+  try {
+    eventsSource = new EventSource("/api/events");
+  } catch {
+    eventsSource = null;
+    return;
+  }
+  eventsSource.onmessage = (e) => {
+    let ev = null;
+    try { ev = JSON.parse(e.data); } catch { return; }
+    handleActionEvent(ev);
+  };
+}
+
+function actionBody(verb) {
+  if (verb === "use") {
+    const name = el.useName.value.trim();
+    if (!name) { setActionStatus("err", "use: enter a profile name"); return null; }
+    return { name };
+  }
+  if (verb === "allow") {
+    const raw = el.allowPort.value.trim();
+    const port = Number(raw);
+    if (!raw || !Number.isInteger(port) || port < 1 || port > 65535) {
+      setActionStatus("err", "allow: enter a valid port (1-65535)"); return null;
+    }
+    return { port, ui: el.allowUi.checked };
+  }
+  if (verb === "start") {
+    const name = el.startName.value.trim();
+    const body = { preview: el.startPreview.checked };
+    if (name) body.name = name;
+    return body;
+  }
+  return {};
+}
+
+async function runAction(verb) {
+  if (state.actionBusy) { setActionStatus("busy", "busy — another action is already running"); return; }
+  const body = actionBody(verb);
+  if (body === null) return;
+  const token = await ensureSessionToken();
+  if (!token) { setActionStatus("err", "no session token — reload the cockpit"); return; }
+  setActionBusy(true);
+  setActionStatus("run", "submitting " + verb + "…");
+  const res = await api("/api/action/" + encodeURIComponent(verb), {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-RDM-Token": token },
+    body: JSON.stringify(body),
+  });
+  if (res.status === 202 && res.data && res.data.action_id) {
+    state.submittedId = res.data.action_id;
+    setActionStatus("run", "accepted " + verb + " · " + res.data.action_id + " — running…");
+  } else if (res.status === 409) {
+    state.submittedId = "";
+    setActionBusy(true);
+    setActionStatus("busy", "busy — another action is already running (409)");
+  } else {
+    setActionBusy(false);
+    const msg = res.data && res.data.error ? res.data.error : "rejected (" + res.status + ")";
+    setActionStatus("err", verb + " · " + msg);
+  }
+}
+
+function setEditorMsg(kind, text) {
+  el.editorMsg.className = "editor-msg " + kind;
+  el.editorMsg.textContent = text;
+}
+
+async function loadProfile() {
+  const name = el.editorNameInput.value.trim();
+  if (!name) { setEditorMsg("err", "enter a profile name to load"); return; }
+  setEditorMsg("idle", "loading " + name + "…");
+  const res = await api("/api/profile/" + encodeURIComponent(name));
+  if (!res.ok) {
+    const msg = res.status === 404 ? "profile not found" : res.data && res.data.error ? res.data.error : "load failed (" + res.status + ")";
+    setEditorMsg("err", msg);
+    return;
+  }
+  const d = res.data || {};
+  state.editorName = d.name || name;
+  state.editorPath = d.path || "";
+  state.editorDirty = false;
+  el.editorSource.textContent = "source: " + (d.source_dir || "—");
+  el.editorSource.title = d.source_dir || "";
+  el.editorArea.value = JSON.stringify(d.raw != null ? d.raw : {}, null, 2);
+  el.editorMeta.textContent = state.editorName;
+  setEditorMsg("ok", "loaded " + (d.path || name));
+}
+
+async function saveProfile() {
+  const name = el.editorNameInput.value.trim() || state.editorName;
+  if (!name) { setEditorMsg("err", "enter a profile name to save"); return; }
+  let parsed;
+  try {
+    parsed = JSON.parse(el.editorArea.value);
+  } catch (err) {
+    setEditorMsg("err", "invalid JSON: " + err.message);
+    return;
+  }
+  const token = await ensureSessionToken();
+  if (!token) { setEditorMsg("err", "no session token — reload the cockpit"); return; }
+  setEditorMsg("idle", "saving " + name + "…");
+  const res = await api("/api/profile/" + encodeURIComponent(name), {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", "X-RDM-Token": token },
+    body: JSON.stringify(parsed),
+  });
+  if (res.ok) {
+    state.editorDirty = false;
+    state.editorName = name;
+    el.editorMeta.textContent = name;
+    setEditorMsg("ok", "saved " + (res.data && res.data.path ? res.data.path : name));
+    state.profileLoaded = false;
+    tick();
+  } else {
+    const msg = res.data && res.data.error ? res.data.error : "save failed (" + res.status + ")";
+    setEditorMsg("err", msg);
+  }
 }
 
 async function refreshProfileData(s) {
@@ -599,11 +765,21 @@ const COMMANDS = [
   { group: "Jump", label: "Go to Hand-off", hint: "secrets", icon: "lock", run: () => jump("section-handoff") },
   { group: "Jump", label: "Go to Manifest", hint: "endpoints", icon: "table", run: () => jump("section-manifest") },
   { group: "Jump", label: "Go to Exposure map", hint: "ports", icon: "map", run: () => jump("section-exposure") },
+  { group: "Jump", label: "Go to Actions", hint: "control", icon: "zap", run: () => jump("section-actions") },
+  { group: "Jump", label: "Go to Profile editor", hint: "control", icon: "folder", run: () => jump("section-editor") },
   { group: "Actions", label: "Refresh now", hint: "re-poll", icon: "refresh", run: () => tick() },
   { group: "Actions", label: "Toggle hand-off reveal", hint: "show/hide", icon: "eye", run: () => toggleReveal() },
   { group: "Actions", label: "Copy hand-off block", hint: "clipboard", icon: "copy", run: () => copyText(state.handoffText, el.btnCopyHandoff) },
   { group: "Actions", label: "Copy INGRESS URL", hint: "clipboard", icon: "link", run: () => copyText(state.ingressUrl, el.ingressCopy) },
   { group: "Actions", label: "Focus log filter", hint: "search", icon: "search", run: () => { jump("section-logs"); el.logFilter.focus(); } },
+  { group: "Devbox", label: "Run doctor", hint: "diagnostics", icon: "activity", run: () => runAction("doctor") },
+  { group: "Devbox", label: "Issue tokens", hint: "rotate", icon: "lock", run: () => runAction("issue-tokens") },
+  { group: "Devbox", label: "Ingress start", hint: "tunnel", icon: "globe", run: () => runAction("ingress-start") },
+  { group: "Devbox", label: "Ingress stop", hint: "tunnel", icon: "globe", run: () => runAction("ingress-stop") },
+  { group: "Devbox", label: "Stop host services", hint: "host", icon: "terminal", run: () => runAction("stop-host") },
+  { group: "Devbox", label: "Down (whole stack)", hint: "destructive", icon: "alert", run: () => runAction("down") },
+  { group: "Editor", label: "Load profile", hint: "fetch", icon: "refresh", run: () => loadProfile() },
+  { group: "Editor", label: "Save profile", hint: "put", icon: "save", run: () => saveProfile() },
   { group: "Log source", label: "Logs: all", icon: "terminal", run: () => setSource("") },
   { group: "Log source", label: "Logs: host", icon: "terminal", run: () => setSource("host") },
   { group: "Log source", label: "Logs: ingress", icon: "terminal", run: () => setSource("ingress") },
@@ -700,6 +876,10 @@ function cacheDom() {
     revealLabel: "reveal-label", btnCopyHandoff: "btn-copy-handoff",
     manifestBody: "manifest-body", manifestMeta: "manifest-meta", tabStructured: "tab-structured", tabRaw: "tab-raw",
     exposureBody: "exposure-body", exposureMeta: "exposure-meta",
+    actionStatus: "action-status", actionStatusDot: "action-status-dot", actionStatusText: "action-status-text", actionMeta: "action-meta",
+    useName: "use-name", allowPort: "allow-port", allowUi: "allow-ui", startName: "start-name", startPreview: "start-preview",
+    editorNameInput: "editor-name", editorSource: "editor-source", editorArea: "editor-area", editorMsg: "editor-msg", editorMeta: "editor-meta",
+    btnEditorLoad: "btn-editor-load", btnEditorSave: "btn-editor-save",
     btnRefresh: "btn-refresh", btnPalette: "btn-palette",
     paletteOverlay: "palette-overlay", paletteInput: "palette-input", paletteList: "palette-list",
   };
@@ -729,6 +909,14 @@ function wireEvents() {
   el.tabStructured.addEventListener("click", () => setManifestView("structured"));
   el.tabRaw.addEventListener("click", () => setManifestView("raw"));
 
+  for (const b of document.querySelectorAll("[data-action]")) {
+    b.addEventListener("click", () => runAction(b.dataset.action));
+  }
+  el.btnEditorLoad.addEventListener("click", loadProfile);
+  el.btnEditorSave.addEventListener("click", saveProfile);
+  el.editorArea.addEventListener("input", () => { state.editorDirty = true; });
+  el.editorNameInput.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); loadProfile(); } });
+
   el.paletteInput.addEventListener("input", renderPalette);
   el.paletteInput.addEventListener("keydown", (e) => {
     if (e.key === "ArrowDown") { e.preventDefault(); movePalette(1); }
@@ -752,7 +940,9 @@ function boot() {
   wireEvents();
   renderClock();
   renderVitals(null);
+  setActionStatus("idle", "idle — no action running");
   loadHandoffMasked();
+  connectEvents();
   tick();
   startPoller();
 }

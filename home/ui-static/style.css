@@ -1281,6 +1281,222 @@ kbd {
   color: var(--err);
 }
 
+.diff-text .unt {
+  color: var(--info);
+}
+
+.control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--sp-4);
+  padding: 0 var(--gutter) var(--sp-4);
+  align-items: start;
+}
+
+.control-col {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.action-status {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--r-md);
+  border: 1px solid var(--line);
+  background: var(--bg-0);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  color: var(--fg-dim);
+}
+
+.action-status.run {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--accent-hi);
+}
+
+.action-status.ok {
+  border-color: rgba(92, 192, 141, 0.35);
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.action-status.err {
+  border-color: rgba(232, 121, 138, 0.35);
+  background: var(--err-soft);
+  color: var(--err);
+}
+
+.action-status.busy {
+  border-color: rgba(224, 178, 90, 0.4);
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.action-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.action-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+
+.action-verb {
+  flex: 0 0 auto;
+  min-width: 46px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: var(--ls-wide);
+  color: var(--accent-hi);
+}
+
+.field {
+  height: 30px;
+  padding: 0 var(--sp-3);
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line-2);
+  background: var(--bg-0);
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  min-width: 0;
+  flex: 1 1 120px;
+  transition: border-color var(--dur-1) var(--ease), box-shadow var(--dur-1) var(--ease);
+}
+
+.field::placeholder {
+  color: var(--fg-faint);
+}
+
+.field:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.field-num {
+  flex: 0 0 90px;
+}
+
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  flex: 0 0 auto;
+  font-size: var(--fs-xs);
+  color: var(--fg-mute);
+  cursor: pointer;
+  user-select: none;
+}
+
+.check input {
+  accent-color: var(--accent);
+  width: 14px;
+  height: 14px;
+}
+
+.btn-run {
+  flex: 0 0 auto;
+}
+
+.btn-danger {
+  color: var(--err);
+  border-color: rgba(232, 121, 138, 0.3);
+}
+
+.btn-danger:hover {
+  background: var(--err-soft);
+  border-color: var(--err);
+  color: #f0c2c9;
+}
+
+.action-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: var(--sp-2);
+}
+
+.action-grid .btn-run {
+  width: 100%;
+  font-family: var(--font-mono);
+  letter-spacing: var(--ls-wide);
+}
+
+.editor-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-3);
+  flex-wrap: wrap;
+}
+
+.editor-bar .field {
+  flex: 0 1 200px;
+}
+
+.editor-source {
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--fg-mute);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.editor-area {
+  width: 100%;
+  min-height: 220px;
+  resize: vertical;
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--r-md);
+  border: 1px solid var(--line);
+  background: var(--bg-void);
+  color: var(--fg-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-normal);
+  white-space: pre;
+  overflow: auto;
+  transition: border-color var(--dur-1) var(--ease), box-shadow var(--dur-1) var(--ease);
+}
+
+.editor-area:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.editor-msg {
+  margin-top: var(--sp-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--fg-faint);
+}
+
+.editor-msg.ok {
+  color: var(--ok);
+}
+
+.editor-msg.err {
+  color: var(--err);
+}
+
+@media (max-width: 1080px) {
+  .control {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .palette-overlay {
   position: fixed;
   inset: 0;

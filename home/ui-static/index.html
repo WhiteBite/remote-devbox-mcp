@@ -33,6 +33,8 @@
 <symbol id="i-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><polyline points="12 7 12 12 15.5 14"/></symbol>
 <symbol id="i-enter" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 10 4 15 9 20"/><path d="M20 4v7a4 4 0 0 1-4 4H4.5"/></symbol>
 <symbol id="i-link" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10.5 13.5a4 4 0 0 0 5.7 0l2.3-2.3a4 4 0 0 0-5.7-5.7l-1.2 1.2"/><path d="M13.5 10.5a4 4 0 0 0-5.7 0l-2.3 2.3a4 4 0 0 0 5.7 5.7l1.2-1.2"/></symbol>
+<symbol id="i-save" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h11l3 3v13H5z"/><path d="M8.5 4v5h6.5V4"/><rect x="8" y="13" width="8" height="7"/></symbol>
+<symbol id="i-sliders" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="17" x2="20" y2="17"/><circle cx="9" cy="7" r="2"/><circle cx="15" cy="17" r="2"/></symbol>
 </defs></svg>
 
 <header class="topbar">
@@ -136,6 +138,77 @@
         <div class="tile-sub">auto-restart supervisor</div>
       </div>
     </article>
+  </section>
+
+  <section class="control" aria-label="Control surface">
+    <div class="control-col">
+      <section class="panel" id="section-actions">
+        <div class="panel-head">
+          <span class="panel-icon"><svg aria-hidden="true"><use href="#i-zap"/></svg></span>
+          <span class="panel-title">actions</span>
+          <span class="panel-meta" id="action-meta">single-flight</span>
+        </div>
+        <div class="panel-body">
+          <div class="action-status idle" id="action-status" role="status" aria-live="polite">
+            <span class="dot idle" id="action-status-dot"></span>
+            <span id="action-status-text">idle &mdash; no action running</span>
+          </div>
+
+          <div class="subhead">parameterized</div>
+          <div class="action-form">
+            <div class="action-row">
+              <span class="action-verb">use</span>
+              <input class="field" id="use-name" type="text" placeholder="profile name" autocomplete="off" spellcheck="false" aria-label="use profile name">
+              <button class="btn btn-run" data-action="use">Run</button>
+            </div>
+            <div class="action-row">
+              <span class="action-verb">allow</span>
+              <input class="field field-num" id="allow-port" type="number" min="1" max="65535" placeholder="port" aria-label="allow port">
+              <label class="check"><input type="checkbox" id="allow-ui"><span>ui</span></label>
+              <button class="btn btn-run" data-action="allow">Run</button>
+            </div>
+            <div class="action-row">
+              <span class="action-verb">start</span>
+              <input class="field" id="start-name" type="text" placeholder="profile (optional)" autocomplete="off" spellcheck="false" aria-label="start profile name">
+              <label class="check"><input type="checkbox" id="start-preview"><span>preview</span></label>
+              <button class="btn btn-run" data-action="start">Run</button>
+            </div>
+          </div>
+
+          <div class="subhead">one-shot</div>
+          <div class="action-grid">
+            <button class="btn btn-run" data-action="issue-tokens">issue-tokens</button>
+            <button class="btn btn-run" data-action="doctor">doctor</button>
+            <button class="btn btn-run" data-action="ingress-start">ingress-start</button>
+            <button class="btn btn-run" data-action="ingress-stop">ingress-stop</button>
+            <button class="btn btn-run" data-action="stop-host">stop-host</button>
+            <button class="btn btn-run btn-danger" data-action="down">down</button>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div class="control-col">
+      <section class="panel" id="section-editor">
+        <div class="panel-head">
+          <span class="panel-icon"><svg aria-hidden="true"><use href="#i-folder"/></svg></span>
+          <span class="panel-title">profile editor</span>
+          <span class="panel-meta" id="editor-meta">not loaded</span>
+          <div class="panel-actions">
+            <button class="btn" id="btn-editor-load"><svg aria-hidden="true"><use href="#i-refresh"/></svg><span>Load</span></button>
+            <button class="btn btn-accent" id="btn-editor-save"><svg aria-hidden="true"><use href="#i-save"/></svg><span>Save</span></button>
+          </div>
+        </div>
+        <div class="panel-body">
+          <div class="editor-bar">
+            <input class="field" id="editor-name" type="text" placeholder="profile name" autocomplete="off" spellcheck="false" aria-label="editor profile name">
+            <span class="editor-source" id="editor-source" title="resolved source_dir">source: &mdash;</span>
+          </div>
+          <textarea class="editor-area" id="editor-area" spellcheck="false" aria-label="profile JSON" placeholder="load a profile to edit its JSON&hellip;"></textarea>
+          <div class="editor-msg idle" id="editor-msg" role="status" aria-live="polite">in-memory header token (X-RDM-Token) &mdash; never stored, never in a URL.</div>
+        </div>
+      </section>
+    </div>
   </section>
 
   <div class="main">

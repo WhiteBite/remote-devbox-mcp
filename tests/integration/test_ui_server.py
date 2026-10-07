@@ -7,12 +7,13 @@ import pathlib
 import socket
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
 
 import pytest
-from rdm import envfile
+from rdm import cli, envfile
 from rdm.ui import auth, server
 
 HOME_DIR = pathlib.Path(__file__).resolve().parents[2] / "home"
@@ -279,3 +280,62 @@ def test_events_jobs_permissions_require_session(cockpit):
         with pytest.raises(urllib.error.HTTPError) as denied:
             urllib.request.urlopen(f"http://127.0.0.1:{port}{path}", timeout=10)
         assert denied.value.code == 401
+
+
+def test_diff_requires_session_in_process(monkeypatch, tmp_path):
+    httpd, thread, port, _ = _start_in_process(monkeypatch, tmp_path)
+    try:
+        with pytest.raises(urllib.error.HTTPError) as denied:
+            urllib.request.urlopen(f"http://127.0.0.1:{port}/api/diff", timeout=10)
+        assert denied.value.code == 401
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+        thread.join(timeout=5)
+
+
+def test_diff_non_git_fallback_in_process(monkeypatch, tmp_path):
+    httpd, thread, port, session = _start_in_process(monkeypatch, tmp_path, with_session=True)
+    try:
+        with _get(port, "/api/diff", session) as response:
+            assert response.status == 200
+            payload = json.load(response)
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+        thread.join(timeout=5)
+    assert payload == {"git": False}
+
+
+def _start_in_process(monkeypatch, tmp_path: pathlib.Path, *, with_session: bool = False):
+    project = tmp_path / "project"
+    project.mkdir()
+    profiles_dir = tmp_path / "profiles"
+    profiles_dir.mkdir()
+    profile = {
+        "project_dir": str(project),
+        "toolchain": "",
+        "mode": "standard",
+        "host_services": [],
+        "runner_commands": [],
+        "allowed_ports": [],
+        "port_ranges": [],
+        "port_deny": [],
+        "deny_mounts": [],
+        "setup_cmds": [],
+        "scripts": [],
+    }
+    (profiles_dir / "nogit.json").write_text(json.dumps(profile), encoding="utf-8")
+    env_file = tmp_path / ".env"
+    env_file.write_text("ACTIVE_PROFILE=nogit\n", encoding="utf-8")
+
+    monkeypatch.setattr(cli, "ENV_FILE", env_file)
+    monkeypatch.setenv("RDM_PROJECTS_DIR", str(profiles_dir))
+
+    sessions = auth.SessionStore()
+    session = sessions.mint_session() if with_session else ""
+    httpd = server.build_server("127.0.0.1", _ephemeral_port(), sessions)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    _wait_listening(httpd.server_address[1])
+    return httpd, thread, httpd.server_address[1], session

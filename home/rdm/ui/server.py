@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import subprocess
 import threading
 import time
 import urllib.parse
@@ -21,6 +22,7 @@ _EVENTS_TAIL_LINES = 2000
 _SSE_MAX_CONNECTIONS = 8
 _SSE_POLL_SECONDS = 0.25
 _SSE_HEARTBEAT_SECONDS = 15.0
+_DIFF_TIMEOUT_SECONDS = 5.0
 _LOG_SOURCES: dict[str, tuple[str, ...]] = {
     "host": ("rdm-host/*.out", "rdm-host/*.err"),
     "ingress": ("rdm-ingress/ingress.out", "rdm-ingress/ingress.err"),
@@ -147,6 +149,45 @@ def _exposure_payload() -> dict[str, object] | None:
         "allowed_ports": manifest.get("allowed_ports", []),
         "endpoints": manifest.get("endpoints", []),
     }
+
+
+def _git_porcelain(project_dir: str) -> list[str] | None:
+    if not project_dir:
+        return None
+    try:
+        inside = subprocess.run(
+            ["git", "-C", project_dir, "rev-parse", "--is-inside-work-tree"],
+            capture_output=True,
+            text=True,
+            timeout=_DIFF_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if inside.returncode != 0 or inside.stdout.strip() != "true":
+        return None
+    try:
+        status = subprocess.run(
+            ["git", "-C", project_dir, "status", "--porcelain"],
+            capture_output=True,
+            text=True,
+            timeout=_DIFF_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if status.returncode != 0:
+        return None
+    return [line for line in status.stdout.splitlines() if line.strip()]
+
+
+def _diff_payload() -> dict[str, object]:
+    env_map = envfile.EnvFile.load(cli.ENV_FILE).as_map()
+    profile = _load_profile(env_map.get("ACTIVE_PROFILE", ""))
+    if profile is None:
+        return {"git": False}
+    porcelain = _git_porcelain(profile.project_dir)
+    if porcelain is None:
+        return {"git": False}
+    return {"git": True, "porcelain": porcelain}
 
 
 def _read_events() -> list[dict[str, object]]:
@@ -314,6 +355,8 @@ class _Handler(BaseHTTPRequestHandler):
                 self._json(404, {"error": "no active profile"})
             else:
                 self._json(200, payload)
+        elif path == "/api/diff":
+            self._json(200, _diff_payload())
         elif path == "/api/events":
             self._api_events()
         elif path == "/api/jobs":
