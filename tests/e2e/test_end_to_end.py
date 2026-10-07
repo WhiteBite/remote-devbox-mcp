@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import pathlib
 import subprocess
 import sys
@@ -28,5 +29,20 @@ def test_entrypoint_help():
 
 def test_entrypoint_profile_show_muffin():
     result = _run("profile", "show", "muffin")
+    assert result.returncode == 0
+    assert '"project_dir"' in result.stdout
+
+
+def test_profile_show_survives_cp1252_console():
+    env = {**os.environ, "PYTHONIOENCODING": "cp1252"}
+    result = subprocess.run(
+        [sys.executable, str(DEVOBOX), "profile", "show", "muffin"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=120,
+        env=env,
+    )
     assert result.returncode == 0
     assert '"project_dir"' in result.stdout
