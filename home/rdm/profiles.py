@@ -10,6 +10,7 @@ import json
 import os
 import re
 import shlex
+import tempfile
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -280,6 +281,23 @@ def _build(values: Mapping[str, object]) -> Profile:
 def load(path: str | os.PathLike[str]) -> Profile:
     values = _fields(json.loads(Path(path).read_text(encoding="utf-8")), _TOP_KEYS, "profile")
     return _build(values)
+
+
+def write_raw(path: str | os.PathLike[str], data: dict) -> None:
+    values = _fields(data, _TOP_KEYS, "profile")
+    problems = [problem for problem in validate(_build(values)) if not problem.startswith("WARN")]
+    if problems:
+        raise ValueError("; ".join(problems))
+    target = Path(path)
+    fd, tmp_name = tempfile.mkstemp(dir=target.parent, prefix=f".{target.name}.", suffix=".tmp")
+    tmp = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
+            json.dump(data, handle, ensure_ascii=False, indent=2)
+            handle.write("\n")
+        os.replace(tmp, target)
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 def validate(profile: Profile) -> list[str]:

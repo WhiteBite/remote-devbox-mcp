@@ -28,6 +28,7 @@ _LOG_SOURCES: dict[str, tuple[str, ...]] = {
 }
 _SENSITIVE_MARKERS = ("TOKEN", "SECRET", "PASSWORD")
 _SENSITIVE_KEYS = ("VLESS_SUB_URL", "TUNNEL_TAIL")
+_PROFILE_PREFIX = "/api/profile/"
 
 
 def _load_profile(active: str) -> profiles.Profile | None:
@@ -276,8 +277,65 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(200, _jobs_payload())
         elif path == "/api/permissions":
             self._json(200, _permissions_payload())
+        elif path.startswith(_PROFILE_PREFIX):
+            self._api_profile_get(path)
         else:
             self._json(404, {"error": "not found"})
+
+    def do_PUT(self) -> None:
+        self.close_connection = True
+        split = urllib.parse.urlsplit(self.path)
+        if not auth.host_origin_ok(self._header_map(), self.server.server_address[1]):
+            self._json(403, {"error": "forbidden", "hint": "Host/Origin must be loopback"})
+            return
+        session = self._session_token()
+        if session is None:
+            self._json(401, {"error": "unauthorized"})
+            return
+        if split.path.startswith(_PROFILE_PREFIX):
+            self._api_profile_put(split.path)
+        else:
+            self._json(404, {"error": "not found"})
+
+    def _profile_target(self, path: str) -> tuple[str, pathlib.Path] | None:
+        name = path[len(_PROFILE_PREFIX):]
+        if not cli._NAME_RE.fullmatch(name):
+            self._json(404, {"error": "invalid profile name"})
+            return None
+        resolved = profiles.find(name)
+        if resolved is None:
+            self._json(404, {"error": "profile not found"})
+            return None
+        return name, resolved
+
+    def _api_profile_get(self, path: str) -> None:
+        target = self._profile_target(path)
+        if target is None:
+            return
+        name, resolved = target
+        raw = _read_json(resolved)
+        if not isinstance(raw, dict):
+            self._json(500, {"error": "profile unreadable"})
+            return
+        self._json(200, {"name": name, "path": str(resolved), "source_dir": str(resolved.parent), "raw": raw})
+
+    def _api_profile_put(self, path: str) -> None:
+        target = self._profile_target(path)
+        if target is None:
+            return
+        name, resolved = target
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            data = json.loads(self.rfile.read(length)) if length > 0 else None
+        except ValueError:
+            self._json(400, {"error": "body must be valid JSON"})
+            return
+        try:
+            profiles.write_raw(resolved, data)
+        except ValueError as error:
+            self._json(400, {"error": str(error)})
+            return
+        self._json(200, {"name": name, "path": str(resolved)})
 
     def _api_logs(self, query: str) -> None:
         params = urllib.parse.parse_qs(query)
