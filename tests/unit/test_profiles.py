@@ -28,28 +28,53 @@ def test_load_rejects_unknown_key(tmp_path):
         load(path)
 
 
-def test_load_muffin_json():
-    profile = load(PROJECTS / "muffin.json")
+def test_load_example_service_json():
+    profile = load(PROJECTS / "example-service.json")
 
-    assert profile.project_dir == "d:/Sources/StartUp/Muffin"
-    assert profile.toolchain == "java21 flutter:3.44.9"
-    assert profile.git_name == "WhiteBite"
-    assert profile.git_email == "ad.lord9000@yandex.ru"
-    assert profile.preview_origin == "http://host.docker.internal:47095"
-    assert profile.allowed_ports == (47090, 47765)
-    assert profile.port_ranges == ((47080, 47100), (47760, 47770))
-    assert profile.port_deny == (47091, 47093, 47094)
+    assert profile.project_dir == "d:/work/example-service"
+    assert profile.toolchain == "node22"
+    assert profile.git_name == "agent"
+    assert profile.git_email == "agent@example.test"
+    assert profile.preview_origin == "http://host.docker.internal:48095"
+    assert profile.ui_port == 48095
+    assert profile.allowed_ports == (48090, 48765)
+    assert profile.port_ranges == ((48080, 48100), (48760, 48770))
+    assert profile.port_deny == (48091, 48093, 48094)
     assert profile.deny_mounts == (".env.staging", "apps/backend/.env")
     assert profile.mode == "standard"
     assert profile.runner_port == 8796
-    assert [c.name for c in profile.runner_commands] == ["start_infra", "staging_status", "staging_logs"]
+    assert [c.name for c in profile.runner_commands] == ["start_infra", "staging_logs"]
 
     assert len(profile.host_services) == 1
     service = profile.host_services[0]
     assert service.port == 8792
     assert service.auth == "bearer"
-    assert service.cwd == "D:\\Sources\\StartUp\\Muffin"
-    assert service.cmd == "python tools/muffin-supervisor/server.py"
+    assert service.cwd == "d:/work/example-service"
+    assert service.cmd == "python tools/example-supervisor/server.py"
+
+
+def test_find_prefers_rdm_projects_dir(monkeypatch, tmp_path):
+    (tmp_path / "example-service.json").write_text('{"project_dir": "x"}', encoding="utf-8")
+    monkeypatch.setenv("RDM_PROJECTS_DIR", str(tmp_path))
+
+    assert profiles.find("example-service") == tmp_path / "example-service.json"
+
+
+def test_find_falls_back_to_repo_dir(monkeypatch, tmp_path):
+    monkeypatch.setenv("RDM_PROJECTS_DIR", str(tmp_path))
+
+    assert profiles.find("example-service") == PROJECTS / "example-service.json"
+
+
+def test_available_unions_candidate_dirs(monkeypatch, tmp_path):
+    (tmp_path / "extra.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setenv("RDM_PROJECTS_DIR", str(tmp_path))
+
+    names = profiles.available()
+
+    assert "extra" in names
+    assert "example-service" in names
+    assert "_template" not in names
 
 
 def test_load_parses_port_ranges_and_deny(tmp_path):

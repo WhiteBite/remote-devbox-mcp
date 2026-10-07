@@ -27,7 +27,7 @@ def _setup(monkeypatch, tmp_path):
     projects = tmp_path / "projects"
     projects.mkdir()
     log_root = tmp_path / "rdm-host"
-    monkeypatch.setattr(cli, "PROJECTS_DIR", projects)
+    monkeypatch.setenv("RDM_PROJECTS_DIR", str(projects))
     monkeypatch.setattr(cli, "ENV_FILE", tmp_path / ".env")
     monkeypatch.setattr(cli, "OVERRIDE_FILE", tmp_path / "docker-compose.override.yml")
     monkeypatch.setattr(cli, "LOG_ROOT", log_root)
@@ -52,10 +52,11 @@ def _setup(monkeypatch, tmp_path):
     return projects, calls
 
 
-def test_use_applies_profile_and_single_restart(monkeypatch, tmp_path):
+def test_use_applies_profile_and_single_restart(monkeypatch, tmp_path, capsys):
     projects, calls = _setup(monkeypatch, tmp_path)
     (projects / "p1.json").write_text(_profile_json(tmp_path), encoding="utf-8")
     assert cli.main(["use", "p1"]) == 0
+    assert f"профиль p1 ← {projects}" in capsys.readouterr().out
     assert len(calls["restart"]) == 1
     assert calls["ingress"] == ["stop", "start"]
     assert ("up", "-d", "--force-recreate", "toolbox") in calls["compose"]
@@ -112,10 +113,9 @@ def test_info_masked_vs_share_full(monkeypatch, tmp_path, capsys):
     assert token in full
 
 
-def test_profile_show_muffin(monkeypatch, tmp_path, capsys):
+def test_profile_show_example_service(monkeypatch, tmp_path, capsys):
     _setup(monkeypatch, tmp_path)
-    monkeypatch.setattr(cli, "PROJECTS_DIR", cli.HOME_DIR.parent / "projects")
-    assert cli.main(["profile", "show", "muffin"]) == 0
+    assert cli.main(["profile", "show", "example-service"]) == 0
     assert "project_dir" in capsys.readouterr().out
 
 

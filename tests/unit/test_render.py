@@ -17,17 +17,17 @@ from rdm.render import (
 )
 
 PROFILE = Profile(
-    project_dir="d:/Sources/StartUp/Muffin",
+    project_dir="d:/work/example",
     toolchain="java21 flutter:3.44.9",
-    git_name="WhiteBite",
-    git_email="ad.lord9000@yandex.ru",
+    git_name="agent",
+    git_email="agent@example.test",
     preview_origin="http://host.docker.internal:8080",
     host_services=(
         HostService(
             port=8792,
             auth="bearer",
-            cwd="D:\\Sources\\StartUp\\Muffin",
-            cmd="python tools/muffin-supervisor/server.py",
+            cwd="d:/work/example",
+            cmd="python tools/example-supervisor/server.py",
         ),
     ),
     runner_commands=(
@@ -69,13 +69,13 @@ def test_override_without_deny_mounts():
 
 
 def test_setup_script_is_lf_and_marked():
-    script = build_setup_script(PROFILE, "muffin")
+    script = build_setup_script(PROFILE, "example")
 
     assert "\r" not in script
-    first = hashlib.md5(b"echo onemuffin").hexdigest()
-    second = hashlib.md5(b"echo twom2muffin").hexdigest()
+    first = hashlib.md5(b"echo oneexample").hexdigest()
+    second = hashlib.md5(b"echo twom2example").hexdigest()
     assert script == (
-        "# generated: devbox.py use muffin\n"
+        "# generated: devbox.py use example\n"
         f"if [ ! -f /opt/tools/.setup-1-{first} ]; then\n"
         "  echo one || echo '[setup] WARN: cmd 1 failed, continue'\n"
         f"  touch /opt/tools/.setup-1-{first}\n"
@@ -90,11 +90,11 @@ def test_setup_script_is_lf_and_marked():
 def test_setup_required_vs_optional():
     required = build_setup_script(
         replace(PROFILE, setup_cmds=(SetupCommand(cmd="install x", marker="v1", required=True),)),
-        "muffin",
+        "example",
     )
     optional = build_setup_script(
         replace(PROFILE, setup_cmds=(SetupCommand(cmd="install x", marker="v1", required=False),)),
-        "muffin",
+        "example",
     )
 
     assert "install x || exit 1\n" in required
@@ -103,17 +103,17 @@ def test_setup_required_vs_optional():
 
 
 def test_setup_script_b64_roundtrip():
-    encoded = setup_script_b64(PROFILE, "muffin")
+    encoded = setup_script_b64(PROFILE, "example")
 
-    assert base64.b64decode(encoded).decode("utf-8") == build_setup_script(PROFILE, "muffin")
+    assert base64.b64decode(encoded).decode("utf-8") == build_setup_script(PROFILE, "example")
 
 
 def test_manifest_endpoints():
-    manifest = build_manifest(PROFILE, "muffin", "https://x.trycloudflare.com", "standard")
+    manifest = build_manifest(PROFILE, "example", "https://x.trycloudflare.com", "standard")
 
     assert manifest == {
-        "profile": "muffin",
-        "project": "d:/Sources/StartUp/Muffin",
+        "profile": "example",
+        "project": "d:/work/example",
         "ingress_url": "https://x.trycloudflare.com",
         "endpoints": [
             {
@@ -201,7 +201,7 @@ def test_manifest_runner_kill_tool_for_background():
         runner_commands=(RunnerCommand(name="dev:start", cmd=("npm",), description="dev server", background=True),),
     )
 
-    manifest = build_manifest(profile, "muffin", "https://x", "standard")
+    manifest = build_manifest(profile, "example", "https://x", "standard")
 
     assert manifest["runner_commands"] == [
         {"name": "dev:start", "tool": "run_dev_start", "description": "dev server", "kill_tool": "run_dev_start_kill"}
@@ -213,13 +213,13 @@ def test_manifest_bridge_tools_match_arena_tools_md():
     tools_md = (repo / "arena" / "TOOLS.md").read_text(encoding="utf-8")
     documented = {line.split("`")[1] for line in tools_md.splitlines() if line.startswith("| `")}
 
-    manifest = build_manifest(PROFILE, "muffin", "https://x", "standard")
+    manifest = build_manifest(PROFILE, "example", "https://x", "standard")
 
     assert {tool["name"] for tool in manifest["bridge_tools"]} == documented
 
 
 def test_manifest_bridge_tools_mutating_set():
-    manifest = build_manifest(PROFILE, "muffin", "https://x", "standard")
+    manifest = build_manifest(PROFILE, "example", "https://x", "standard")
 
     mutating = {tool["name"] for tool in manifest["bridge_tools"] if tool["mutating"]}
 
@@ -232,12 +232,12 @@ def test_tunnel_tail_named_vs_quick():
 
 
 def test_agents_md_sections():
-    text = render_agents_md(PROFILE, "muffin", "java21 flutter:3.44.9", "standard", "8765,8080")
+    text = render_agents_md(PROFILE, "example", "java21 flutter:3.44.9", "standard", "8765,8080")
 
     assert text == (
-        "<!-- auto-generated: devbox.py use muffin -->\n"
+        "<!-- auto-generated: devbox.py use example -->\n"
         "## Environment\n"
-        "- profile: muffin; project: d:/Sources/StartUp/Muffin\n"
+        "- profile: example; project: d:/work/example\n"
         "- toolchain: java21 flutter:3.44.9\n"
         "- mode: standard; allowed ports: 8765,8080\n"
         "## Runner commands\n"
@@ -256,7 +256,7 @@ def test_agents_md_sections():
 def test_agents_md_empty_sections():
     empty = replace(PROFILE, runner_commands=(), scripts=())
 
-    text = render_agents_md(empty, "muffin", "java21", "standard", "")
+    text = render_agents_md(empty, "example", "java21", "standard", "")
 
     assert "## Runner commands\n- (нет)\n" in text
     assert "## Scripts\n- (нет)\n" in text
@@ -283,22 +283,22 @@ def test_env_fields_none_means_remove():
 
 
 def test_agents_md_projects_section():
-    text = render_agents_md(PROFILE, "muffin", "java21", "standard", "8080", ["muffin", "midasai"])
+    text = render_agents_md(PROFILE, "example", "java21", "standard", "8080", ["example-service", "example-simple"])
     assert "## Projects" in text
-    assert "muffin, midasai" in text
+    assert "example-service, example-simple" in text
 
 
 def test_env_fields_emit_ranges_and_deny():
     profile = replace(PROFILE, port_ranges=((47000, 47999), (48000, 48010)), port_deny=(47500,))
 
-    fields = env_fields(profile, "muffin", "")
+    fields = env_fields(profile, "example", "")
 
     assert fields["ALLOWED_PORT_RANGES"] == "47000-47999,48000-48010"
     assert fields["DENIED_PORTS"] == "47500"
 
 
 def test_env_fields_empty_ranges_and_deny():
-    fields = env_fields(PROFILE, "muffin", "")
+    fields = env_fields(PROFILE, "example", "")
 
     assert fields["ALLOWED_PORT_RANGES"] == ""
     assert fields["DENIED_PORTS"] == ""
@@ -307,7 +307,7 @@ def test_env_fields_empty_ranges_and_deny():
 def test_manifest_includes_ranges_and_deny():
     profile = replace(PROFILE, port_ranges=((47000, 47999),), port_deny=(47500,))
 
-    manifest = build_manifest(profile, "muffin", "https://x", "standard")
+    manifest = build_manifest(profile, "example", "https://x", "standard")
 
     assert manifest["port_ranges"] == [[47000, 47999]]
     assert manifest["port_deny"] == [47500]
@@ -320,6 +320,6 @@ def test_manifest_allowed_matches_computed_policy():
         runner_commands=(RunnerCommand(name="srv", cmd=("npm", "start"), port=9001),),
     )
 
-    manifest = build_manifest(profile, "muffin", "https://x", "standard")
+    manifest = build_manifest(profile, "example", "https://x", "standard")
 
     assert manifest["allowed_ports"] == list(ports.compute_port_policy(profile).allowed)

@@ -27,8 +27,12 @@ cd remote-devbox-mcp
 python -m pip install -r requirements.txt   # host-зависимости: psutil, mcp
 cd home
 copy .env.example .env           # заполнить PROJECT_DIR и токены
-python devbox.py start muffin     # профиль + стек + ingress + блок для агента
+python devbox.py start <имя>     # профиль + стек + ingress + блок для агента
 ```
+
+Профиль ищется в `$RDM_PROJECTS_DIR` → `~/.devbox/projects/` → `projects/`
+репо: скопируй `projects/_template.json` в `~/.devbox/projects/<имя>.json`,
+заполни и подставь `<имя>` выше.
 
 Публичный вход: `docker compose logs cloudflared-ingress | Select-String trycloudflare`.
 Дальше агенту отдаётся `INGRESS` + токены — полный цикл в `ARENA.md`.
@@ -53,8 +57,9 @@ python devbox.py start muffin     # профиль + стек + ingress + бло
 │   README.md                      подробный ранбук по установке и эксплуатации
 │   SECURITY.md                    что запрещено монтировать, про изоляцию честно
 │
-├─ projects/ → профили проектов (project_dir, тулчейны, host-сервисы), JSON
-│   muffin.json, midasai.json, _template.json
+├─ projects/ → шаблон и санитизированные примеры профилей, JSON
+│   _template.json, example-service.json, example-simple.json
+│   личные профили — вне репо: ~/.devbox/projects/ или $RDM_PROJECTS_DIR
 │
 ├─ arena/ → сторона агента (скачивает сам, ничего ставить не нужно)
 │   mcp_client.py             MCP-клиент на чистом Python (stdlib, 3.10+)
@@ -102,7 +107,8 @@ requirements-dev.txt); CI собирает то же самое по тегу `v
 
 1. **Ты:** клонируй репозиторий, перейди в `home/`, сделай `.env` из
    `.env.example` (токены) и выполни `.\devbox.cmd use <имя>` +
-   `docker compose up -d` (профиль проекта: `..\projects\<имя>.json`).
+   `docker compose up -d` (профиль: `$RDM_PROJECTS_DIR` → `~/.devbox/projects/`
+   → `..\projects\`).
 2. **Ты:** возьми публичный URL входа —
    `docker compose logs cloudflared-ingress | Select-String trycloudflare`.
 3. **Ты:** пришли агенту INGRESS-URL и токены и ссылку на репозиторий.
@@ -169,8 +175,9 @@ python scripts/build_exe.py                      # локальная frozen-с�
 ## Статус / Status
 
 Активная разработка. Host-часть покрыта pytest-сьютом (unit/integration/e2e), CI гоняет
-`python -m pytest` и rdk-audit (discoverability 96/100). Профиль проекта — `projects/*.json`;
-ядро — `home/rdm/`.
+`python -m pytest` и rdk-audit (discoverability 96/100). Профили проектов —
+`projects/*.json` (в репо — шаблон и примеры, личные — в `~/.devbox/projects`
+или `$RDM_PROJECTS_DIR`); ядро — `home/rdm/`.
 
 ## Лицензия
 
@@ -217,11 +224,11 @@ stdio-адаптер (`--trust`) или режим профиля `full`; мат
 
 ## Примеры
 
-Поднять devbox под проект `muffin` (из папки `home\`, PowerShell):
+Поднять devbox под свой проект (из папки `home\`, PowerShell):
 
 ```powershell
 copy .env.example .env      # заполнить PROJECT_DIR и токены
-.\devbox.cmd use muffin     # профиль ..\projects\muffin.json
+.\devbox.cmd use <имя>     # профиль: ~/.devbox/projects/<имя>.json (или projects/ репо)
 docker compose up -d
 docker compose logs cloudflared-ingress | Select-String trycloudflare
 ```

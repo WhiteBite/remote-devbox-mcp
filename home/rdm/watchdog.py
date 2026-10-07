@@ -11,7 +11,6 @@ from rdm.freeze import app_dir
 
 _HOME = app_dir()
 _DEFAULT_COMPOSE = str(_HOME / "docker-compose.yml")
-_PROJECTS = profiles.PROJECTS_DIR
 START_DELAY = 15.0
 RECREATE_DELAY = 30.0
 
@@ -64,8 +63,8 @@ def run(
                     time.sleep(RECREATE_DELAY)
             if active and procman.host_services_dead(active):
                 _log(log_path, "host services dead: restart")
-                profile_path = _PROJECTS / f"{active}.json"
-                if profile_path.exists():
+                profile_path = profiles.find(active)
+                if profile_path is not None:
                     from rdm import cli as _cli
 
                     profile = _cli._with_runner(profiles.load(profile_path), active)

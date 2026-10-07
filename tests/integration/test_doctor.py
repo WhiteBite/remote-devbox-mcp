@@ -48,7 +48,7 @@ def _wire(monkeypatch, tmp_path, *, healthy=True, profile_json=None):
     (projects / "p1.json").write_text(profile_json or _profile_json(tmp_path), encoding="utf-8")
     (tmp_path / "proj").mkdir()
     (tmp_path / "docker-compose.override.yml").write_text("services: {}\n", encoding="utf-8")
-    monkeypatch.setattr(doctor, "_PROJECTS", projects)
+    monkeypatch.setenv("RDM_PROJECTS_DIR", str(projects))
     monkeypatch.setattr(doctor, "_HOME", tmp_path)
     monkeypatch.setattr(doctor.netprobe, "ingress_url", lambda env_map, compose_file=None: env_map.get("PUBLIC_URL", ""))
     monkeypatch.setattr(doctor.netprobe, "can_connect", lambda port: healthy)
@@ -59,7 +59,7 @@ def _wire(monkeypatch, tmp_path, *, healthy=True, profile_json=None):
 
 
 def _write_registry(tmp_path, port):
-    registry = tmp_path / "proj" / "tools" / "muffin-supervisor" / "registry.json"
+    registry = tmp_path / "proj" / "tools" / "example-supervisor" / "registry.json"
     registry.parent.mkdir(parents=True)
     registry.write_text(json.dumps({"ops": {"svc": {"port": port}}}), encoding="utf-8")
 
@@ -84,7 +84,7 @@ def test_doctor_counts_host_service_alive_via_create_time(monkeypatch, tmp_path,
     monkeypatch.setattr(hostos, "create_time", lambda pid: 111.5)
     pids = hostos.tempdir() / "rdm-host" / "p1-pids.txt"
     pids.parent.mkdir(parents=True, exist_ok=True)
-    pids.write_text("12345|111.5|python.EXE tools/muffin-supervisor/server.py\n", encoding="utf-8")
+    pids.write_text("12345|111.5|python.EXE tools/example-supervisor/server.py\n", encoding="utf-8")
     try:
         assert doctor.run(_env(tmp_path), prober=_prober) == 0
     finally:

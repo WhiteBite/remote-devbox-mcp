@@ -18,7 +18,35 @@ from rdm.freeze import app_dir
 
 BRIDGE_PORT = 8787
 MAX_PORT_RANGES = 32
-PROJECTS_DIR = app_dir().parent / "projects"
+
+
+def projects_dirs() -> tuple[Path, ...]:
+    """Каталоги профилей в порядке приоритета: $RDM_PROJECTS_DIR, ~/.devbox/projects, projects/ у репо."""
+    candidates: list[Path] = []
+    env_dir = os.environ.get("RDM_PROJECTS_DIR")
+    if env_dir:
+        candidates.append(Path(env_dir))
+    candidates.append(Path.home() / ".devbox" / "projects")
+    candidates.append(app_dir().parent / "projects")
+    return tuple(candidates)
+
+
+def find(name: str) -> Path | None:
+    for directory in projects_dirs():
+        path = directory / f"{name}.json"
+        if path.exists():
+            return path
+    return None
+
+
+def available() -> list[str]:
+    names: set[str] = set()
+    for directory in projects_dirs():
+        try:
+            names.update(path.stem for path in directory.glob("*.json"))
+        except OSError:
+            continue
+    return sorted(name for name in names if not name.startswith("_"))
 
 
 def runner_tool_name(name: str) -> str:

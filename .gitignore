@@ -19,3 +19,6 @@ build/
 .ruff_cache/
 .codenomad/
 .playwright-mcp/
+/projects/*.json
+!/projects/_template.json
+!/projects/example-*.json

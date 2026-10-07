@@ -38,7 +38,7 @@ then `tray.cmd`.
 | `home/rdm/` | core: cli, profiles, render, envfile, ports, procman, hostos, docker, netprobe, freeze, tokens, tunnels, doctor, watchdog, `proxy/` (ingress), `runner/` (host-MCP) |
 | `arena/` | agent-side stdlib MCP client (`mcp_client.py`, `mcp`), `AGENT_INSTRUCTIONS.md`, `TOOLS.md` (canonical tool list), `SANDBOX_FACTS.md`, `README.md` |
 | `skills/remote-devbox/` | agent skill describing how to drive the devbox |
-| `projects/` | per-project JSON profiles (`muffin.json`, `midasai.json`, `_template.json`) |
+| `projects/` | profile template + sanitized examples (`_template.json`, `example-*.json`); personal profiles live outside the repo |
 | `tests/` | pytest suite (unit / integration / e2e) |
 | `scripts/` | `build_exe.py` + frozen entrypoints (`entry_devbox.py`, `entry_tray.py`) |
 | `docs/`, `llms.txt`, `llms-full.txt` | discoverability artifacts, generated from `.discoverability/project.yml` |
@@ -61,8 +61,8 @@ then `tray.cmd`.
   `allowed_ports` (явные) плюс `port_ranges` (диапазоны-потолки) минус `port_deny`.
   Ingress пускает порт из диапазона автоматически (token-gated), вне диапазона — 403.
   Так сервис/микросервис, поднятый агентом на любом порту диапазона, виден без правок профиля.
-- Граница ответственности: долгоживущие серверы принадлежат supervisor-MCP проекта
-  (`server_ensure`/`server_start`, напр. muffin-supervisor); host-runner (`runner_commands`) —
+-   Граница ответственности: долгоживущие серверы принадлежат supervisor-MCP проекта
+  (`server_ensure`/`server_start`, напр. project-supervisor); host-runner (`runner_commands`) —
   для разовых host-команд (docker infra, staging ssh). Один сервер не поднимать обоими путями.
 - Web под префиксом `/p/<port>/`: ingress переписывает `<base href>` для length-framed
   HTML-ответов, поэтому Flutter web (уважающий `<base>`) грузит ассеты без `--base-href`;
@@ -72,7 +72,8 @@ then `tray.cmd`.
   показывает живые loopback-порты.
 - Новый проект: скопировать `projects/_template.json`, задать `project_dir`, `toolchain`,
   `host_services`/`runner_commands` и диапазоны портов; `devbox.py use <имя>` валидирует
-  профиль (R1–R33) fail-fast.
+  профиль (R1–R33) fail-fast. Профили ищутся в `$RDM_PROJECTS_DIR` → `~/.devbox/projects/`
+  → `projects/` репо (fallback); `use` печатает каталог-источник.
 
 ## Discoverability (RDK)
 

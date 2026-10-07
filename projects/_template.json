@@ -1,8 +1,8 @@
 {
-  "project_dir": "d:/Sources/StartUp/<repo>",
+  "project_dir": "d:/work/<project>",
   "toolchain": "",
-  "git_name": "WhiteBite",
-  "git_email": "ad.lord9000@yandex.ru",
+  "git_name": "<git-name>",
+  "git_email": "<you>@example.test",
   "preview_origin": "http://toolbox:8788",
   "ui_port": null,
   "mode": "standard",

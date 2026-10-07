@@ -193,4 +193,4 @@ def test_envfile_get_strips_render_preserves(tmp_path):
 
 def test_profile_ui_port():
     repo = pathlib.Path(__file__).resolve().parents[2]
-    assert load(repo / "projects" / "muffin.json").ui_port == 47095
+    assert load(repo / "projects" / "example-service.json").ui_port == 48095

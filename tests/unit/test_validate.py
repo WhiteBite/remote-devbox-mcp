@@ -5,7 +5,7 @@ from rdm.profiles import ArgSpec, HostService, Profile, RunnerCommand, Script, l
 
 def test_repo_profiles_validate_clean():
     repo = pathlib.Path(__file__).resolve().parents[2]
-    for name in ("muffin", "midasai", "_template"):
+    for name in ("example-service", "_template"):
         profile = load(repo / "projects" / f"{name}.json")
         problems = [
             problem for problem in validate(profile)

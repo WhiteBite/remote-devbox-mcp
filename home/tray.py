@@ -24,7 +24,6 @@ from rdm import envfile, freeze, profiles
 HOME = freeze.app_dir()
 DEVBOX_ARGV = freeze.cli_entry()
 ENV_FILE = HOME / ".env"
-PROJECTS = profiles.PROJECTS_DIR
 _TEMP = pathlib.Path(os.environ.get("TEMP", "/tmp"))
 CREATE_NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
 STATUS_INTERVAL = 30.0
@@ -120,10 +119,7 @@ def _active() -> str:
 
 
 def _profiles() -> list[str]:
-    try:
-        return sorted(p.stem for p in PROJECTS.glob("*.json") if not p.stem.startswith("_"))
-    except OSError:
-        return []
+    return profiles.available()
 
 
 def _ui_port() -> str:

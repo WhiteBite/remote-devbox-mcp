@@ -2,14 +2,16 @@
 
 ## 0. Ежедневный запуск (ранбук)
 
-Все команды из папки `home\`. Проект = профиль `..\projects\<имя>.json`.
+Все команды из папки `home\`. Проект = профиль `<имя>.json`; ищется в
+`$RDM_PROJECTS_DIR` → `~/.devbox/projects/` → `..\projects\` (шаблон и примеры
+в репо, личные профили держи вне репо).
 
 ```powershell
 cd D:\Sources\WhiteBite\remote-devbox-mcp\home
 
 # применяет профиль, поднимает стек и ingress, печатает готовый блок агенту:
-.\devbox.cmd start muffin
-# пошагово вместо одной команды: .\devbox.cmd use muffin -> docker compose up -d -> .\devbox.py ingress start
+.\devbox.cmd start <имя>
+# пошагово вместо одной команды: .\devbox.cmd use <имя> -> docker compose up -d -> .\devbox.py ingress start
 docker compose ps          # ждём: toolbox healthy, vpn healthy.
                            # Первый старт профиля = установка тулчейнов в
                            # /opt/tools (несколько минут), дальше — кэш
@@ -119,8 +121,13 @@ docker compose logs cloudflared-ingress | Select-String trycloudflare
 Одна команда:
 
 ```powershell
-.\devbox.cmd use <имя>     # профиль из ..\projects\<имя>.json
+.\devbox.cmd use <имя>     # профиль: $RDM_PROJECTS_DIR -> ~/.devbox/projects -> ..\projects
 ```
+
+`use` печатает каталог, из которого взят профиль (строка `профиль <имя> ← <каталог>`),
+и валидирует его R1–R33 fail-fast. Добавить свой профиль: скопируй
+`..\projects\_template.json` в `~/.devbox/projects/<имя>.json` и заполни; свой
+каталог профилей — через `RDM_PROJECTS_DIR` в окружении.
 
 Профиль задаёт PROJECT_DIR, TOOLCHAIN, GIT_*, PREVIEW_ORIGIN, UI-порт приложения
 (`ui_port`) и host-сервисы; блок `start` печатает готовый `UI=<INGRESS>/p/<порт>/`.
@@ -172,7 +179,8 @@ python -m http.server 8791 --bind 127.0.0.1 --directory <папка со скр�
 
 ## 9. Выдача агенту доступа к проекту
 
-**Смена проекта** — `.\devbox.cmd use <имя>` (профиль из `..\projects\`).
+**Смена проекта** — `.\devbox.cmd use <имя>` (профиль из `$RDM_PROJECTS_DIR` /
+`~/.devbox/projects/` / `..\projects\`).
 `opencode.json` проекта автоматически экранируется shadow-монтом (воркер не
 поднимает MCP-серверы проекта), тулчейны — спек `TOOLCHAIN` профиля в
 `/opt/tools` (volume, кэш между проектами).
@@ -196,11 +204,11 @@ workspace + ask/allow на тулы.
 
 Два механизма, оба через ingress без отдельных туннелей:
 
-- **Bearer-сервисы профиля** (`$HostServices`, напр. muffin-supervisor):
+- **Bearer-сервисы профиля** (`$HostServices`, напр. project-supervisor):
   сервис слушает Port+1 без авторизации, auth-proxy на Port проверяет
   `MCP_PUBLIC_TOKEN`; агент ходит `/p/<Port>/mcp` со своим токеном.
 - **runner-mcp** (`$RunnerCommands`): универсальный host-MCP для команд
-  проекта (Windows-native стеки: MidasAI и т.п.). Команды = argv-массивы без
+  проекта (Windows-native стеки). Команды = argv-массивы без
   shell, аргументы агента по схеме (path валидируется), background-процессы
   с pid-файлом, каждый вызов в аудит-логе `%TEMP%\rdm-runner\audit.log`.
   Агент: `MCP_CONF=~/.mcp-runner.conf ./mcp call run_<имя> ...`.
@@ -231,9 +239,9 @@ Ingress rout'ит только порты из `$AllowedPorts` профиля + 
 поэтому Flutter web грузит ассеты без `--base-href`; chunked HTML и корне-абсолютные пути
 (Vite/React) — нет.
 
-Примеры (Muffin):
-- галерея: `<INGRESS>/p/47765/docs/review/index.html#tab=screens&theme=mpearl`
-- виджетбук: `<INGRESS>/p/47080/`
+Примеры:
+- галерея: `<INGRESS>/p/48765/docs/review/index.html`
+- виджетбук: `<INGRESS>/p/48080/`
 - supervisor MCP: `<INGRESS>/p/8792/mcp` (порт в SELF_AUTHED_PORTS: авторизует
   нижний auth-proxy своим MCP_PUBLIC_TOKEN, ingress-токен не подставляется)
 
@@ -355,5 +363,5 @@ WinDivert видел трафик): соединения всё равно рв�
 публикует наружу только нативные тулы OpenCode (MCP-серверы проекта фильтруются
 и не видны агенту), но OpenCode-воркер пытается их поднять внутри контейнера:
 готовность моста деградирует с ~30 с до минут и дольше (замерено на тестовом
-`opencode.json` с `server-everything`). MCP-конфиги проекта (как в Muffin) —
+`opencode.json` с `server-everything`). MCP-конфиги проекта —
 для хостового OpenCode/Kiro, не для девбокса.

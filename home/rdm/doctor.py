@@ -10,7 +10,6 @@ from rdm import docker, hostos, netprobe, ports, profiles
 from rdm.freeze import app_dir
 
 _HOME = app_dir()
-_PROJECTS = profiles.PROJECTS_DIR
 _DEFAULT_COMPOSE = str(_HOME / "docker-compose.yml")
 _INGRESS_PORT = 8799
 _LOOPBACK_IPS = frozenset({"127.0.0.1", "::1", "0.0.0.0", "::"})
@@ -145,10 +144,10 @@ def run(env_map: dict[str, str], compose_file: str | None = None, prober=None) -
         "токен короче 24 символов",
     )
     active = env_map.get("ACTIVE_PROFILE", "")
-    profile_path = _PROJECTS / f"{active}.json"
-    report.check("profile exists", bool(active) and profile_path.exists(), "devbox.py use <имя>")
+    profile_path = profiles.find(active) if active else None
+    report.check("profile exists", profile_path is not None, "devbox.py use <имя>")
     profile: profiles.Profile | None = None
-    if active and profile_path.exists():
+    if profile_path is not None:
         profile = profiles.load(profile_path)
         problems = [p for p in profiles.validate(profile) if not p.startswith("WARN")]
         report.check("profile validation", not problems, "; ".join(problems))

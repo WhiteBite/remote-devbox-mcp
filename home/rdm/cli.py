@@ -13,7 +13,6 @@ import sys
 from rdm import docker, envfile, freeze, hostos, netprobe, ports, procman, profiles, render, tokens, tunnels
 
 HOME_DIR = freeze.app_dir()
-PROJECTS_DIR = profiles.PROJECTS_DIR
 ENV_FILE = HOME_DIR / ".env"
 OVERRIDE_FILE = HOME_DIR / "docker-compose.override.yml"
 COMPOSE_FILE = str(HOME_DIR / "docker-compose.yml")
@@ -39,17 +38,10 @@ def _preview_url(env_map: dict[str, str]) -> str:
     return tunnels.from_logs(logs)
 
 
-def _available_profiles() -> list[str]:
-    try:
-        return sorted(path.stem for path in PROJECTS_DIR.glob("*.json") if not path.stem.startswith("_"))
-    except OSError:
-        return []
-
-
 def _runner_port(env_map: dict[str, str]) -> int | None:
     name = env_map.get("ACTIVE_PROFILE")
-    path = PROJECTS_DIR / f"{name}.json" if name else None
-    if not path or not path.exists():
+    path = profiles.find(name) if name else None
+    if path is None:
         return None
     try:
         profile = profiles.load(path)
@@ -60,8 +52,8 @@ def _runner_port(env_map: dict[str, str]) -> int | None:
 
 def _self_authed_ports(env_map: dict[str, str]) -> tuple[int, ...]:
     name = env_map.get("ACTIVE_PROFILE")
-    path = PROJECTS_DIR / f"{name}.json" if name else None
-    if not path or not path.exists():
+    path = profiles.find(name) if name else None
+    if path is None:
         return ()
     try:
         profile = profiles.load(path)
@@ -136,8 +128,8 @@ def _write_manifest(profile: profiles.Profile, name: str, env_map: dict[str, str
 def _refresh_manifest_from_env() -> None:
     env_map = envfile.EnvFile.load(ENV_FILE).as_map()
     name = env_map.get("ACTIVE_PROFILE")
-    path = PROJECTS_DIR / f"{name}.json" if name else None
-    if not path or not path.exists():
+    path = profiles.find(name) if name else None
+    if path is None:
         return
     try:
         profile = profiles.load(path)
@@ -157,7 +149,7 @@ def _emit_agent_artifacts(profile: profiles.Profile, name: str, allowed: str) ->
             print(f"refs тулчейнов не записаны (rc={result.returncode}): {result.stderr.strip()[:200]}", file=sys.stderr)
             return False
     agents = render.render_agents_md(
-        profile, name, profile.toolchain, profile.mode, allowed, _available_profiles()
+        profile, name, profile.toolchain, profile.mode, allowed, profiles.available()
     )
     result = docker.run(
         "run", "--rm", "-i", "-v", "rdm-agent:/agent", "alpine", "sh", "-c", "cat > /agent/AGENTS.md",
@@ -204,9 +196,9 @@ def _start_gitleaks(profile: profiles.Profile, name: str) -> None:
 
 
 def apply_use(name: str) -> int:
-    path = PROJECTS_DIR / f"{name}.json"
-    if not path.exists():
-        print(f"нет профиля {path}", file=sys.stderr)
+    path = profiles.find(name)
+    if path is None:
+        print(f"нет профиля {name}", file=sys.stderr)
         return 1
     if not _NAME_RE.fullmatch(name):
         print(f"имя профиля {name!r}: допустимы только [A-Za-z0-9._-]", file=sys.stderr)
@@ -257,6 +249,7 @@ def apply_use(name: str) -> int:
     if not _emit_agent_artifacts(profile, name, allowed_text):
         return 1
     _start_gitleaks(profile, name)
+    print(f"профиль {name} ← {path.parent}")
     print(f"профиль {name} применён; тулчейны ставятся при старте toolbox")
     return 0
 
@@ -305,7 +298,7 @@ def _chat(full: bool) -> int:
     print(f"INGRESS:    {_ingress_url(env_map)}")
     print(f"Порты:      self-authed {env_map.get('SELF_AUTHED_PORTS', '')}; allowed {env_map.get('ALLOWED_PORTS', '')}")
     print(f"Preview:    {env_map.get('PREVIEW_ORIGIN', '')}")
-    print(f"Профили:    {', '.join(_available_profiles())}")
+    print(f"Профили:    {', '.join(profiles.available())}")
     if not full:
         print("--- чат-блок (маскированный) ---")
     _refresh_manifest_from_env()
@@ -344,7 +337,7 @@ def _start(name: str | None, with_preview: bool) -> int:
         )
     )
     print("=== Затем напиши задачу. ===")
-    print(f"(хост) профили: {', '.join(_available_profiles())}")
+    print(f"(хост) профили: {', '.join(profiles.available())}")
     return 0
 
 
@@ -377,8 +370,8 @@ def _issue_tokens() -> int:
     env_map = env.as_map()
     active = env_map.get("ACTIVE_PROFILE")
     if active:
-        profile_path = PROJECTS_DIR / f"{active}.json"
-        if profile_path.exists():
+        profile_path = profiles.find(active)
+        if profile_path is not None:
             try:
                 profile = _with_runner(profiles.load(profile_path), active)
             except (ValueError, OSError) as error:
@@ -398,9 +391,9 @@ def _issue_tokens() -> int:
 
 
 def _profile(target: str) -> int:
-    path = PROJECTS_DIR / f"{target}.json"
-    if not path.exists():
-        print(f"нет профиля {path}", file=sys.stderr)
+    path = profiles.find(target)
+    if path is None:
+        print(f"нет профиля {target}", file=sys.stderr)
         return 1
     sys.stdout.write(path.read_text(encoding="utf-8"))
     return 0
@@ -459,9 +452,9 @@ def _allow(port: int, ui: bool) -> int:
     if not active:
         print("нет активного профиля", file=sys.stderr)
         return 1
-    path = PROJECTS_DIR / f"{active}.json"
-    if not path.exists():
-        print(f"нет профиля {path}", file=sys.stderr)
+    path = profiles.find(active)
+    if path is None:
+        print(f"нет профиля {active}", file=sys.stderr)
         return 1
     if port < 1 or port > 65535:
         print(f"порт {port} вне 1-65535", file=sys.stderr)

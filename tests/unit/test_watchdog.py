@@ -11,7 +11,7 @@ def _wire(monkeypatch, tmp_path, dead=False, ingress_up=True, ps="rdm-toolbox he
     projects.mkdir(exist_ok=True)
     (projects / "p1.json").write_text(json.dumps({"project_dir": str(tmp_path), "git_name": "a", "git_email": "a@b"}), encoding="utf-8")
     calls: dict[str, list] = {"compose": [], "restart": [], "ingress_start": []}
-    monkeypatch.setattr(watchdog, "_PROJECTS", projects)
+    monkeypatch.setenv("RDM_PROJECTS_DIR", str(projects))
     monkeypatch.setattr("rdm.cli.ENV_FILE", tmp_path / ".env")
     monkeypatch.setattr(watchdog, "_log", lambda path, message: None)
     monkeypatch.setattr(watchdog.netprobe, "ingress_url", lambda env_map, compose_file=None: "https://x")
@@ -92,7 +92,7 @@ def test_watchdog_keeps_ingress_when_origin_alive(monkeypatch, tmp_path):
 def _wire_manifest(monkeypatch, tmp_path):
     log_root = tmp_path / "rdm-host"
     manifest_path = log_root / "rdm-manifest.json"
-    monkeypatch.setattr("rdm.cli.PROJECTS_DIR", tmp_path / "projects")
+    monkeypatch.setenv("RDM_PROJECTS_DIR", str(tmp_path / "projects"))
     monkeypatch.setattr("rdm.cli.LOG_ROOT", log_root)
     monkeypatch.setattr("rdm.cli.MANIFEST_PATH", manifest_path)
     log_root.mkdir(parents=True)

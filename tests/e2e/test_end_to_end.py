@@ -27,8 +27,8 @@ def test_entrypoint_help():
     assert "issue-tokens" in result.stdout
 
 
-def test_entrypoint_profile_show_muffin():
-    result = _run("profile", "show", "muffin")
+def test_entrypoint_profile_show_example_service():
+    result = _run("profile", "show", "example-service")
     assert result.returncode == 0
     assert '"project_dir"' in result.stdout
 
@@ -36,7 +36,7 @@ def test_entrypoint_profile_show_muffin():
 def test_profile_show_survives_cp1252_console():
     env = {**os.environ, "PYTHONIOENCODING": "cp1252"}
     result = subprocess.run(
-        [sys.executable, str(DEVOBOX), "profile", "show", "muffin"],
+        [sys.executable, str(DEVOBOX), "profile", "show", "example-service"],
         capture_output=True,
         text=True,
         encoding="utf-8",
