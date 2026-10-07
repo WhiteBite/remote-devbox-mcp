@@ -128,6 +128,13 @@ supervisor как `remote`-серверы (`Authorization: Bearer {env:MCP_PUBLI
 Stdio-only клиенты (Codex-класс):
 `npx mcp-remote <url> --header "Authorization: Bearer <token>"`.
 
+Локальный OpenCode: скилл — в `~/.config/opencode/skills/remote-devbox/` (или
+`.opencode/skills/` проекта), опциональный плагин
+[arena/opencode-plugin/](arena/opencode-plugin/README.md) — env-инъекция и
+регистрация моста через SDK (`client.mcp.add`). `.well-known/opencode` — канал
+анонса дефолтных MCP-серверов; bearer-токен в нём размещать нельзя: файл
+публичный.
+
 ## Безопасность
 
 Токен даёт доступ к папке проекта через туннель — фактически удалённый shell

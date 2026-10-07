@@ -205,8 +205,10 @@ For a **local** OpenCode install driving the devbox:
   `<server>_<tool>`; gate them with `permission` globs (e.g. `"devboxbridge_*": false`).
 - Optional plugin `arena/opencode-plugin/devbox.ts`: injects `MCP_URL`/`MCP_TOKEN`
   into the agent shell (so `./mcp` works without a conf file), blocks secret
-  reads, and with `DEVBOX_READONLY=1` blocks the devbox server's mutating tools.
-  Example, not covered by the repo test suite.
+  reads, and with `DEVBOX_READONLY=1` blocks the devbox server's mutating tools;
+  with `DEVBOX_REGISTER_MCP=1` it also registers the bridge as the local stdio
+  server `devbox-bridge` via the SDK (`client.mcp.add`, the same `POST /mcp`
+  the serve API exposes). Example, not covered by the repo test suite.
 - A running `opencode serve` can register a server dynamically via its API
   `POST /mcp` with `{name, config}`.
 - `.well-known/opencode` is an organization announce channel for MCP defaults —

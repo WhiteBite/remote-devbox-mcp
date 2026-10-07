@@ -17,7 +17,7 @@
 | `mcp.conf.example` | шаблон конфига |
 | `mcp-stdio-adapter.py` | мост devbox как обычный MCP-сервер по stdio (OpenCode/Claude-класс); мутации — с `--trust`, `--readonly` отказывает |
 | `mcp-config.example.json` | готовый MCP-конфиг для OpenCode/Claude-класса: runner/supervisor напрямую, мост через stdio-адаптер |
-| `opencode-plugin/` | опциональный OpenCode-плагин (пример): проброс env-переменных и блокировка чтения секретов |
+| `opencode-plugin/` | опциональный OpenCode-плагин (пример): проброс env-переменных, блокировка чтения секретов, регистрация моста через `client.mcp.add` |
 | `AGENT_INSTRUCTIONS.md` | правила работы агента с машиной пользователя (тулы, джобы, ограничения) |
 | `TOOLS.md` | канонический список тулов моста: 9 native + 2 control |
 | `SANDBOX_FACTS.md` | замеренные факты о песочнице агента: права, сеть, персистентность, лимиты |
@@ -67,3 +67,12 @@ MCP_RETRIES=6
 `permission: {id, permission, patterns}`, управляющие тулы
 `opencode_permission_reply` / `opencode_job_result`, код возврата bash в
 `result.metadata.exit`, путь обрезанного вывода в `metadata.outputPath`.
+
+## OpenCode
+
+Локальный OpenCode: скилл — `~/.config/opencode/skills/remote-devbox/SKILL.md`
+(или `.opencode/skills/` в проекте), MCP-серверы — из `mcp-config.example.json`,
+опциональный плагин — `opencode-plugin/` (env-инъекция, блокировка секретов,
+регистрация моста через `client.mcp.add`). `.well-known/opencode` — канал
+анонса дефолтных MCP-серверов организацией; bearer-токен в нём размещать
+нельзя: файл публичный.
