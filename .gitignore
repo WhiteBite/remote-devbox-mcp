@@ -18,3 +18,4 @@ build/
 *.egg-info/
 .ruff_cache/
 .codenomad/
+.playwright-mcp/

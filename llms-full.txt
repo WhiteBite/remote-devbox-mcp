@@ -23,40 +23,56 @@ Cloudflare-туннель и правит код, собирает и тести
 
 ```bash
 git clone https://github.com/WhiteBite/remote-devbox-mcp
-cd remote-devbox-mcp/home
+cd remote-devbox-mcp
+python -m pip install -r requirements.txt   # host-зависимости: psutil, mcp
+cd home
 copy .env.example .env           # заполнить PROJECT_DIR и токены
 python devbox.py start muffin     # профиль + стек + ingress + блок для агента
-python -m pytest -q               # проверить окружение
 ```
 
 Публичный вход: `docker compose logs cloudflared-ingress | Select-String trycloudflare`.
 Дальше агенту отдаётся `INGRESS` + токены — полный цикл в `ARENA.md`.
+Проверка окружения (pytest/ruff) — в разделе «Разработка».
 
 ```
 ┌─ home/  → ставится на ТВОЙ комп (Windows + Docker Desktop)
 │   docker-compose.yml             toolbox + встроенный VPN (VLESS) + туннели cloudflared
-│   docker/toolbox.Dockerfile      образ: мост к тулам OpenCode (стеково-нейтральный;
-│                                  JDK 21 / Flutter — опциональные build-args)
+│   docker/toolbox.Dockerfile      образ: мост к 9 нативным тулам OpenCode (стеково-нейтральный)
+│   docker/toolchain.sh            идемпотентная установка TOOLCHAIN в /opt/tools (volume)
+│   docker/toolchains/            java21.sh, flutter.sh — опциональные тулчейны
 │   docker/vpn.Dockerfile          sing-box TUN-сайдкар: туннели едут через VLESS,
-│                                  DPI провайдера до туннеля не достаёт
 │   docker/vpn-entrypoint.sh       подписка → конфиг sing-box, пробинг и ротация серверов
+│   docker/gitleaks.toml           конфиг фонового скана секретов проекта
 │   .env.example                   → скопировать в .env, заполнить PROJECT_DIR и токен
-│   devbox.py / devbox.cmd       ядро (Python): профили, host-сервисы, ingress, doctor
-│   devbox.ps1                   тонкий шим к devbox.py
-│   rdm/                         core-пакет: envfile, hostos, profiles, proxy, render,
-│                                procman, doctor, watchdog, runner
-│   host/runner-mcp.py           шим к rdm.runner (host-MCP команд проекта)
-│   SECURITY.md                  что запрещено монтировать, про изоляцию честно
+│   devbox.py / devbox.cmd / devbox.ps1   ядро (Python): профили, host-сервисы, ingress, doctor
+│   tray.py                        трей-пульт (requirements-tray.txt), запуск через tray.cmd
+│   rdm/                           core-пакет: cli, profiles, render, envfile, ports, procman,
+│                                  hostos, docker, netprobe, freeze, tokens, tunnels, doctor,
+│                                  watchdog, proxy/ (ingress), runner/ (host-MCP)
+│   host/runner-mcp.py             шим к rdm.runner (host-MCP команд проекта)
+│   README.md                      подробный ранбук по установке и эксплуатации
+│   SECURITY.md                    что запрещено монтировать, про изоляцию честно
 │
 ├─ projects/ → профили проектов (project_dir, тулчейны, host-сервисы), JSON
-│   muffin.json, _template.json
+│   muffin.json, midasai.json, _template.json
 │
-└─ arena/ → сторона агента (скачивает сам, ничего ставить не нужно)
-    mcp_client.py             MCP-клиент на чистом Python (stdlib, 3.10+)
-    mcp                       обёртка: ./mcp run --auto edit '{...}'
-    mcp.conf.example          → ~/.remote-devbox-mcp.conf (URL + токен)
-    AGENT_INSTRUCTIONS.md     правила, по которым агент работает с твоим компом
-    SANDBOX_FACTS.md          замеренные факты о песочнице агента
+├─ arena/ → сторона агента (скачивает сам, ничего ставить не нужно)
+│   mcp_client.py             MCP-клиент на чистом Python (stdlib, 3.10+)
+│   mcp                       обёртка: ./mcp run --auto edit '{...}'
+│   mcp.conf.example          → ~/.remote-devbox-mcp.conf (URL + токен)
+│   mcp-stdio-adapter.py      мост как обычный MCP-сервер по stdio (--trust / --readonly)
+│   mcp-config.example.json   готовый MCP-конфиг для OpenCode/Claude-класса
+│   opencode-plugin/          опциональный OpenCode-плагин (пример)
+│   AGENT_INSTRUCTIONS.md     правила, по которым агент работает с твоим компом
+│   TOOLS.md                  канонический список тулов моста (9 native + 2 control)
+│   SANDBOX_FACTS.md          замеренные факты о песочнице агента
+│
+├─ skills/remote-devbox/SKILL.md   агент-скилл (arena.ai и подобные MCP-клиенты)
+├─ scripts/                   build_exe.py + entrypoints frozen-сборки
+├─ .github/workflows/         tests, build (exe по тегу v*), rdk-audit
+├─ docs/, llms.txt            AEO/LLM-артефакты, генерируются из .discoverability/
+├─ start.cmd / tray.cmd       лончеры из корня репо (делегируют в home/)
+└─ ARENA.md                   полная инструкция для стороннего агента
 ```
 
 ## Разделение труда
@@ -68,6 +84,19 @@ python -m pytest -q               # проверить окружение
 - **Песочница агента:** вспомогательные тулы — playwright + chromium,
   codegraph, конвертеры — агент ставит у себя через bash и дёргает локально,
   в devbox-образ они не попадают (`arena/SANDBOX_FACTS.md`).
+
+## Установка без Python (готовый exe)
+
+Сборки — в [Releases](https://github.com/WhiteBite/remote-devbox-mcp/releases):
+`devbox-windows-x64.zip` / `devbox-linux-x64.zip`. Распакуй, `home\.env.example`
+скопируй в `home\.env` и заполни — дальше как в quickstart, только вместо
+`python devbox.py` — `home\devbox.exe` (в Windows есть и `devbox-tray.exe` —
+трей-пульт без консоли). Артефакт повторяет layout репозитория (`home/` +
+`projects/`), поэтому compose-проект и volumes общие с исходниковым запуском.
+Локальная сборка: `python scripts/build_exe.py` (pyinstaller — в
+requirements-dev.txt); CI собирает то же самое по тегу `v*`. Из исходников те же
+действия доступны из корня репо: `start.cmd` (то же, что `home\devbox.cmd start`)
+и `tray.cmd`.
 
 ## Порядок действий
 
@@ -99,6 +128,17 @@ cp arena/mcp.conf.example ~/.remote-devbox-mcp.conf   # вписать URL и т
 cd arena && chmod +x mcp && ./mcp check
 ```
 
+Клиентам OpenCode/Claude-класса — готовый конфиг
+[arena/mcp-config.example.json](arena/mcp-config.example.json): runner и
+supervisor как `remote`-серверы (`Authorization: Bearer {env:MCP_PUBLIC_TOKEN}`),
+мост — через stdio-адаптер `arena/mcp-stdio-adapter.py` с `--trust`
+(одобряет мутации; `--readonly` — отказывает). Соответствие имён токенов:
+`MCP_TOKEN` конфига арены = `MCP_BEARER_TOKEN` из `home/.env` (мост),
+`HOST_TOKEN` = `MCP_PUBLIC_TOKEN` (runner и host-сервисы со своей авторизацией),
+`INGRESS_TOKEN` закрывает весь HTTP `/p/<порт>`, включая `/p/9000/manifest.json`.
+Stdio-only клиенты (Codex-класс):
+`npx mcp-remote <url> --header "Authorization: Bearer <token>"`.
+
 ## Безопасность
 
 Токен даёт доступ к папке проекта через туннель — фактически удалённый shell
@@ -106,6 +146,18 @@ cd arena && chmod +x mcp && ./mcp check
 Не публикуй URL, а по завершении работы поменяй `MCP_BEARER_TOKEN` в `.env`
 и выполни `docker compose up -d`. Остановить всё одной командой:
 `docker compose down`.
+
+## Разработка / Development
+
+```bash
+python -m pip install -r requirements-dev.txt   # host deps + pytest, ruff, pyinstaller
+python -m pytest                                 # tests/unit, tests/integration, tests/e2e
+python -m ruff check home arena tests            # линт (конфиг в pyproject.toml)
+python scripts/build_exe.py                      # локальная frozen-сборка в dist/
+```
+
+`tests/unit/test_docs_sync.py` сверяет exit-коды в `ARENA.md` с константами
+`arena/mcp_client.py` — правка одной стороны без другой валит тест.
 
 ## Статус / Status
 
@@ -115,14 +167,17 @@ cd arena && chmod +x mcp && ./mcp check
 
 ## Лицензия
 
-MIT — см. [LICENSE](LICENSE).
+MIT — см. [LICENSE](LICENSE). JSON-LD-описание репозитория — [docs/jsonld.jsonld](docs/jsonld.jsonld).
 
 ## Для кого это / Who is it for
 
 Для разработчика с Windows-машиной и Docker Desktop, который хочет, чтобы
-внешний кодинг-агент (arena.ai, Claude, Codex — любой MCP-клиент) собирал,
+внешний кодинг-агент (arena.ai, Claude, Codex и другие MCP-клиенты) собирал,
 тестировал и правил код **на его собственном железе**, а не в одноразовой
-облачной песочнице без доступа к реальному проекту.
+облачной песочнице без доступа к реальному проекту. Класс клиента имеет
+значение: чтение работает у всех, мутации — через arena-клиент (`--auto`),
+stdio-адаптер (`--trust`) или режим профиля `full`; матрица возможностей —
+`ARENA.md`.
 
 ## Сценарии / Use cases
 

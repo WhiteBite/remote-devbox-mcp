@@ -21,6 +21,8 @@ use_cases:
   - "run Windows-native host commands via runner-MCP with argv-only, validated arguments and an audit log"
   - "switch project profiles with one command while the tunnel URL stays the same"
   - "read-only audit sessions where mutations are denied by permission mode"
+  - "drive the devbox from a stock MCP client (OpenCode/Codex/Claude) through a stdio adapter"
+  - "discover every endpoint from a machine-readable manifest with per-endpoint token roles"
 
 keywords:
   github_topics:
@@ -56,6 +58,7 @@ differentiators:
   - "outbound-only Cloudflare tunnel, no router port forwarding; built-in VLESS sidecar works around DPI interference"
   - "per-project profiles with fail-closed mechanics: permission modes (readonly/standard/full), allowed ports, deny-mounts, audit-logged host commands"
   - "toolchains cached between projects in a /opt/tools volume - no image rebuilds"
+  - "endpoint manifest with token roles and callable runner tool names, refreshed on every handoff; stdio MCP adapter so stock MCP clients can run mutating tools"
 
 safety:
   allow_autofix: false          # lets the Action open autofix PRs
