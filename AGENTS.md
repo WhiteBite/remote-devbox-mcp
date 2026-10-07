@@ -35,7 +35,8 @@ then `tray.cmd`.
 | --- | --- |
 | `home/` | host side: `devbox.py` + `rdm/` core package, `tray.py`, compose stack, `host/runner-mcp.py` |
 | `home/README.md` | detailed install/run runbook (Windows), ingress and named-tunnel setup |
-| `home/rdm/` | core: cli, profiles, render, envfile, ports, procman, hostos, docker, netprobe, freeze, tokens, tunnels, doctor, watchdog, `proxy/` (ingress), `runner/` (host-MCP) |
+| `home/rdm/` | core: cli, profiles, render, envfile, ports, procman, hostos, docker, netprobe, freeze, tokens, tunnels, doctor, watchdog, `proxy/` (ingress), `runner/` (host-MCP), `ui/` (cockpit server), `events/` (metadata-only JSONL event sink), `redact.py` (secret masking) |
+| `home/ui-static/` | cockpit static assets (`index.html`, `app.js`, `style.css`) |
 | `arena/` | agent-side stdlib MCP client (`mcp_client.py`, `mcp`), `AGENT_INSTRUCTIONS.md`, `TOOLS.md` (canonical tool list), `SANDBOX_FACTS.md`, `README.md` |
 | `skills/remote-devbox/` | agent skill describing how to drive the devbox |
 | `projects/` | profile template + sanitized examples (`_template.json`, `example-*.json`); personal profiles live outside the repo |

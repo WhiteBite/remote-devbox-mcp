@@ -252,7 +252,7 @@ Ingress rout'ит только порты из `$AllowedPorts` профиля + 
 
 Стоп: `devbox.py ingress stop` (только записанный pid, сверяя cmdline).
 
-## 12. Эксплуатация: start/preview/doctor/watch/info/share/issue-tokens
+## 12. Эксплуатация: start/preview/doctor/watch/info/share/issue-tokens/cockpit
 
 - `start [<имя>] [--preview]` — поднять всё и напечатать готовый блок для агента
   (репо + скилл + INGRESS + токены + PREVIEW); `--preview` поднимает preview-туннель.
@@ -265,6 +265,8 @@ Ingress rout'ит только порты из `$AllowedPorts` профиля + 
 - `share` — только чат-блок с полными текущими значениями.
 - `issue-tokens` — ротация трёх токенов + рестарт цепи + чат-блок.
   Каденция: на каждую новую сессию агента; revocation = stop-host + ingress stop.
+- `cockpit` — поднимает локальный UI (127.0.0.1, наружу не роутится) и печатает
+  одноразовый URL; процесс принадлежит procman и переживает выход из трея.
 - `use` дополнительно: валидация профиля R1–R33 fail-fast; рендер
   `OPENCODE_MCP_PERMISSIONS` из `$Mode` (readonly/standard/full); gitleaks
   скан секретов проекта в фоне (отчёт `%TEMP%\rdm-host\gitleaks-<profile>.json`,

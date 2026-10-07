@@ -23,6 +23,7 @@ use_cases:
   - "read-only audit sessions where mutations are denied by permission mode"
   - "drive the devbox from a stock MCP client (OpenCode/Codex/Claude) through a stdio adapter"
   - "discover every endpoint from a machine-readable manifest with per-endpoint token roles"
+  - "watch what the agent calls (tools/jobs/permissions) in a local loopback cockpit"
 
 keywords:
   github_topics:

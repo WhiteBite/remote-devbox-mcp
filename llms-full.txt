@@ -52,7 +52,11 @@ python devbox.py start <имя>     # профиль + стек + ingress + бл
 │   tray.py                        трей-пульт (requirements-tray.txt), запуск через tray.cmd
 │   rdm/                           core-пакет: cli, profiles, render, envfile, ports, procman,
 │                                  hostos, docker, netprobe, freeze, tokens, tunnels, doctor,
-│                                  watchdog, proxy/ (ingress), runner/ (host-MCP)
+│                                  watchdog, proxy/ (ingress), runner/ (host-MCP),
+│                                  ui/ (cockpit-сервер: loopback HTTP + SSE),
+│                                  events/ (metadata-only JSONL событий агентских вызовов),
+│                                  redact.py (маскировка секретов в аудит-логе и событиях)
+│   ui-static/                     статика cockpit (index.html, app.js, style.css)
 │   host/runner-mcp.py             шим к rdm.runner (host-MCP команд проекта)
 │   README.md                      подробный ранбук по установке и эксплуатации
 │   SECURITY.md                    что запрещено монтировать, про изоляцию честно
@@ -159,6 +163,18 @@ Stdio-only клиенты (Codex-класс):
 Не публикуй URL, а по завершении работы поменяй `MCP_BEARER_TOKEN` в `.env`
 и выполни `docker compose up -d`. Остановить всё одной командой:
 `docker compose down`.
+
+## Локальный cockpit
+
+`devbox cockpit` (`python devbox.py cockpit`, из кода — `devbox.py`) поднимает
+локальный наблюдательный UI: видно, что агент дёргает (тулы, джобы, разрешения),
+статус стека, логи и diff. Сервер слушает только `127.0.0.1` и **никогда не
+роутится через ingress**: cockpit-порт защищён профилем (R35) и doctor'ом,
+`allow <cockpit-порт>` отказывает. `ui` — внутренняя скрытая подкоманда
+(spawn от procman), открывать её руками не нужно; вход — из трея
+(«Открыть cockpit») или по одноразовому URL с bootstrap-токеном, который
+печатает команда и открывает в браузере. Секреты в логах и событиях маскируются
+(`rdm/redact.py`).
 
 ## Разработка / Development
 
