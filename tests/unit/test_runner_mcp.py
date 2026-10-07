@@ -70,7 +70,9 @@ def test_cmd_shim_args_roundtrip_through_real_cmd(tmp_path, monkeypatch):
     for value in ["plain", "c d", "a&b", "x<y", "p(1)", "a^b", "a & b"]:
         resolved = main._resolve(["echo-args", value], tmp_path)
         assert isinstance(resolved, str)
-        result = subprocess.run(resolved, capture_output=True, text=True, timeout=60, cwd=tmp_path)
+        result = subprocess.run(
+            resolved, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60, cwd=tmp_path
+        )
         assert result.returncode == 0, result.stderr
         assert json.loads(result.stdout) == [value], value
 

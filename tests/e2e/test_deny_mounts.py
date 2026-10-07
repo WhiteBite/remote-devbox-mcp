@@ -9,7 +9,9 @@ pytestmark = pytest.mark.skipif(shutil.which("docker") is None, reason="docker n
 
 
 def _docker(*args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(["docker", *args], capture_output=True, text=True, timeout=180)
+    return subprocess.run(
+        ["docker", *args], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=180
+    )
 
 
 def _require_image(name: str) -> None:
