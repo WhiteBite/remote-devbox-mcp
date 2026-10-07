@@ -46,6 +46,14 @@ def test_kill_tree_call_sites_only_in_lifecycle_owners():
     assert offenders == []
 
 
+def test_secretish_defined_only_in_redact_module():
+    offenders = [
+        path for path in _py_sources()
+        if "SECRETISH" in path.read_text(encoding="utf-8") and path.name != "redact.py"
+    ]
+    assert offenders == []
+
+
 def test_port_policy_computed_only_in_ports_module():
     allowed = {"ports.py", "cli.py", "render.py", "server.py", "__main__.py", "envfile.py"}
     offenders = [

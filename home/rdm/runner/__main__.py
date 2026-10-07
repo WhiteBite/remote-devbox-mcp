@@ -29,8 +29,9 @@ from mcp.server.fastmcp import FastMCP
 
 from rdm import hostos
 from rdm.profiles import runner_kill_tool_name, runner_tool_name
+from rdm.redact import redact_argv
 from rdm.runner.audit import _audit
-from rdm.runner.policy import _check_args, _check_cmd_shim, _redact_argv
+from rdm.runner.policy import _check_args, _check_cmd_shim
 
 
 @dataclass(frozen=True)
@@ -142,7 +143,7 @@ def _make_tool(name: str, spec: dict, ctx: _Ctx):
         present = {k: v for k, v in kwargs.items() if v is not None}
         _check_args(present.values())
         argv = _build_argv(spec, present)
-        _audit({"tool": name, "argv": _redact_argv(argv)}, ctx.run_dir)
+        _audit({"tool": name, "argv": redact_argv(argv)}, ctx.run_dir)
         resolved = _resolve(argv, ctx.cwd)
         if isinstance(resolved, str):
             _check_cmd_shim(argv[1:])

@@ -5,19 +5,17 @@ exec-векторы отклоняются даже внутри разрешё�
 import re
 from collections.abc import Iterable
 
+from rdm.redact import (
+    redact_argv as _redact_argv,  # noqa: F401 — seam: test_runner_mcp.py импортирует это имя из policy
+)
+
 DENY_ARG = [
     r"find\b.*-exec", r"\bxargs\b", r"awk\b.*system\s*\(",
     r"tar\b.*--checkpoint-action", r"\bgit\s+-c\b",
     r"Invoke-Expression", r"\biex\b", r"certutil\s+-urlcache",
     r"(curl|wget)\b.*\|\s*(sh|bash|powershell|pwsh)",
 ]
-SECRETISH = re.compile(
-    r"(token|key|secret|password|passwd|bearer)\s*[=:]\s*\S+|^[A-Fa-f0-9]{32,}$", re.I)
 CMD_UNSAFE = re.compile(r'[%!"\r\n]')
-
-
-def _redact_argv(argv: Iterable[str]) -> list[str]:
-    return ["[REDACTED]" if SECRETISH.search(a) else a for a in argv]
 
 
 def _check_args(values: Iterable[object]) -> None:
