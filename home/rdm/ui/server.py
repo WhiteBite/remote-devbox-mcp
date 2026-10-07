@@ -1,4 +1,4 @@
-"""Cockpit UI HTTP server: loopback-only, read-only endpoints over host state."""
+"""Cockpit UI HTTP server: loopback-only endpoints over host state."""
 
 from __future__ import annotations
 
@@ -7,11 +7,12 @@ import pathlib
 import threading
 import time
 import urllib.parse
+from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from rdm import cli, docker, envfile, hostos, netprobe, procman, profiles, redact, tokens
 from rdm.events import jobs, sink
-from rdm.ui import auth, static
+from rdm.ui import auth, control, static
 
 LOOPBACK_HOST = "127.0.0.1"
 STATUS_TTL_SECONDS = 3.0
@@ -29,6 +30,7 @@ _LOG_SOURCES: dict[str, tuple[str, ...]] = {
 _SENSITIVE_MARKERS = ("TOKEN", "SECRET", "PASSWORD")
 _SENSITIVE_KEYS = ("VLESS_SUB_URL", "TUNNEL_TAIL")
 _PROFILE_PREFIX = "/api/profile/"
+_ACTION_PREFIX = "/api/action/"
 
 
 def _load_profile(active: str) -> profiles.Profile | None:
@@ -182,11 +184,52 @@ def _permissions_payload() -> dict[str, object]:
     return {"permissions": permissions, "stalled": jobs.stall_alarm(events, time.time())}
 
 
+def _plan_use(body: dict[str, object]) -> tuple[Callable[..., int], tuple[object, ...]]:
+    name = body.get("name")
+    if not isinstance(name, str) or not name:
+        raise ValueError("name must be a non-empty string")
+    return control.apply_use, (name,)
+
+
+def _plan_allow(body: dict[str, object]) -> tuple[Callable[..., int], tuple[object, ...]]:
+    port = body.get("port")
+    ui = body.get("ui", False)
+    if not isinstance(port, int) or isinstance(port, bool):
+        raise ValueError("port must be an integer")
+    if not isinstance(ui, bool):
+        raise ValueError("ui must be a boolean")
+    return control.allow_port, (port, ui)
+
+
+def _plan_start(body: dict[str, object]) -> tuple[Callable[..., int], tuple[object, ...]]:
+    name = body.get("name")
+    preview = body.get("preview", False)
+    if name is not None and not isinstance(name, str):
+        raise ValueError("name must be a string")
+    if not isinstance(preview, bool):
+        raise ValueError("preview must be a boolean")
+    return control.start, (name, preview)
+
+
+_ACTION_PLANS: dict[str, Callable[[dict[str, object]], tuple[Callable[..., int], tuple[object, ...]]]] = {
+    "use": _plan_use,
+    "allow": _plan_allow,
+    "start": _plan_start,
+    "issue-tokens": lambda body: (control.issue_tokens, ()),
+    "doctor": lambda body: (control.run_doctor, ()),
+    "down": lambda body: (control.down, ()),
+    "stop-host": lambda body: (control.stop_host, ()),
+    "ingress-start": lambda body: (control.ingress, ("start",)),
+    "ingress-stop": lambda body: (control.ingress, ("stop",)),
+}
+
+
 class CockpitServer(ThreadingHTTPServer):
     daemon_threads = True
 
     def __init__(self, port: int, sessions: auth.SessionStore) -> None:
         self.sessions = sessions
+        self.actions = control.ActionQueue()
         self._status_lock = threading.Lock()
         self._status_cache: dict[str, object] | None = None
         self._status_at = 0.0
@@ -297,6 +340,24 @@ class _Handler(BaseHTTPRequestHandler):
         else:
             self._json(404, {"error": "not found"})
 
+    def do_POST(self) -> None:
+        self.close_connection = True
+        split = urllib.parse.urlsplit(self.path)
+        if not auth.host_origin_ok(self._header_map(), self.server.server_address[1]):
+            self._json(403, {"error": "forbidden", "hint": "Host/Origin must be loopback"})
+            return
+        session = self._session_token()
+        if session is None:
+            self._json(401, {"error": "unauthorized"})
+            return
+        if not self._header_token_ok():
+            self._json(403, {"error": "action requires a valid header token"})
+            return
+        if split.path.startswith(_ACTION_PREFIX):
+            self._api_action(split.path)
+        else:
+            self._json(404, {"error": "not found"})
+
     def _profile_target(self, path: str) -> tuple[str, pathlib.Path] | None:
         name = path[len(_PROFILE_PREFIX):]
         if not cli._NAME_RE.fullmatch(name):
@@ -336,6 +397,32 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(400, {"error": str(error)})
             return
         self._json(200, {"name": name, "path": str(resolved)})
+
+    def _api_action(self, path: str) -> None:
+        plan = _ACTION_PLANS.get(path[len(_ACTION_PREFIX):])
+        if plan is None:
+            self._json(404, {"error": "unknown action"})
+            return
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            data = json.loads(self.rfile.read(length)) if length > 0 else None
+        except ValueError:
+            self._json(400, {"error": "body must be valid JSON"})
+            return
+        body = {} if data is None else data
+        if not isinstance(body, dict):
+            self._json(400, {"error": "body must be a JSON object"})
+            return
+        try:
+            fn, args = plan(body)
+        except ValueError as error:
+            self._json(400, {"error": str(error)})
+            return
+        action_id = self.server.actions.submit(fn, *args)
+        if action_id is None:
+            self._json(409, {"error": "another action is already running"})
+            return
+        self._json(202, {"action_id": action_id})
 
     def _api_logs(self, query: str) -> None:
         params = urllib.parse.parse_qs(query)
