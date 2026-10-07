@@ -3,8 +3,9 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import time
 
-from rdm import cli
+from rdm import cli, hostos, ports, procman
 
 
 def _profile_json(root, **overrides) -> str:
@@ -465,3 +466,70 @@ def test_issue_tokens_refreshes_stale_manifest(monkeypatch, tmp_path):
     assert cli.main(["issue-tokens"]) == 0
     manifest = json.loads(cli.MANIFEST_PATH.read_text(encoding="utf-8"))
     assert manifest["ingress_url"] == "https://devbox.example.test"
+
+
+def test_devbox_ui_subcommand_delegates(monkeypatch):
+    import rdm.ui.__main__ as ui_main
+
+    seen: list[list[str]] = []
+    monkeypatch.setattr(ui_main, "main", lambda: seen.append(sys.argv))
+    assert cli.main(["ui", "--server"]) == 0
+    assert seen[0][:1] == ["rdm.ui"]
+    assert "--server" in seen[0]
+
+
+def test_cockpit_starts_ui_prints_url_and_fails_when_unreachable(monkeypatch, tmp_path, capsys):
+    _setup(monkeypatch, tmp_path)
+    started: list[tuple[dict[str, str], object]] = []
+    connects: list[int] = []
+    opened: list[str] = []
+    monkeypatch.setattr(cli.procman, "start_ui", lambda env_map, home_dir: started.append((env_map, home_dir)) or 123)
+    monkeypatch.setattr(cli.netprobe, "can_connect", lambda port: connects.append(port) or True)
+    monkeypatch.setattr(cli.auth, "write_bootstrap", lambda: "boot-token")
+    monkeypatch.setattr(cli.webbrowser, "open", lambda url: opened.append(url) or True)
+    assert cli.main(["cockpit"]) == 0
+    url = f"http://127.0.0.1:{ports.COCKPIT_PORT}/?t=boot-token"
+    out = capsys.readouterr().out
+    assert len(started) == 1 and started[0][1] == cli.HOME_DIR
+    assert connects == [ports.COCKPIT_PORT]
+    assert url in out
+    assert opened == [url]
+
+    monkeypatch.setattr(cli.netprobe, "can_connect", lambda port: False)
+    monkeypatch.setattr(cli, "_COCKPIT_WAIT_SECONDS", 0.0)
+    assert cli.main(["cockpit"]) != 0
+    assert capsys.readouterr().out == ""
+    assert opened == [url]
+
+
+_SLEEP_60 = "import time; time.sleep(60)"
+
+
+def test_stop_ui_kills_owned_pid(monkeypatch, tmp_path):
+    state = tmp_path / "ui-state"
+    monkeypatch.setenv("RDM_UI_STATE_DIR", str(state))
+    pid = hostos.spawn([sys.executable, "-c", _SLEEP_60, "ui --server"])
+    state.mkdir(parents=True)
+    (state / "pids.txt").write_text(f"{pid}|{hostos.create_time(pid)}|ui --server\n", encoding="utf-8")
+    procman.stop_ui()
+    deadline = time.monotonic() + 10.0
+    while hostos.create_time(pid) is not None and time.monotonic() < deadline:
+        time.sleep(0.1)
+    assert hostos.create_time(pid) is None
+    assert not (state / "pids.txt").exists()
+
+
+def test_stop_ui_spares_pid_with_foreign_marker(monkeypatch, tmp_path):
+    state = tmp_path / "ui-state"
+    monkeypatch.setenv("RDM_UI_STATE_DIR", str(state))
+    pid = hostos.spawn([sys.executable, "-c", _SLEEP_60])
+    try:
+        state.mkdir(parents=True)
+        (state / "pids.txt").write_text(
+            f"{pid}|{hostos.create_time(pid) + 99999.0}|not-our-marker\n", encoding="utf-8"
+        )
+        procman.stop_ui()
+        assert hostos.create_time(pid) is not None
+        assert not (state / "pids.txt").exists()
+    finally:
+        hostos.kill_tree(pid)

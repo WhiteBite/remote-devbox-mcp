@@ -9,12 +9,16 @@ import sys
 
 from rdm import hostos
 from rdm.freeze import spawn_entry
+from rdm.ports import COCKPIT_PORT
 from rdm.profiles import Profile
+from rdm.ui import auth
 
 DEFAULT_PROXY_ARGV = spawn_entry("proxy", "--mode", "target")
 INGRESS_ARGV = spawn_entry("proxy", "--mode", "ingress")
 INGRESS_PORT = 8799
+UI_ARGV = spawn_entry("ui", "--server")
 _PROXY_MARKER = "proxy --mode"
+_UI_MARKER = "ui --server"
 _RUNNER_MARKER = " runner" if getattr(sys, "frozen", False) else "runner-mcp.py"
 
 
@@ -61,7 +65,11 @@ def _free_port(port: int) -> None:
     pid = hostos.find_pid_by_port(port)
     if pid is None:
         return
-    if hostos.cmdline_matches(pid, _RUNNER_MARKER) or hostos.cmdline_matches(pid, _PROXY_MARKER):
+    if (
+        hostos.cmdline_matches(pid, _RUNNER_MARKER)
+        or hostos.cmdline_matches(pid, _PROXY_MARKER)
+        or hostos.cmdline_matches(pid, _UI_MARKER)
+    ):
         hostos.kill_tree(pid)
 
 
@@ -162,5 +170,32 @@ def stop_ingress() -> None:
     path = hostos.tempdir() / "rdm-ingress" / "pids.txt"
     for pid, recorded, _ in _read_entries(path):
         if _owned(pid, recorded, _PROXY_MARKER):
+            hostos.kill_tree(pid)
+    path.unlink(missing_ok=True)
+
+
+def start_ui(env_map: dict[str, str], home_dir: pathlib.Path) -> int:
+    stop_ui()
+    _free_port(COCKPIT_PORT)
+    state_dir = auth.ui_state_dir()
+    state_dir.mkdir(parents=True, exist_ok=True)
+    env = {**os.environ, **env_map}
+    if not env.get("RDM_UI_PORT"):
+        env["RDM_UI_PORT"] = str(COCKPIT_PORT)
+    pid = hostos.spawn(
+        UI_ARGV,
+        cwd=home_dir,
+        stdout_path=state_dir / "ui.out",
+        stderr_path=state_dir / "ui.err",
+        env=env,
+    )
+    _write_entries(state_dir / "pids.txt", [(pid, hostos.create_time(pid), _UI_MARKER)])
+    return pid
+
+
+def stop_ui() -> None:
+    path = auth.ui_state_dir() / "pids.txt"
+    for pid, recorded, _ in _read_entries(path):
+        if _owned(pid, recorded, _UI_MARKER):
             hostos.kill_tree(pid)
     path.unlink(missing_ok=True)

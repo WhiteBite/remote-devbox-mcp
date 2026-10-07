@@ -9,8 +9,11 @@ import os
 import pathlib
 import re
 import sys
+import time
+import webbrowser
 
 from rdm import docker, envfile, freeze, hostos, netprobe, ports, procman, profiles, render, tokens, tunnels
+from rdm.ui import auth
 
 HOME_DIR = freeze.app_dir()
 ENV_FILE = HOME_DIR / ".env"
@@ -21,6 +24,7 @@ MANIFEST_PATH = LOG_ROOT / "rdm-manifest.json"
 BRIDGE_PORT = ports.BRIDGE_PORT
 INGRESS_PORT = 8799
 _NAME_RE = re.compile(r"[A-Za-z0-9._\-]+")
+_COCKPIT_WAIT_SECONDS = 5.0
 
 
 def _ingress_url(env_map: dict[str, str]) -> str:
@@ -408,6 +412,22 @@ def _ingress(action: str) -> int:
     return 0
 
 
+def _cockpit() -> int:
+    env_map = envfile.EnvFile.load(ENV_FILE).as_map()
+    procman.start_ui(env_map, HOME_DIR)
+    deadline = time.monotonic() + _COCKPIT_WAIT_SECONDS
+    while not netprobe.can_connect(ports.COCKPIT_PORT):
+        if time.monotonic() >= deadline:
+            print(f"cockpit не поднялся на 127.0.0.1:{ports.COCKPIT_PORT}", file=sys.stderr)
+            return 1
+        time.sleep(0.2)
+    token = auth.write_bootstrap()
+    url = f"http://127.0.0.1:{ports.COCKPIT_PORT}/?t={token}"
+    print(url)
+    webbrowser.open(url)
+    return 0
+
+
 def _block(masked: bool) -> int:
     env_map = envfile.EnvFile.load(ENV_FILE).as_map()
     print(
@@ -523,6 +543,12 @@ def _embedded(argv: list[str]) -> int:
 
         proxy_main()
         return 0
+    if argv[0] == "ui":
+        sys.argv = ["rdm.ui", *argv[1:]]
+        from rdm.ui.__main__ import main as ui_main
+
+        ui_main()
+        return 0
     from rdm.runner.__main__ import main as runner_main
 
     runner_main()
@@ -537,8 +563,8 @@ def main(argv: list[str] | None = None) -> int:
         except (AttributeError, ValueError):
             pass
     argv = sys.argv[1:] if argv is None else list(argv)
-    # скрытые подкоманды: spawn_entry запускает proxy/runner через этот же CLI
-    if argv and argv[0] in ("proxy", "runner"):
+    # скрытые подкоманды: spawn_entry запускает proxy/runner/ui через этот же CLI
+    if argv and argv[0] in ("proxy", "runner", "ui"):
         return _embedded(argv)
     parser = argparse.ArgumentParser(prog="devbox")
     sub = parser.add_subparsers(dest="command")
@@ -570,6 +596,7 @@ def main(argv: list[str] | None = None) -> int:
     allow = sub.add_parser("allow")
     allow.add_argument("port", type=int)
     allow.add_argument("--ui", action="store_true")
+    sub.add_parser("cockpit")
     args = parser.parse_args(argv)
 
     if args.command == "use":
@@ -604,4 +631,6 @@ def main(argv: list[str] | None = None) -> int:
         return _health()
     if args.command == "allow":
         return _allow(args.port, args.ui)
+    if args.command == "cockpit":
+        return _cockpit()
     return _status()
