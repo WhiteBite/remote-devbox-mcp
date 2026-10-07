@@ -25,6 +25,13 @@
 | `DEVBOX_RUNNER_URL` | `MCP_RUNNER_URL` |
 | `DEVBOX_RUNNER_TOKEN` | `MCP_RUNNER_TOKEN` |
 
+Поведение:
+
+| Переменная | Эффект |
+|---|---|
+| `DEVBOX_READONLY=1` | блокирует мутирующие тулы MCP-сервера devbox (`write`/`edit`/`apply_patch`/`bash`/`webfetch`) |
+| `DEVBOX_SERVER_PREFIX` | префикс имени MCP-сервера devbox у OpenCode (напр. `devbox_bridge_`); без него `DEVBOX_READONLY` не активен |
+
 Значения — из hand-off-блока: `MCP_URL=<INGRESS>/p/8787/mcp` +
 `MCP_TOKEN=<BRIDGE_TOKEN>`; runner — `<INGRESS>/p/<порт>/mcp` + `<HOST_TOKEN>`.
 

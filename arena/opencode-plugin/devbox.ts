@@ -8,6 +8,7 @@ const ENV_MAP: ReadonlyArray<readonly [string, string]> = [
 ]
 
 const SECRET_PATH = /(^|[\\/])(\.env(\..*)?|[^\\/]+\.(pem|key|p12))$/i
+const MUTATING_TOOL = /^(write|edit|apply_patch|bash|webfetch)$/
 
 function injectedEnv(): Record<string, string> {
   const out: Record<string, string> = {}
@@ -20,6 +21,8 @@ function injectedEnv(): Record<string, string> {
 
 export const DevboxPlugin: Plugin = async () => {
   const injected = injectedEnv()
+  const readonly = process.env.DEVBOX_READONLY === "1"
+  const prefix = process.env.DEVBOX_SERVER_PREFIX ?? ""
   return {
     "shell.env": async (_input, output) => {
       if (output?.env && Object.keys(injected).length > 0) {
@@ -27,7 +30,11 @@ export const DevboxPlugin: Plugin = async () => {
       }
     },
     "tool.execute.before": async (input, output) => {
-      if (input.tool !== "read") return
+      const tool = input.tool ?? ""
+      if (readonly && prefix && tool.startsWith(prefix) && MUTATING_TOOL.test(tool.slice(prefix.length))) {
+        throw new Error(`devbox plugin: ${tool} is blocked in DEVBOX_READONLY mode`)
+      }
+      if (tool !== "read") return
       const target = String(output?.args?.filePath ?? output?.args?.path ?? "")
       if (SECRET_PATH.test(target)) {
         throw new Error(`devbox plugin: refused to read secret file ${target}`)
