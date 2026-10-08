@@ -1,0 +1,1 @@
+"""Stitch Devbox service plugin."""

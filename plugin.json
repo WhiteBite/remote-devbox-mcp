@@ -1,0 +1,319 @@
+{
+  "schema": "stitch.plugin/v2",
+  "id": "stitch-devbox",
+  "name": "Stitch Devbox",
+  "version": "0.1.0",
+  "service": "devbox",
+  "kind": "service",
+  "engine": {
+    "min": "0.3.0",
+    "api": 2
+  },
+  "depends": [],
+  "entry": {
+    "module": "stitch_devbox"
+  },
+  "capabilities": [],
+  "outputs": [],
+  "signature": "",
+  "description": {
+    "ru": "Пульт remote-devbox-mcp внутри Stitch: статусы стека, профили, джобы и события агентских вызовов, логи, управление запуском.",
+    "en": "Remote-devbox-mcp control panel inside Stitch: stack statuses, profiles, agent job/event feeds, logs, lifecycle controls."
+  },
+  "author": "WhiteBite",
+  "category": "ide-integration",
+  "status": "beta",
+  "icon": "🖥️",
+  "features": [
+    {
+      "title": {
+        "ru": "Статусы стека и сервисов",
+        "en": "Stack and service statuses"
+      },
+      "status": "beta"
+    },
+    {
+      "title": {
+        "ru": "Джобы, события и разрешения агента",
+        "en": "Agent jobs, events and permissions"
+      },
+      "status": "beta"
+    },
+    {
+      "title": {
+        "ru": "Запуск/остановка стека и смена профиля",
+        "en": "Stack up/down and profile switching"
+      },
+      "status": "beta"
+    }
+  ],
+  "changelog": [
+    {
+      "version": "0.1.0",
+      "date": "2026-10-01",
+      "changes": ["Initial release"]
+    }
+  ],
+  "generated_by": "stitch_plugin_tools scaffold v3",
+  "contributions": {
+    "commands": [
+      {"name": "health_check", "readonly": true},
+      {"name": "status", "readonly": true},
+      {"name": "overview", "readonly": true},
+      {"name": "jobs", "readonly": true},
+      {"name": "permissions", "readonly": true},
+      {"name": "exposure", "readonly": true},
+      {"name": "diff", "readonly": true},
+      {"name": "manifest", "readonly": true},
+      {"name": "events_tail", "readonly": true},
+      {"name": "logs", "readonly": true},
+      {"name": "logs_text", "readonly": true},
+      {"name": "profiles_list", "readonly": true},
+      {"name": "profile_get", "readonly": true},
+      {"name": "action_status", "readonly": true},
+      {"name": "stack_start", "readonly": false},
+      {"name": "stack_down", "readonly": false},
+      {"name": "profile_use", "readonly": false},
+      {"name": "stop_host", "readonly": false},
+      {"name": "ingress_control", "readonly": false},
+      {"name": "issue_tokens", "readonly": false},
+      {"name": "run_doctor", "readonly": false}
+    ],
+    "ui": {
+      "kind": "declarative",
+      "tabs": [
+        {
+          "id": "devbox",
+          "label": "devbox.tab",
+          "icon": "Terminal",
+          "page": "main"
+        }
+      ],
+      "page": {
+        "title": "devbox.title",
+        "nodes": [
+          {
+            "kind": "heading",
+            "text": "devbox.overview",
+            "level": 2
+          },
+          {
+            "kind": "card_grid",
+            "id": "overview",
+            "source": {"command": "overview"},
+            "card": {
+              "title": "title",
+              "subtitle": "value"
+            }
+          },
+          {
+            "kind": "section",
+            "title": "devbox.profiles",
+            "nodes": [
+              {
+                "kind": "table",
+                "id": "profiles",
+                "columns": [
+                  {"key": "name", "label": "devbox.col.profile"},
+                  {"key": "mode", "label": "devbox.col.mode"},
+                  {"key": "project_dir", "label": "devbox.col.project"},
+                  {"key": "active", "label": "devbox.col.active"}
+                ],
+                "source": {"command": "profiles_list"},
+                "rowActions": [
+                  {
+                    "id": "start-row",
+                    "label": "devbox.action.start",
+                    "command": "stack_start",
+                    "variant": "secondary",
+                    "paramsFromRow": {"name": "name"}
+                  },
+                  {
+                    "id": "use-row",
+                    "label": "devbox.action.use",
+                    "command": "profile_use",
+                    "variant": "secondary",
+                    "paramsFromRow": {"name": "name"}
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "section",
+            "title": "devbox.jobs",
+            "nodes": [
+              {
+                "kind": "table",
+                "id": "jobs",
+                "columns": [
+                  {"key": "tool", "label": "devbox.col.tool"},
+                  {"key": "status", "label": "devbox.col.status"},
+                  {"key": "job_id", "label": "ID"}
+                ],
+                "source": {"command": "jobs"},
+                "rowsKey": "jobs"
+              }
+            ]
+          },
+          {
+            "kind": "section",
+            "title": "devbox.permissions",
+            "nodes": [
+              {
+                "kind": "table",
+                "id": "permissions",
+                "columns": [
+                  {"key": "tool", "label": "devbox.col.tool"},
+                  {"key": "status", "label": "devbox.col.status"},
+                  {"key": "permission", "label": "devbox.col.permission"}
+                ],
+                "source": {"command": "permissions"},
+                "rowsKey": "permissions"
+              }
+            ]
+          },
+          {
+            "kind": "section",
+            "title": "devbox.events",
+            "nodes": [
+              {
+                "kind": "table",
+                "id": "events",
+                "columns": [
+                  {"key": "ts", "label": "devbox.col.time"},
+                  {"key": "kind", "label": "devbox.col.kind"},
+                  {"key": "tool", "label": "devbox.col.tool"},
+                  {"key": "status", "label": "devbox.col.status"}
+                ],
+                "source": {"command": "events_tail", "params": {"limit": 50}}
+              }
+            ]
+          },
+          {
+            "kind": "section",
+            "title": "devbox.logs",
+            "nodes": [
+              {
+                "kind": "markdown",
+                "id": "logs",
+                "source": {"command": "logs_text"}
+              }
+            ]
+          },
+          {
+            "kind": "section",
+            "title": "devbox.controls",
+            "nodes": [
+              {
+                "kind": "button",
+                "id": "stack-down-btn",
+                "label": "devbox.action.down",
+                "command": "stack_down",
+                "variant": "danger"
+              },
+              {
+                "kind": "button",
+                "id": "doctor-btn",
+                "label": "devbox.action.doctor",
+                "command": "run_doctor",
+                "variant": "secondary"
+              },
+              {
+                "kind": "button",
+                "id": "tokens-btn",
+                "label": "devbox.action.tokens",
+                "command": "issue_tokens",
+                "variant": "danger"
+              },
+              {
+                "kind": "button",
+                "id": "ingress-up-btn",
+                "label": "devbox.action.ingressUp",
+                "command": "ingress_control",
+                "params": {"action": "up"},
+                "variant": "secondary"
+              },
+              {
+                "kind": "button",
+                "id": "ingress-down-btn",
+                "label": "devbox.action.ingressDown",
+                "command": "ingress_control",
+                "params": {"action": "down"},
+                "variant": "ghost"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "i18n": {
+      "ru": {
+        "devbox": {
+          "tab": "Devbox",
+          "title": "Devbox — агент на твоём железе",
+          "overview": "Обзор",
+          "profiles": "Профили проектов",
+          "jobs": "Джобы агента",
+          "permissions": "Разрешения",
+          "events": "События (что делает агент)",
+          "logs": "Логи",
+          "controls": "Управление",
+          "col": {
+            "profile": "Профиль",
+            "mode": "Режим",
+            "project": "Проект",
+            "active": "Активен",
+            "tool": "Инструмент",
+            "status": "Статус",
+            "permission": "Разрешение",
+            "time": "Время",
+            "kind": "Тип"
+          },
+          "action": {
+            "start": "Поднять",
+            "use": "Сделать активным",
+            "down": "Остановить всё",
+            "doctor": "Doctor",
+            "tokens": "Обновить токены",
+            "ingressUp": "Ingress: вкл",
+            "ingressDown": "Ingress: выкл"
+          }
+        }
+      },
+      "en": {
+        "devbox": {
+          "tab": "Devbox",
+          "title": "Devbox — agent on your hardware",
+          "overview": "Overview",
+          "profiles": "Project profiles",
+          "jobs": "Agent jobs",
+          "permissions": "Permissions",
+          "events": "Events (what the agent is doing)",
+          "logs": "Logs",
+          "controls": "Controls",
+          "col": {
+            "profile": "Profile",
+            "mode": "Mode",
+            "project": "Project",
+            "active": "Active",
+            "tool": "Tool",
+            "status": "Status",
+            "permission": "Permission",
+            "time": "Time",
+            "kind": "Kind"
+          },
+          "action": {
+            "start": "Start",
+            "use": "Make active",
+            "down": "Stop everything",
+            "doctor": "Doctor",
+            "tokens": "Rotate tokens",
+            "ingressUp": "Ingress: on",
+            "ingressDown": "Ingress: off"
+          }
+        }
+      }
+    }
+  }
+}
