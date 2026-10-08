@@ -11,6 +11,7 @@ import re
 
 SECRETISH = re.compile(
     r"(token|key|secret|password|passwd|bearer)\s*[=:]\s*\S+|^[A-Fa-f0-9]{32,}$", re.I)
+_BEARER = re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._\-]{16,}")
 
 
 def redact_argv(argv: list[str]) -> list[str]:
@@ -18,4 +19,4 @@ def redact_argv(argv: list[str]) -> list[str]:
 
 
 def redact_text(text: str) -> str:
-    return SECRETISH.sub("[REDACTED]", text)
+    return _BEARER.sub("Bearer [REDACTED]", SECRETISH.sub("[REDACTED]", text))

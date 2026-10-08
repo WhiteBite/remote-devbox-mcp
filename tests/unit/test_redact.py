@@ -25,6 +25,11 @@ def test_redact_text_leaves_space_separated_bearer():
     assert redact_text("Authorization: Bearer deadbeef") == "Authorization: Bearer deadbeef"
 
 
+def test_redact_text_masks_long_space_separated_bearer():
+    token = "a" * 40
+    assert redact_text(f"Authorization: Bearer {token}") == "Authorization: Bearer [REDACTED]"
+
+
 def test_redact_text_leaves_plain_text():
     assert redact_text("build finished in 3s") == "build finished in 3s"
 

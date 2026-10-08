@@ -17,6 +17,13 @@ from rdm import cli
 from rdm.events import sink
 
 
+def _safe_emit(event: dict) -> None:
+    try:
+        sink.emit(event)
+    except Exception:
+        pass
+
+
 class ActionQueue:
     def __init__(self) -> None:
         self._lock = threading.Lock()
@@ -33,17 +40,15 @@ class ActionQueue:
 
     def _run(self, action_id: str, fn: Callable[..., int], args: tuple[Any, ...]) -> None:
         name = getattr(fn, "__name__", "action")
-        sink.emit({"ts": time.time(), "kind": "action", "job_id": action_id, "tool": name, "status": "started"})
+        _safe_emit({"ts": time.time(), "kind": "action", "job_id": action_id, "tool": name, "status": "started"})
         rc = 1
         try:
             rc = fn(*args)
         finally:
-            try:
-                sink.emit(
-                    {"ts": time.time(), "kind": "action", "job_id": action_id, "tool": name, "status": "finished", "exit": rc}
-                )
-            finally:
-                self._lock.release()
+            _safe_emit(
+                {"ts": time.time(), "kind": "action", "job_id": action_id, "tool": name, "status": "finished", "exit": rc}
+            )
+            self._lock.release()
 
 
 def apply_use(name: str) -> int:
