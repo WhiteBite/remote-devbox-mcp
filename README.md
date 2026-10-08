@@ -27,6 +27,17 @@ python devbox.py start <имя>     # профиль + стек + ingress + бл
 Дальше агенту отдаётся `INGRESS` + токены — полный цикл в `ARENA.md`.
 Проверка окружения (pytest/ruff) — в разделе «Разработка».
 
+## Как плагин Stitch
+
+Корень репозитория — это ещё и пакет сервис-плагина [Stitch Manager](https://github.com/StitchWB/Stitch-Manager)
+(`plugin.json`, `stitch.plugin/v2`): вкладка **Devbox** в AI Hub показывает статусы стека,
+профили, джобы и события агентских вызовов, хвосты логов — и управляет запуском
+(поднять/остановить стек, сменить профиль, doctor, ротация токенов). Обёртка
+`stitch_devbox/` импортирует `rdm` in-process и переиспользует сборщики данных cockpit;
+состояние и секреты остаются в `.env`/профилях devbox. Установка: карточка в
+community-каталоге Stitch (git-source) или
+`python -m stitch_plugin_tools dev-install <repo> --link` для разработки.
+
 ```
 ┌─ home/  → ставится на ТВОЙ комп (Windows + Docker Desktop)
 │   docker-compose.yml             toolbox + встроенный VPN (VLESS) + туннели cloudflared
