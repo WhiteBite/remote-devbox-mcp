@@ -216,6 +216,32 @@ def test_sabotaged_request_parser_call_survives(tmp_path, monkeypatch):
         server.shutdown()
 
 
+def test_sabotaged_capture_never_breaks_forward(tmp_path, monkeypatch):
+    job = {"job_id": "job-cap", "status": "completed", "result": {"metadata": {"exit": 0}}}
+    fake, server, port, events_path = _start_bridge(tmp_path, monkeypatch, job)
+
+    class exploding_buf:
+        def __len__(self) -> int:
+            raise RuntimeError("sabotaged capture")
+
+        def __iadd__(self, other):
+            raise RuntimeError("sabotaged capture")
+
+    class sabotaged_tee(event_tap.TeeSocket):
+        def __init__(self, sock, cap: int) -> None:
+            super().__init__(sock, cap)
+            self.buf = exploding_buf()
+
+    monkeypatch.setattr(event_tap, "TeeSocket", sabotaged_tee)
+    try:
+        out = _post(port, fake.port, _tools_call())
+        assert b"200 OK" in out
+        assert b"job-cap" in out
+    finally:
+        fake.close()
+        server.shutdown()
+
+
 def test_bridge_tools_call_keep_alive_connection_reused(tmp_path, monkeypatch):
     job = {"job_id": "job-8", "status": "completed", "result": {"metadata": {"exit": 0}}}
     fake, server, port, events_path = _start_bridge(tmp_path, monkeypatch, job)

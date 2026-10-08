@@ -78,6 +78,8 @@ def _bootstrap_cookie(port: int) -> str:
     conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
     conn.request("GET", f"/?t={token}")
     response = conn.getresponse()
+    assert response.status == 302
+    assert response.getheader("Location") == "/"
     cookie = response.getheader("Set-Cookie", "")
     response.read()
     conn.close()
@@ -167,6 +169,8 @@ def test_bootstrap_rejects_foreign_token_and_replay(cockpit):
     conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
     conn.request("GET", f"/?t={token}")
     first = conn.getresponse()
+    assert first.status == 302
+    assert first.getheader("Location") == "/"
     assert first.getheader("Set-Cookie", "").startswith("rdm_ui=")
     first.read()
     conn.close()
@@ -177,6 +181,15 @@ def test_bootstrap_rejects_foreign_token_and_replay(cockpit):
     assert replay.status == 403
     replay.read()
     conn.close()
+
+
+def test_invalid_bootstrap_token_with_valid_session_serves_index(cockpit):
+    port = cockpit
+    session = _session(_bootstrap_cookie(port))
+
+    with _get(port, "/?t=stale-token", session) as response:
+        assert response.status == 200
+        assert response.headers.get_content_type() == "text/html"
 
 
 def test_handoff_masked_by_default_reveal_needs_header_token(cockpit):

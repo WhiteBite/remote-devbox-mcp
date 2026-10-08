@@ -189,6 +189,19 @@ def test_self_authed_passthrough(tmp_path):
         server.shutdown()
 
 
+def test_cockpit_port_denied_even_when_self_authed(tmp_path):
+    from rdm import ports
+
+    server, port = start_ingress(tmp_path, self_authed={ports.COCKPIT_PORT})
+    try:
+        out = raw_request(port, request("GET", f"/p/{ports.COCKPIT_PORT}/"))
+        head, body = _head_body(out)
+        assert b"403 Forbidden" in head
+        assert json.loads(body)["error"] == "forbidden"
+    finally:
+        server.shutdown()
+
+
 def test_unknown_path_404(tmp_path):
     server, port = start_ingress(tmp_path)
     try:

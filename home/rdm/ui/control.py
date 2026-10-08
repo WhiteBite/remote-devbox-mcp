@@ -38,10 +38,12 @@ class ActionQueue:
         try:
             rc = fn(*args)
         finally:
-            sink.emit(
-                {"ts": time.time(), "kind": "action", "job_id": action_id, "tool": name, "status": "finished", "exit": rc}
-            )
-            self._lock.release()
+            try:
+                sink.emit(
+                    {"ts": time.time(), "kind": "action", "job_id": action_id, "tool": name, "status": "finished", "exit": rc}
+                )
+            finally:
+                self._lock.release()
 
 
 def apply_use(name: str) -> int:

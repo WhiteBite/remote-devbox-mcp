@@ -30,16 +30,19 @@ class TeeSocket:
         self.truncated = False
 
     def sendall(self, data: bytes) -> None:
-        self.total += len(data)
-        room = self.cap - len(self.buf)
-        if room > 0:
-            kept = data[:room]
-            self.buf += kept
-            if len(kept) < len(data):
-                self.truncated = True
-        elif data:
-            self.truncated = True
         self.sock.sendall(data)
+        try:
+            self.total += len(data)
+            room = self.cap - len(self.buf)
+            if room > 0:
+                kept = data[:room]
+                self.buf += kept
+                if len(kept) < len(data):
+                    self.truncated = True
+            elif data:
+                self.truncated = True
+        except Exception:
+            pass
 
 
 def on_request(config, method: str, target: str, pairs, body: bytes) -> dict[str, Any] | None:

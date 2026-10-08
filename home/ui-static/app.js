@@ -936,6 +936,9 @@ function wireEvents() {
 }
 
 function boot() {
+  if (new URLSearchParams(location.search).has("t")) {
+    try { history.replaceState(null, "", "/"); } catch {}
+  }
   cacheDom();
   wireEvents();
   renderClock();

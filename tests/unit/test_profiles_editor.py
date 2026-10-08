@@ -65,9 +65,18 @@ def cockpit():
         thread.join(timeout=5)
 
 
-def _request(port: int, method: str, path: str, session: str | None, body: dict | None = None):
+def _request(
+    port: int,
+    method: str,
+    path: str,
+    session: str | None,
+    body: dict | None = None,
+    header_token: str | None = None,
+):
     conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
     headers = {"Cookie": f"rdm_ui={session}"} if session else {}
+    if header_token is not None:
+        headers["X-RDM-Token"] = header_token
     payload = json.dumps(body).encode("utf-8") if body is not None else None
     if payload is not None:
         headers["Content-Type"] = "application/json"
@@ -97,7 +106,7 @@ def test_repo_fallback_edit_lands_in_repo_file_not_home(layout, cockpit, tmp_pat
     assert payload["source_dir"] == str(layout["repo_projects"])
     assert payload["raw"] == data
 
-    status, payload = _request(port, "PUT", "/api/profile/fallback", session, {**data, "git_name": "editor"})
+    status, payload = _request(port, "PUT", "/api/profile/fallback", session, {**data, "git_name": "editor"}, header_token=session)
     assert status == 200
 
     on_disk = json.loads(profile_path.read_text(encoding="utf-8"))
@@ -112,7 +121,7 @@ def test_invalid_edit_leaves_file_byte_identical(layout, cockpit, tmp_path):
     port, session = cockpit
 
     invalid = _profile_data(str(tmp_path / "proj")) | {"git_email": "no-at-sign"}
-    status, payload = _request(port, "PUT", "/api/profile/fallback", session, invalid)
+    status, payload = _request(port, "PUT", "/api/profile/fallback", session, invalid, header_token=session)
 
     assert status == 400
     assert "R5" in payload["error"]
@@ -164,3 +173,15 @@ def test_profile_endpoints_require_session(layout, cockpit, tmp_path):
 
     status, _ = _request(port, "PUT", "/api/profile/fallback", None, data)
     assert status == 401
+
+
+def test_put_profile_cookie_only_rejected_403(layout, cockpit, tmp_path):
+    data = _seed_repo_profile(layout, tmp_path)
+    profile_path = layout["repo_projects"] / "fallback.json"
+    before = profile_path.read_bytes()
+    port, session = cockpit
+
+    status, payload = _request(port, "PUT", "/api/profile/fallback", session, {**data, "git_name": "csrf"})
+
+    assert status == 403
+    assert profile_path.read_bytes() == before

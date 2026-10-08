@@ -16,6 +16,16 @@ class _RecordingSink:
         self.events.append(event)
 
 
+class _ExplodingFinishedSink:
+    def __init__(self) -> None:
+        self.events: list[dict] = []
+
+    def emit(self, event: dict) -> None:
+        if event.get("status") == "finished":
+            raise RuntimeError("sabotaged emit")
+        self.events.append(event)
+
+
 def _wait_idle(queue: control.ActionQueue, timeout: float = 5.0) -> None:
     deadline = time.monotonic() + timeout
     while queue.busy():
@@ -61,6 +71,18 @@ def test_finished_event_surfaces_rc(monkeypatch):
     finished = recorder.events[-1]
     assert finished["job_id"] == action_id
     assert finished["exit"] == 7
+
+
+def test_raising_finished_emit_does_not_deadlock_queue(monkeypatch):
+    monkeypatch.setattr(control, "sink", _ExplodingFinishedSink())
+    queue = control.ActionQueue()
+
+    assert queue.submit(lambda: 0) is not None
+    _wait_idle(queue)
+
+    assert not queue.busy()
+    assert queue.submit(lambda: 0) is not None
+    _wait_idle(queue)
 
 
 def test_wrappers_delegate_to_cli_in_process(monkeypatch):

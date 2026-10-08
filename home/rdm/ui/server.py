@@ -322,12 +322,15 @@ class _Handler(BaseHTTPRequestHandler):
     def _serve_root(self, query: str) -> None:
         bootstrap = urllib.parse.parse_qs(query).get("t", [""])[0]
         if bootstrap:
-            if not auth.consume_bootstrap(bootstrap):
+            if auth.consume_bootstrap(bootstrap):
+                session = self.server.sessions.mint_session()
+                name, _, value = auth.cookie_header(session).partition(": ")
+                self._respond(302, b"", "text/plain; charset=utf-8", ((name, value), ("Location", "/")))
+                return
+            if self._session_token() is None:
                 self._json(403, {"error": "invalid or expired bootstrap"})
                 return
-            session = self.server.sessions.mint_session()
-            name, _, value = auth.cookie_header(session).partition(": ")
-            self._serve_index(((name, value),))
+            self._serve_index()
             return
         if self._session_token() is None:
             self._json(401, {"error": "unauthorized"})
@@ -377,6 +380,9 @@ class _Handler(BaseHTTPRequestHandler):
         session = self._session_token()
         if session is None:
             self._json(401, {"error": "unauthorized"})
+            return
+        if not self._header_token_ok():
+            self._json(403, {"error": "action requires a valid header token"})
             return
         if split.path.startswith(_PROFILE_PREFIX):
             self._api_profile_put(split.path)

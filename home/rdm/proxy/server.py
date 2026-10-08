@@ -217,6 +217,9 @@ class _Handler(socketserver.BaseRequestHandler):
                 self._simple(404, body=_BODY_NOT_FOUND)
                 return False
             access_log.log(server.config.access_log_path, route.port, method, target, "ingress")
+            if route.port == ports.COCKPIT_PORT:
+                self._simple(403, body=_BODY_FORBIDDEN)
+                return False
             if route.port not in server.config.self_authed:
                 if not auth.check_token(pairs, server.config.token):
                     self._simple(401, body=_BODY_UNAUTHORIZED, headers=_AUTH_CHALLENGE)
