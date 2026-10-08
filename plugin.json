@@ -47,7 +47,12 @@
       "status": "beta"
     }
   ],
-  "changelog": [
+"changelog": [
+    {
+      "version": "0.1.1",
+      "date": "2026-10-01",
+      "changes": ["Fix UI label i18n keys so the Devbox page resolves translations"]
+    },
     {
       "version": "0.1.0",
       "date": "2026-10-01",
@@ -55,6 +60,17 @@
     }
   ],
   "generated_by": "stitch_plugin_tools scaffold v3",
+  "package_exclude": [
+    "arena",
+    "docs",
+    "skills",
+    "scripts",
+    "projects",
+    "dist",
+    "llms.txt",
+    "llms-full.txt",
+    "ARENA.md"
+  ],
   "contributions": {
     "commands": [
       {"name": "health_check", "readonly": true},
@@ -84,17 +100,17 @@
       "tabs": [
         {
           "id": "devbox",
-          "label": "devbox.tab",
+          "label": "stitch-devbox.tab",
           "icon": "Terminal",
           "page": "main"
         }
       ],
       "page": {
-        "title": "devbox.title",
+        "title": "stitch-devbox.title",
         "nodes": [
           {
             "kind": "heading",
-            "text": "devbox.overview",
+            "text": "stitch-devbox.overview",
             "level": 2
           },
           {
@@ -108,29 +124,29 @@
           },
           {
             "kind": "section",
-            "title": "devbox.profiles",
+            "title": "stitch-devbox.profiles",
             "nodes": [
               {
                 "kind": "table",
                 "id": "profiles",
                 "columns": [
-                  {"key": "name", "label": "devbox.col.profile"},
-                  {"key": "mode", "label": "devbox.col.mode"},
-                  {"key": "project_dir", "label": "devbox.col.project"},
-                  {"key": "active", "label": "devbox.col.active"}
+                  {"key": "name", "label": "stitch-devbox.col.profile"},
+                  {"key": "mode", "label": "stitch-devbox.col.mode"},
+                  {"key": "project_dir", "label": "stitch-devbox.col.project"},
+                  {"key": "active", "label": "stitch-devbox.col.active"}
                 ],
                 "source": {"command": "profiles_list"},
                 "rowActions": [
                   {
                     "id": "start-row",
-                    "label": "devbox.action.start",
+                    "label": "stitch-devbox.action.start",
                     "command": "stack_start",
                     "variant": "secondary",
                     "paramsFromRow": {"name": "name"}
                   },
                   {
                     "id": "use-row",
-                    "label": "devbox.action.use",
+                    "label": "stitch-devbox.action.use",
                     "command": "profile_use",
                     "variant": "secondary",
                     "paramsFromRow": {"name": "name"}
@@ -141,14 +157,14 @@
           },
           {
             "kind": "section",
-            "title": "devbox.jobs",
+            "title": "stitch-devbox.jobs",
             "nodes": [
               {
                 "kind": "table",
                 "id": "jobs",
                 "columns": [
-                  {"key": "tool", "label": "devbox.col.tool"},
-                  {"key": "status", "label": "devbox.col.status"},
+                  {"key": "tool", "label": "stitch-devbox.col.tool"},
+                  {"key": "status", "label": "stitch-devbox.col.status"},
                   {"key": "job_id", "label": "ID"}
                 ],
                 "source": {"command": "jobs"},
@@ -158,15 +174,15 @@
           },
           {
             "kind": "section",
-            "title": "devbox.permissions",
+            "title": "stitch-devbox.permissions",
             "nodes": [
               {
                 "kind": "table",
                 "id": "permissions",
                 "columns": [
-                  {"key": "tool", "label": "devbox.col.tool"},
-                  {"key": "status", "label": "devbox.col.status"},
-                  {"key": "permission", "label": "devbox.col.permission"}
+                  {"key": "tool", "label": "stitch-devbox.col.tool"},
+                  {"key": "status", "label": "stitch-devbox.col.status"},
+                  {"key": "permission", "label": "stitch-devbox.col.permission"}
                 ],
                 "source": {"command": "permissions"},
                 "rowsKey": "permissions"
@@ -175,16 +191,16 @@
           },
           {
             "kind": "section",
-            "title": "devbox.events",
+            "title": "stitch-devbox.events",
             "nodes": [
               {
                 "kind": "table",
                 "id": "events",
                 "columns": [
-                  {"key": "ts", "label": "devbox.col.time"},
-                  {"key": "kind", "label": "devbox.col.kind"},
-                  {"key": "tool", "label": "devbox.col.tool"},
-                  {"key": "status", "label": "devbox.col.status"}
+                  {"key": "ts", "label": "stitch-devbox.col.time"},
+                  {"key": "kind", "label": "stitch-devbox.col.kind"},
+                  {"key": "tool", "label": "stitch-devbox.col.tool"},
+                  {"key": "status", "label": "stitch-devbox.col.status"}
                 ],
                 "source": {"command": "events_tail", "params": {"limit": 50}}
               }
@@ -192,7 +208,7 @@
           },
           {
             "kind": "section",
-            "title": "devbox.logs",
+            "title": "stitch-devbox.logs",
             "nodes": [
               {
                 "kind": "markdown",
@@ -203,33 +219,33 @@
           },
           {
             "kind": "section",
-            "title": "devbox.controls",
+            "title": "stitch-devbox.controls",
             "nodes": [
               {
                 "kind": "button",
                 "id": "stack-down-btn",
-                "label": "devbox.action.down",
+                "label": "stitch-devbox.action.down",
                 "command": "stack_down",
                 "variant": "danger"
               },
               {
                 "kind": "button",
                 "id": "doctor-btn",
-                "label": "devbox.action.doctor",
+                "label": "stitch-devbox.action.doctor",
                 "command": "run_doctor",
                 "variant": "secondary"
               },
               {
                 "kind": "button",
                 "id": "tokens-btn",
-                "label": "devbox.action.tokens",
+                "label": "stitch-devbox.action.tokens",
                 "command": "issue_tokens",
                 "variant": "danger"
               },
               {
                 "kind": "button",
                 "id": "ingress-up-btn",
-                "label": "devbox.action.ingressUp",
+                "label": "stitch-devbox.action.ingressUp",
                 "command": "ingress_control",
                 "params": {"action": "up"},
                 "variant": "secondary"
@@ -237,7 +253,7 @@
               {
                 "kind": "button",
                 "id": "ingress-down-btn",
-                "label": "devbox.action.ingressDown",
+                "label": "stitch-devbox.action.ingressDown",
                 "command": "ingress_control",
                 "params": {"action": "down"},
                 "variant": "ghost"
@@ -249,7 +265,7 @@
     },
     "i18n": {
       "ru": {
-        "devbox": {
+        "stitch-devbox": {
           "tab": "Devbox",
           "title": "Devbox — агент на твоём железе",
           "overview": "Обзор",
@@ -282,7 +298,7 @@
         }
       },
       "en": {
-        "devbox": {
+        "stitch-devbox": {
           "tab": "Devbox",
           "title": "Devbox — agent on your hardware",
           "overview": "Overview",
