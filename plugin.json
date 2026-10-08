@@ -2,7 +2,7 @@
   "schema": "stitch.plugin/v2",
   "id": "stitch-devbox",
   "name": "Stitch Devbox",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "service": "devbox",
   "kind": "service",
   "engine": {
@@ -48,6 +48,14 @@
     }
   ],
 "changelog": [
+    {
+      "version": "0.1.2",
+      "date": "2026-10-08",
+      "changes": [
+        "Add a Recent actions table so control buttons show their effect",
+        "Render the active-profile flag as a human label"
+      ]
+    },
     {
       "version": "0.1.1",
       "date": "2026-10-01",
@@ -133,7 +141,7 @@
                   {"key": "name", "label": "stitch-devbox.col.profile"},
                   {"key": "mode", "label": "stitch-devbox.col.mode"},
                   {"key": "project_dir", "label": "stitch-devbox.col.project"},
-                  {"key": "active", "label": "stitch-devbox.col.active"}
+                  {"key": "active_label", "label": "stitch-devbox.col.active"}
                 ],
                 "source": {"command": "profiles_list"},
                 "rowActions": [
@@ -259,6 +267,24 @@
                 "variant": "ghost"
               }
             ]
+          },
+          {
+            "kind": "section",
+            "title": "stitch-devbox.actions",
+            "nodes": [
+              {
+                "kind": "table",
+                "id": "actions",
+                "columns": [
+                  {"key": "ts", "label": "stitch-devbox.col.time"},
+                  {"key": "tool", "label": "stitch-devbox.col.tool"},
+                  {"key": "status", "label": "stitch-devbox.col.status"},
+                  {"key": "exit", "label": "stitch-devbox.col.exit"}
+                ],
+                "source": {"command": "action_status"},
+                "rowsKey": "recent"
+              }
+            ]
           }
         ]
       }
@@ -275,11 +301,13 @@
           "events": "События (что делает агент)",
           "logs": "Логи",
           "controls": "Управление",
+          "actions": "Действия (последние)",
           "col": {
             "profile": "Профиль",
             "mode": "Режим",
             "project": "Проект",
             "active": "Активен",
+            "exit": "Код выхода",
             "tool": "Инструмент",
             "status": "Статус",
             "permission": "Разрешение",
@@ -308,11 +336,13 @@
           "events": "Events (what the agent is doing)",
           "logs": "Logs",
           "controls": "Controls",
+          "actions": "Recent actions",
           "col": {
             "profile": "Profile",
             "mode": "Mode",
             "project": "Project",
             "active": "Active",
+            "exit": "Exit code",
             "tool": "Tool",
             "status": "Status",
             "permission": "Permission",

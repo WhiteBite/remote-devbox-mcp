@@ -139,7 +139,12 @@ def profiles_list() -> list[dict[str, Any]]:
     rows = []
     for name in rdm.profiles.available():
         path = rdm.profiles.find(name)
-        row: dict[str, Any] = {"name": name, "active": name == active}
+        is_active = name == active
+        row: dict[str, Any] = {
+            "name": name,
+            "active": is_active,
+            "active_label": "● да" if is_active else "—",
+        }
         if path is not None:
             try:
                 profile = rdm.profiles.load(path)
