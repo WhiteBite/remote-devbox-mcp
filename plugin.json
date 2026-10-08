@@ -2,7 +2,7 @@
   "schema": "stitch.plugin/v2",
   "id": "stitch-devbox",
   "name": "Stitch Devbox",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "service": "devbox",
   "kind": "service",
   "engine": {
