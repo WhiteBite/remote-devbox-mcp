@@ -7,14 +7,15 @@ import pathlib
 import socket
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import urllib.error
 import urllib.request
 
 import pytest
-from rdm import cli, envfile
-from rdm.ui import auth, server
+from rdm import cli, envfile, hostos, procman
+from rdm.ui import api, auth, control, server
 
 HOME_DIR = pathlib.Path(__file__).resolve().parents[2] / "home"
 _SECRET_KEYS = ("MCP_BEARER_TOKEN", "MCP_PUBLIC_TOKEN", "INGRESS_TOKEN", "TUNNEL_TOKEN", "VLESS_SUB_URL")
@@ -367,3 +368,84 @@ def test_ui_main_accepts_bare_server_sentinel(monkeypatch):
         assert ui_main.main(["--server"]) == 0
     finally:
         sys.stdout, sys.stderr = stdout, stderr
+
+
+def test_compose_ps_cached_with_ttl(monkeypatch):
+    calls: list[tuple] = []
+    monkeypatch.setattr(api.docker, "compose_ps", lambda *a, **k: calls.append(a) or "ps-line")
+    clock = {"now": 100.0}
+    monkeypatch.setattr(api, "_clock", lambda: clock["now"])
+    api.invalidate_status_cache()
+    assert api._compose_ps(cli.COMPOSE_FILE) == "ps-line"
+    assert api._compose_ps(cli.COMPOSE_FILE) == "ps-line"
+    assert len(calls) == 1
+    clock["now"] += api.COMPOSE_PS_TTL_SECONDS
+    assert api._compose_ps(cli.COMPOSE_FILE) == "ps-line"
+    assert len(calls) == 2
+    api.invalidate_status_cache()
+    assert api._compose_ps(cli.COMPOSE_FILE) == "ps-line"
+    assert len(calls) == 3
+
+
+def test_status_rebuilds_on_action_busy_transition(monkeypatch, tmp_path):
+    builds: list[int] = []
+    monkeypatch.setattr(server, "build_status", lambda port: builds.append(port) or {"stub": True})
+    httpd = server.build_server("127.0.0.1", _ephemeral_port())
+    try:
+        httpd.status()
+        httpd.status()
+        assert len(builds) == 1
+        monkeypatch.setattr(httpd.actions, "busy", lambda: True)
+        httpd.status()
+        httpd.status()
+        assert len(builds) == 2
+    finally:
+        httpd.server_close()
+
+
+def test_status_invalidated_on_action_submit(monkeypatch, tmp_path):
+    builds: list[int] = []
+    monkeypatch.setattr(server, "build_status", lambda port: builds.append(port) or {"stub": True})
+    monkeypatch.setattr(control, "run_doctor", lambda: 0)
+    monkeypatch.setenv("RDM_EVENTS_PATH", str(tmp_path / "events.jsonl"))
+    sessions = auth.SessionStore()
+    session = sessions.mint_session()
+    httpd = server.build_server("127.0.0.1", _ephemeral_port(), sessions)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    port = httpd.server_address[1]
+    try:
+        _wait_listening(port)
+        httpd.status()
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+        conn.request(
+            "POST",
+            "/api/action/doctor",
+            body=json.dumps({}).encode("utf-8"),
+            headers={"Cookie": f"rdm_ui={session}", "X-RDM-Token": session},
+        )
+        response = conn.getresponse()
+        assert response.status == 202
+        response.read()
+        conn.close()
+        httpd.status()
+        assert len(builds) == 2
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+        thread.join(timeout=5)
+
+
+def test_watchdog_alive_reads_pidfile(monkeypatch, tmp_path):
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    assert api._watchdog_alive() is False
+    pid = hostos.spawn([sys.executable, "-c", "import time; time.sleep(60)", " watch"])
+    try:
+        path = procman.watchdog_pids_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"{pid}|{hostos.create_time(pid)}| watch\n", encoding="utf-8")
+        assert api._watchdog_alive() is True
+    finally:
+        hostos.kill_tree(pid)
+    path.write_text("2147483647|| watch\n", encoding="utf-8")
+    assert api._watchdog_alive() is False

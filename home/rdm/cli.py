@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import functools
 import json
 import os
 import pathlib
 import re
 import sys
+import threading
 import time
 import webbrowser
+from collections.abc import Callable
 
 from rdm import docker, envfile, freeze, hostos, netprobe, ports, procman, profiles, render, tokens, tunnels
 from rdm.ui import auth
@@ -25,6 +28,30 @@ BRIDGE_PORT = ports.BRIDGE_PORT
 INGRESS_PORT = 8799
 _NAME_RE = re.compile(r"[A-Za-z0-9._\-]+")
 _COCKPIT_WAIT_SECONDS = 5.0
+_LOCK_WAIT_SECONDS = 10.0
+_LOCK_LOCAL = threading.local()
+
+
+def _action_lock_path() -> pathlib.Path:
+    return LOG_ROOT / "action.lock"
+
+
+def _single_flight(fn: Callable[..., int]) -> Callable[..., int]:
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs) -> int:
+        if getattr(_LOCK_LOCAL, "depth", 0):
+            return fn(*args, **kwargs)
+        try:
+            with hostos.action_lock(_action_lock_path(), timeout=_LOCK_WAIT_SECONDS):
+                _LOCK_LOCAL.depth = 1
+                return fn(*args, **kwargs)
+        except hostos.ActionLockError as error:
+            print(f"другое действие devbox уже выполняется ({error}); повтори позже", file=sys.stderr)
+            return 1
+        finally:
+            _LOCK_LOCAL.depth = 0
+
+    return wrapper
 
 
 def _ingress_url(env_map: dict[str, str]) -> str:
@@ -199,6 +226,7 @@ def _start_gitleaks(profile: profiles.Profile, name: str) -> None:
         pass
 
 
+@_single_flight
 def apply_use(name: str) -> int:
     path = profiles.find(name)
     if path is None:
@@ -253,6 +281,7 @@ def apply_use(name: str) -> int:
     if not _emit_agent_artifacts(profile, name, allowed_text):
         return 1
     _start_gitleaks(profile, name)
+    _cleanup_logs()
     print(f"профиль {name} ← {path.parent}")
     print(f"профиль {name} применён; тулчейны ставятся при старте toolbox")
     return 0
@@ -315,7 +344,8 @@ def _chat(full: bool) -> int:
     return 0
 
 
-def _start(name: str | None, with_preview: bool) -> int:
+@_single_flight
+def _start(name: str | None, with_preview: bool, with_watchdog: bool = True) -> int:
     if name:
         rc = apply_use(name)
         if rc:
@@ -342,6 +372,8 @@ def _start(name: str | None, with_preview: bool) -> int:
     )
     print("=== Затем напиши задачу. ===")
     print(f"(хост) профили: {', '.join(profiles.available())}")
+    if with_watchdog and not os.environ.get("RDM_NO_WATCHDOG"):
+        print(f"watchdog запущен (pid {procman.start_watchdog(env_map, HOME_DIR)})")
     return 0
 
 
@@ -363,6 +395,7 @@ def _preview(origin: str | None) -> int:
     return 0
 
 
+@_single_flight
 def _issue_tokens() -> int:
     env = envfile.EnvFile.load(ENV_FILE)
     tokens.rotate_tokens(env)
@@ -403,12 +436,23 @@ def _profile(target: str) -> int:
     return 0
 
 
+@_single_flight
 def _ingress(action: str) -> int:
     env_map = envfile.EnvFile.load(ENV_FILE).as_map()
     if action == "start":
         procman.start_ingress(_ingress_env(env_map), HOME_DIR)
     else:
         procman.stop_ingress()
+    return 0
+
+
+def _watchdog_control(action: str) -> int:
+    if action == "start":
+        pid = procman.start_watchdog(envfile.EnvFile.load(ENV_FILE).as_map(), HOME_DIR)
+        print(f"watchdog запущен (pid {pid})")
+    else:
+        procman.stop_watchdog()
+        print("watchdog остановлен")
     return 0
 
 
@@ -445,13 +489,42 @@ def _url(preview: bool) -> int:
     return 0
 
 
-def _down() -> int:
+def _stop_host_side() -> None:
     active = envfile.EnvFile.load(ENV_FILE).get("ACTIVE_PROFILE")
     if active:
         procman.stop_host_services(active)
     procman.stop_ingress()
+    procman.stop_watchdog()
     docker.compose("stop", "cloudflared-ingress", "cloudflared-preview", compose_file=COMPOSE_FILE)
+
+
+def _cleanup_logs() -> None:
+    try:
+        from rdm.events import sink
+        from rdm.proxy import access_log
+
+        access_log.cleanup()
+        sink.cleanup()
+    except Exception:
+        pass
+
+
+@_single_flight
+def _down() -> int:
+    _stop_host_side()
+    _cleanup_logs()
     print("host-сервисы и ingress остановлены; туннели остановлены (стек оставлен)")
+    return 0
+
+
+@_single_flight
+def _full_down() -> int:
+    _stop_host_side()
+    result = docker.compose("--profile", "preview", "down", compose_file=COMPOSE_FILE)
+    if result.returncode != 0:
+        print(f"docker compose down не удался (rc={result.returncode}): {result.stderr.strip()[:200]}", file=sys.stderr)
+        return 1
+    print("стек снят: docker compose down (включая профиль preview)")
     return 0
 
 
@@ -536,6 +609,18 @@ def _allow(port: int, ui: bool) -> int:
     return 0
 
 
+def _verify_audit(path: str | None) -> int:
+    from rdm import audit_verify
+
+    return audit_verify.main([path] if path else [])
+
+
+def _clean_tools() -> int:
+    from rdm import clean_tools
+
+    return clean_tools.clean_tools()
+
+
 def _embedded(argv: list[str]) -> int:
     if argv[0] == "proxy":
         sys.argv = ["rdm.proxy", *argv[1:]]
@@ -572,6 +657,7 @@ def main(argv: list[str] | None = None) -> int:
     start = sub.add_parser("start")
     start.add_argument("name", nargs="?", default=None)
     start.add_argument("--preview", action="store_true")
+    start.add_argument("--no-watchdog", action="store_true")
     preview = sub.add_parser("preview")
     preview.add_argument("origin", nargs="?", default=None)
     use = sub.add_parser("use")
@@ -592,17 +678,23 @@ def main(argv: list[str] | None = None) -> int:
     url = sub.add_parser("url")
     url.add_argument("--preview", action="store_true")
     sub.add_parser("down")
+    sub.add_parser("full-down")
+    watchdog_ctl = sub.add_parser("watchdog")
+    watchdog_ctl.add_argument("action", choices=("start", "stop"))
     sub.add_parser("health")
     allow = sub.add_parser("allow")
     allow.add_argument("port", type=int)
     allow.add_argument("--ui", action="store_true")
     sub.add_parser("cockpit")
+    verify_audit = sub.add_parser("verify-audit")
+    verify_audit.add_argument("path", nargs="?", default=None)
+    sub.add_parser("clean-tools")
     args = parser.parse_args(argv)
 
     if args.command == "use":
         return apply_use(args.name)
     if args.command == "start":
-        return _start(args.name, args.preview)
+        return _start(args.name, args.preview, not args.no_watchdog)
     if args.command == "preview":
         return _preview(args.origin)
     if args.command == "stop-host":
@@ -627,10 +719,18 @@ def main(argv: list[str] | None = None) -> int:
         return _url(args.preview)
     if args.command == "down":
         return _down()
+    if args.command == "full-down":
+        return _full_down()
+    if args.command == "watchdog":
+        return _watchdog_control(args.action)
     if args.command == "health":
         return _health()
     if args.command == "allow":
         return _allow(args.port, args.ui)
     if args.command == "cockpit":
         return _cockpit()
+    if args.command == "verify-audit":
+        return _verify_audit(args.path)
+    if args.command == "clean-tools":
+        return _clean_tools()
     return _status()

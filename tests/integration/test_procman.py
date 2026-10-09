@@ -197,3 +197,37 @@ def test_start_ingress_listens(monkeypatch, tmp_path):
         assert not (state_dir / "pids.txt").exists()
     finally:
         hostos.kill_tree(pid)
+
+
+def test_start_watchdog_roundtrip(monkeypatch, tmp_path):
+    _isolate_tempdir(monkeypatch, tmp_path)
+    monkeypatch.setenv("TMPDIR", str(tmp_path))
+    monkeypatch.setenv("TEMP", str(tmp_path))
+    monkeypatch.setenv("TMP", str(tmp_path))
+    pid = procman.start_watchdog({}, HOME_DIR)
+    path = procman.watchdog_pids_path()
+    entries = _entries(path)
+    assert len(entries) == 1
+    assert entries[0][0] == pid
+    assert _alive(pid)
+
+    procman.stop_watchdog()
+
+    assert not path.exists()
+    assert _wait_until(lambda: not _alive(pid))
+
+
+def test_stop_watchdog_spares_pid_with_foreign_marker(monkeypatch, tmp_path):
+    _isolate_tempdir(monkeypatch, tmp_path)
+    pid = hostos.spawn([sys.executable, "-c", SLEEP_60])
+    try:
+        path = procman.watchdog_pids_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            f"{pid}|{hostos.create_time(pid) + 99999.0}|not-our-marker\n", encoding="utf-8"
+        )
+        procman.stop_watchdog()
+        assert _alive(pid)
+        assert not path.exists()
+    finally:
+        hostos.kill_tree(pid)

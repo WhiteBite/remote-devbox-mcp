@@ -17,8 +17,10 @@ DEFAULT_PROXY_ARGV = spawn_entry("proxy", "--mode", "target")
 INGRESS_ARGV = spawn_entry("proxy", "--mode", "ingress")
 INGRESS_PORT = 8799
 UI_ARGV = spawn_entry("ui", "--server")
+WATCHDOG_ARGV = spawn_entry("watch")
 _PROXY_MARKER = "proxy --mode"
 _UI_MARKER = "ui --server"
+_WATCHDOG_MARKER = " watch"
 _RUNNER_MARKER = " runner" if getattr(sys, "frozen", False) else "runner-mcp.py"
 
 
@@ -197,5 +199,33 @@ def stop_ui() -> None:
     path = auth.ui_state_dir() / "pids.txt"
     for pid, recorded, _ in _read_entries(path):
         if _owned(pid, recorded, _UI_MARKER):
+            hostos.kill_tree(pid)
+    path.unlink(missing_ok=True)
+
+
+def watchdog_pids_path() -> pathlib.Path:
+    return hostos.tempdir() / "rdm-watchdog" / "pids.txt"
+
+
+def start_watchdog(env_map: dict[str, str], home_dir: pathlib.Path) -> int:
+    stop_watchdog()
+    state_dir = watchdog_pids_path().parent
+    state_dir.mkdir(parents=True, exist_ok=True)
+    env = {**os.environ, **env_map}
+    pid = hostos.spawn(
+        WATCHDOG_ARGV,
+        cwd=home_dir,
+        stdout_path=state_dir / "watchdog.out",
+        stderr_path=state_dir / "watchdog.err",
+        env=env,
+    )
+    _write_entries(watchdog_pids_path(), [(pid, hostos.create_time(pid), _WATCHDOG_MARKER)])
+    return pid
+
+
+def stop_watchdog() -> None:
+    path = watchdog_pids_path()
+    for pid, recorded, _ in _read_entries(path):
+        if _owned(pid, recorded, _WATCHDOG_MARKER):
             hostos.kill_tree(pid)
     path.unlink(missing_ok=True)

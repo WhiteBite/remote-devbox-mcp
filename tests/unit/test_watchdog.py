@@ -1,9 +1,14 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
+import sys
+import tempfile
 
-from rdm import watchdog
+from rdm import hostos, procman, watchdog
+
+_SLEEP_60 = "import time; time.sleep(60)"
 
 
 def _wire(monkeypatch, tmp_path, dead=False, ingress_up=True, ps="rdm-toolbox healthy"):
@@ -11,6 +16,7 @@ def _wire(monkeypatch, tmp_path, dead=False, ingress_up=True, ps="rdm-toolbox he
     projects.mkdir(exist_ok=True)
     (projects / "p1.json").write_text(json.dumps({"project_dir": str(tmp_path), "git_name": "a", "git_email": "a@b"}), encoding="utf-8")
     calls: dict[str, list] = {"compose": [], "restart": [], "ingress_start": []}
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
     monkeypatch.setenv("RDM_PROJECTS_DIR", str(projects))
     monkeypatch.setattr("rdm.cli.ENV_FILE", tmp_path / ".env")
     monkeypatch.setattr(watchdog, "_log", lambda path, message: None)
@@ -118,3 +124,38 @@ def test_watchdog_ingress_restart_refreshes_manifest(monkeypatch, tmp_path):
     assert len(calls["ingress_start"]) == 1
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert manifest["ingress_url"] == "https://x"
+
+
+def test_watchdog_single_instance_guard_exits_when_foreign_alive(monkeypatch, tmp_path, capsys):
+    calls = _wire(monkeypatch, tmp_path)
+    pid = hostos.spawn([sys.executable, "-c", _SLEEP_60, " watch"])
+    try:
+        path = procman.watchdog_pids_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"{pid}|{hostos.create_time(pid)}| watch\n", encoding="utf-8")
+        watchdog.run(_env(), iterations=1, prober=lambda url, token, timeout=10.0: 200)
+        assert "уже запущен" in capsys.readouterr().out
+        assert calls["compose"] == []
+        assert procman._read_entries(path) == [(pid, hostos.create_time(pid), " watch")]
+    finally:
+        hostos.kill_tree(pid)
+
+
+def test_watchdog_guard_passes_on_stale_pidfile(monkeypatch, tmp_path):
+    calls = _wire(monkeypatch, tmp_path, ps="rdm-toolbox Up (unhealthy)")
+    path = procman.watchdog_pids_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("2147483647|| watch\n", encoding="utf-8")
+    watchdog.run(_env(), iterations=1, prober=lambda url, token, timeout=10.0: 200)
+    assert calls["compose"] != []
+    assert not path.exists()
+
+
+def test_watchdog_guard_passes_on_own_pid(monkeypatch, tmp_path):
+    calls = _wire(monkeypatch, tmp_path, ps="rdm-toolbox Up (unhealthy)")
+    path = procman.watchdog_pids_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"{os.getpid()}|{hostos.create_time(os.getpid())}| watch\n", encoding="utf-8")
+    watchdog.run(_env(), iterations=1, prober=lambda url, token, timeout=10.0: 200)
+    assert calls["compose"] != []
+    assert not path.exists()

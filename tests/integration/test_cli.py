@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import time
@@ -29,6 +30,8 @@ def _setup(monkeypatch, tmp_path):
     projects.mkdir()
     log_root = tmp_path / "rdm-host"
     monkeypatch.setenv("RDM_PROJECTS_DIR", str(projects))
+    monkeypatch.setenv("ACCESS_LOG", str(tmp_path / "access.log"))
+    monkeypatch.setenv("RDM_EVENTS_PATH", str(tmp_path / "events.jsonl"))
     monkeypatch.setattr(cli, "ENV_FILE", tmp_path / ".env")
     monkeypatch.setattr(cli, "OVERRIDE_FILE", tmp_path / "docker-compose.override.yml")
     monkeypatch.setattr(cli, "LOG_ROOT", log_root)
@@ -36,7 +39,10 @@ def _setup(monkeypatch, tmp_path):
     monkeypatch.setattr(cli, "COMPOSE_FILE", str(tmp_path / "docker-compose.yml"))
     (tmp_path / "proj").mkdir()
 
-    calls: dict[str, list] = {"compose": [], "restart": [], "stop": [], "ingress": [], "docker_run": [], "gitleaks": []}
+    calls: dict[str, list] = {
+        "compose": [], "restart": [], "stop": [], "ingress": [],
+        "docker_run": [], "gitleaks": [], "watchdog_start": [], "watchdog_stop": [],
+    }
 
     def fake_compose(*args, **kwargs):
         calls["compose"].append(args)
@@ -49,6 +55,8 @@ def _setup(monkeypatch, tmp_path):
     monkeypatch.setattr(cli.procman, "stop_host_services", lambda *a, **k: calls["stop"].append(a))
     monkeypatch.setattr(cli.procman, "stop_ingress", lambda *a, **k: calls["ingress"].append("stop"))
     monkeypatch.setattr(cli.procman, "start_ingress", lambda *a, **k: calls["ingress"].append("start") or 1)
+    monkeypatch.setattr(cli.procman, "start_watchdog", lambda env_map, home_dir: calls["watchdog_start"].append((env_map, home_dir)) or 321)
+    monkeypatch.setattr(cli.procman, "stop_watchdog", lambda: calls["watchdog_stop"].append(True))
     monkeypatch.setattr(cli, "_start_gitleaks", lambda *a, **k: calls["gitleaks"].append(a))
     return projects, calls
 
@@ -186,6 +194,67 @@ def test_down_stops_host_ingress_and_tunnels(monkeypatch, tmp_path):
     assert calls["stop"] == [("p1",)]
     assert "stop" in calls["ingress"]
     assert any("cloudflared-ingress" in args for args in calls["compose"])
+    assert calls["watchdog_stop"] == [True]
+
+
+def test_full_down_stops_watchdog_host_and_composes_down(monkeypatch, tmp_path):
+    _, calls = _setup(monkeypatch, tmp_path)
+    cli.ENV_FILE.write_text("ACTIVE_PROFILE=p1\n", encoding="utf-8")
+    assert cli.main(["full-down"]) == 0
+    assert calls["watchdog_stop"] == [True]
+    assert calls["stop"] == [("p1",)]
+    assert ("--profile", "preview", "down") in calls["compose"]
+
+
+def test_full_down_fails_when_compose_down_fails(monkeypatch, tmp_path):
+    _setup(monkeypatch, tmp_path)
+    cli.ENV_FILE.write_text("ACTIVE_PROFILE=p1\n", encoding="utf-8")
+    monkeypatch.setattr(
+        cli.docker, "compose",
+        lambda *a, **k: subprocess.CompletedProcess(["docker"], 1, "", "compose failed"),
+    )
+    assert cli.main(["full-down"]) == 1
+
+
+def test_start_autostarts_watchdog(monkeypatch, tmp_path):
+    projects, calls = _setup(monkeypatch, tmp_path)
+    (projects / "p1.json").write_text(_profile_json(tmp_path), encoding="utf-8")
+    assert cli.main(["start", "p1"]) == 0
+    assert len(calls["watchdog_start"]) == 1
+    assert calls["watchdog_start"][0][1] == cli.HOME_DIR
+
+
+def test_start_no_watchdog_flag(monkeypatch, tmp_path):
+    projects, calls = _setup(monkeypatch, tmp_path)
+    (projects / "p1.json").write_text(_profile_json(tmp_path), encoding="utf-8")
+    assert cli.main(["start", "p1", "--no-watchdog"]) == 0
+    assert calls["watchdog_start"] == []
+
+
+def test_start_no_watchdog_env(monkeypatch, tmp_path):
+    projects, calls = _setup(monkeypatch, tmp_path)
+    monkeypatch.setenv("RDM_NO_WATCHDOG", "1")
+    (projects / "p1.json").write_text(_profile_json(tmp_path), encoding="utf-8")
+    assert cli.main(["start", "p1"]) == 0
+    assert calls["watchdog_start"] == []
+
+
+def test_watchdog_control_start_stop(monkeypatch, tmp_path, capsys):
+    _, calls = _setup(monkeypatch, tmp_path)
+    assert cli.main(["watchdog", "start"]) == 0
+    assert len(calls["watchdog_start"]) == 1
+    assert "watchdog" in capsys.readouterr().out
+    assert cli.main(["watchdog", "stop"]) == 0
+    assert calls["watchdog_stop"] == [True]
+
+
+def test_ingress_rejected_while_action_lock_held(monkeypatch, tmp_path, capsys):
+    _setup(monkeypatch, tmp_path)
+    monkeypatch.setattr(cli, "_LOCK_WAIT_SECONDS", 0.0)
+    with hostos.action_lock(cli.LOG_ROOT / "action.lock", timeout=0.0):
+        assert cli._ingress("start") == 1
+    assert "другое действие" in capsys.readouterr().err
+    assert cli._ingress("start") == 0
 
 
 def test_health_reflects_stack(monkeypatch, tmp_path):
@@ -533,3 +602,79 @@ def test_stop_ui_spares_pid_with_foreign_marker(monkeypatch, tmp_path):
         assert not (state / "pids.txt").exists()
     finally:
         hostos.kill_tree(pid)
+
+
+def test_verify_audit_forwards_path_argument(monkeypatch, tmp_path):
+    import rdm.audit_verify as audit_verify
+
+    seen: list[list[str]] = []
+    monkeypatch.setattr(audit_verify, "main", lambda argv: seen.append(list(argv)) or 0)
+
+    assert cli.main(["verify-audit", "audit.log"]) == 0
+    assert cli.main(["verify-audit"]) == 0
+
+    assert seen == [["audit.log"], []]
+
+
+def test_verify_audit_propagates_exit_code(monkeypatch, tmp_path):
+    import rdm.audit_verify as audit_verify
+
+    monkeypatch.setattr(audit_verify, "main", lambda argv: 1)
+
+    assert cli.main(["verify-audit", str(tmp_path / "audit.log")]) == 1
+
+
+def test_clean_tools_delegates(monkeypatch):
+    import rdm.clean_tools as clean_tools
+
+    seen: list[bool] = []
+    monkeypatch.setattr(clean_tools, "clean_tools", lambda: seen.append(True) or 0)
+
+    assert cli.main(["clean-tools"]) == 0
+
+    assert seen == [True]
+
+
+def _stale_log(tmp_path, name):
+    path = tmp_path / name
+    path.write_text("old entry\n", encoding="utf-8")
+    stale = time.time() - 8 * 86400
+    os.utime(path, (stale, stale))
+    return path
+
+
+def test_down_cleans_stale_logs_and_events(monkeypatch, tmp_path):
+    _setup(monkeypatch, tmp_path)
+    cli.ENV_FILE.write_text("ACTIVE_PROFILE=p1\n", encoding="utf-8")
+    access_log = _stale_log(tmp_path, "access.log")
+    events = _stale_log(tmp_path, "events.jsonl")
+
+    assert cli.main(["down"]) == 0
+
+    assert not access_log.exists()
+    assert not (tmp_path / "access.log.1").exists()
+    assert not events.exists()
+
+
+def test_use_cleans_stale_logs_on_success(monkeypatch, tmp_path):
+    projects, _ = _setup(monkeypatch, tmp_path)
+    (projects / "p1.json").write_text(_profile_json(tmp_path), encoding="utf-8")
+    access_log = _stale_log(tmp_path, "access.log")
+
+    assert cli.main(["use", "p1"]) == 0
+
+    assert not access_log.exists()
+
+
+def test_down_cleanup_failure_does_not_fail_action(monkeypatch, tmp_path):
+    _setup(monkeypatch, tmp_path)
+    cli.ENV_FILE.write_text("ACTIVE_PROFILE=p1\n", encoding="utf-8")
+
+    def boom() -> list[str]:
+        raise RuntimeError("retention exploded")
+
+    from rdm.proxy import access_log
+
+    monkeypatch.setattr(access_log, "cleanup", boom)
+
+    assert cli.main(["down"]) == 0

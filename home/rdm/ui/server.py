@@ -4,123 +4,34 @@ from __future__ import annotations
 
 import json
 import pathlib
-import subprocess
 import threading
 import time
 import urllib.parse
 from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from rdm import cli, docker, envfile, hostos, netprobe, procman, profiles, redact, tokens
-from rdm.events import jobs, sink
+from rdm import cli, envfile, netprobe, profiles, tokens
+from rdm.events import sink
 from rdm.ui import auth, control, static
+from rdm.ui.api import (
+    LOG_SOURCES,
+    build_status,
+    collect_logs,
+    diff_payload,
+    exposure_payload,
+    invalidate_status_cache,
+    jobs_payload,
+    permissions_payload,
+    read_json,
+)
 
 LOOPBACK_HOST = "127.0.0.1"
 STATUS_TTL_SECONDS = 3.0
-_TAIL_LINES = 200
-_EVENTS_TAIL_LINES = 2000
 _SSE_MAX_CONNECTIONS = 8
 _SSE_POLL_SECONDS = 0.25
 _SSE_HEARTBEAT_SECONDS = 15.0
-_DIFF_TIMEOUT_SECONDS = 5.0
-_LOG_SOURCES: dict[str, tuple[str, ...]] = {
-    "host": ("rdm-host/*.out", "rdm-host/*.err"),
-    "ingress": ("rdm-ingress/ingress.out", "rdm-ingress/ingress.err"),
-    "watchdog": ("rdm-watchdog/watchdog.log",),
-    "runner": ("rdm-runner/audit.log",),
-}
-_SENSITIVE_MARKERS = ("TOKEN", "SECRET", "PASSWORD")
-_SENSITIVE_KEYS = ("VLESS_SUB_URL", "TUNNEL_TAIL")
 _PROFILE_PREFIX = "/api/profile/"
 _ACTION_PREFIX = "/api/action/"
-
-
-def _load_profile(active: str) -> profiles.Profile | None:
-    path = profiles.find(active) if active else None
-    if path is None:
-        return None
-    try:
-        return profiles.load(path)
-    except (ValueError, OSError):
-        return None
-
-
-def _read_json(path: pathlib.Path) -> object | None:
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-
-
-def _is_sensitive(key: str) -> bool:
-    return key in _SENSITIVE_KEYS or any(marker in key for marker in _SENSITIVE_MARKERS)
-
-
-def _masked_env(env_map: dict[str, str]) -> dict[str, str]:
-    return {key: tokens.mask(value) if _is_sensitive(key) else value for key, value in sorted(env_map.items())}
-
-
-def _pidfile_alive(path: pathlib.Path) -> dict[str, int]:
-    entries = procman._read_entries(path)
-    return {"recorded": len(entries), "alive": sum(1 for entry in entries if hostos.owned(*entry))}
-
-
-def _watchdog_alive() -> bool:
-    if hostos.psutil is None:
-        return False
-    for proc in hostos.psutil.process_iter():
-        try:
-            cmdline = proc.cmdline()
-        except hostos.psutil.Error:
-            continue
-        if "watch" in cmdline and any("devbox" in part for part in cmdline):
-            return True
-    return False
-
-
-def _build_status(port: int) -> dict[str, object]:
-    env_map = envfile.EnvFile.load(cli.ENV_FILE).as_map()
-    active = env_map.get("ACTIVE_PROFILE", "")
-    profile_path = profiles.find(active) if active else None
-    runner_port = cli._runner_port(env_map)
-    return {
-        "compose_ps": docker.compose_ps(cli.COMPOSE_FILE),
-        "ports": {
-            "cockpit": netprobe.can_connect(port),
-            "ingress": netprobe.can_connect(procman.INGRESS_PORT),
-            "bridge": netprobe.can_connect(profiles.BRIDGE_PORT),
-            "runner": netprobe.can_connect(runner_port) if runner_port else None,
-        },
-        "host_services": _pidfile_alive(hostos.tempdir() / "rdm-host" / f"{active}-pids.txt"),
-        "ingress_pids": _pidfile_alive(hostos.tempdir() / "rdm-ingress" / "pids.txt"),
-        "watchdog": _watchdog_alive(),
-        "env": _masked_env(env_map),
-        "manifest": _read_json(cli.MANIFEST_PATH),
-        "profile": {"active": active, "source_dir": str(profile_path.parent) if profile_path else None},
-    }
-
-
-def _tail(path: pathlib.Path, needle: str) -> list[str]:
-    try:
-        text = path.read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        return []
-    lines = text.splitlines()[-_TAIL_LINES:]
-    if needle:
-        lines = [line for line in lines if needle in line.lower()]
-    return [redact.redact_text(line) for line in lines]
-
-
-def _collect_logs(source: str, needle: str) -> list[dict[str, object]]:
-    temp = hostos.tempdir()
-    logs: list[dict[str, object]] = []
-    for name in (source,) if source else tuple(_LOG_SOURCES):
-        files = sorted(path for pattern in _LOG_SOURCES[name] for path in temp.glob(pattern))
-        for path in files:
-            lines = _tail(path, needle)
-            if lines:
-                logs.append({"source": name, "file": path.name, "lines": lines})
-    return logs
 
 
 def _handoff_payload(reveal: bool) -> dict[str, str]:
@@ -134,95 +45,6 @@ def _handoff_payload(reveal: bool) -> dict[str, str]:
         self_authed_ports=cli._self_authed_ports(env_map),
     )
     return {"handoff": block}
-
-
-def _exposure_payload() -> dict[str, object] | None:
-    env_map = envfile.EnvFile.load(cli.ENV_FILE).as_map()
-    active = env_map.get("ACTIVE_PROFILE", "")
-    profile = _load_profile(active)
-    if profile is None:
-        return None
-    manifest = _read_json(cli.MANIFEST_PATH)
-    manifest = manifest if isinstance(manifest, dict) else {}
-    return {
-        "profile": {"name": active, "project_dir": profile.project_dir},
-        "allowed_ports": manifest.get("allowed_ports", []),
-        "endpoints": manifest.get("endpoints", []),
-    }
-
-
-def _git_porcelain(project_dir: str) -> list[str] | None:
-    if not project_dir:
-        return None
-    try:
-        inside = subprocess.run(
-            ["git", "-C", project_dir, "rev-parse", "--is-inside-work-tree"],
-            capture_output=True,
-            text=True,
-            timeout=_DIFF_TIMEOUT_SECONDS,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return None
-    if inside.returncode != 0 or inside.stdout.strip() != "true":
-        return None
-    try:
-        status = subprocess.run(
-            ["git", "-C", project_dir, "status", "--porcelain"],
-            capture_output=True,
-            text=True,
-            timeout=_DIFF_TIMEOUT_SECONDS,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return None
-    if status.returncode != 0:
-        return None
-    return [line for line in status.stdout.splitlines() if line.strip()]
-
-
-def _diff_payload() -> dict[str, object]:
-    env_map = envfile.EnvFile.load(cli.ENV_FILE).as_map()
-    profile = _load_profile(env_map.get("ACTIVE_PROFILE", ""))
-    if profile is None:
-        return {"git": False}
-    porcelain = _git_porcelain(profile.project_dir)
-    if porcelain is None:
-        return {"git": False}
-    return {"git": True, "porcelain": porcelain}
-
-
-def _read_events() -> list[dict[str, object]]:
-    try:
-        text = sink.default_events_path().read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        return []
-    events: list[dict[str, object]] = []
-    for line in text.splitlines()[-_EVENTS_TAIL_LINES:]:
-        try:
-            event = json.loads(line)
-        except ValueError:
-            continue
-        if isinstance(event, dict):
-            events.append(event)
-    return events
-
-
-def _jobs_payload() -> dict[str, object]:
-    events = _read_events()
-    return {
-        "jobs": jobs.correlate(events)["jobs"],
-        "stalled": jobs.stall_alarm(events, time.time()),
-    }
-
-
-def _permissions_payload() -> dict[str, object]:
-    events = _read_events()
-    correlated = jobs.correlate(events)
-    permissions = [
-        job
-        for job in correlated["jobs"]
-        if job.get("permission") is not None or job.get("status") == "awaiting_permission"
-    ]
-    return {"permissions": permissions, "stalled": jobs.stall_alarm(events, time.time())}
 
 
 def _plan_use(body: dict[str, object]) -> tuple[Callable[..., int], tuple[object, ...]]:
@@ -274,18 +96,29 @@ class CockpitServer(ThreadingHTTPServer):
         self._status_lock = threading.Lock()
         self._status_cache: dict[str, object] | None = None
         self._status_at = 0.0
+        self._status_busy = False
         self._sse_lock = threading.Lock()
         self._sse_connections = 0
         super().__init__((LOOPBACK_HOST, port), _Handler)
 
     def status(self) -> dict[str, object]:
         with self._status_lock:
+            busy = self.actions.busy()
+            if self._status_busy != busy:
+                self._status_busy = busy
+                self._status_cache = None
+                invalidate_status_cache()
             if self._status_cache is not None and time.monotonic() - self._status_at < STATUS_TTL_SECONDS:
                 return self._status_cache
-            payload = _build_status(self.server_address[1])
+            payload = build_status(self.server_address[1])
             self._status_cache = payload
             self._status_at = time.monotonic()
             return payload
+
+    def invalidate_status(self) -> None:
+        with self._status_lock:
+            self._status_cache = None
+        invalidate_status_cache()
 
     def sse_acquire(self) -> bool:
         with self._sse_lock:
@@ -347,25 +180,25 @@ class _Handler(BaseHTTPRequestHandler):
         elif path == "/api/handoff":
             self._api_handoff(query)
         elif path == "/api/manifest":
-            manifest = _read_json(cli.MANIFEST_PATH)
+            manifest = read_json(cli.MANIFEST_PATH)
             if manifest is None:
                 self._json(404, {"error": "manifest not found"})
             else:
                 self._json(200, manifest)
         elif path == "/api/exposure":
-            payload = _exposure_payload()
+            payload = exposure_payload()
             if payload is None:
                 self._json(404, {"error": "no active profile"})
             else:
                 self._json(200, payload)
         elif path == "/api/diff":
-            self._json(200, _diff_payload())
+            self._json(200, diff_payload())
         elif path == "/api/events":
             self._api_events()
         elif path == "/api/jobs":
-            self._json(200, _jobs_payload())
+            self._json(200, jobs_payload())
         elif path == "/api/permissions":
-            self._json(200, _permissions_payload())
+            self._json(200, permissions_payload())
         elif path.startswith(_PROFILE_PREFIX):
             self._api_profile_get(path)
         else:
@@ -423,7 +256,7 @@ class _Handler(BaseHTTPRequestHandler):
         if target is None:
             return
         name, resolved = target
-        raw = _read_json(resolved)
+        raw = read_json(resolved)
         if not isinstance(raw, dict):
             self._json(500, {"error": "profile unreadable"})
             return
@@ -471,16 +304,17 @@ class _Handler(BaseHTTPRequestHandler):
         if action_id is None:
             self._json(409, {"error": "another action is already running"})
             return
+        self.server.invalidate_status()
         self._json(202, {"action_id": action_id})
 
     def _api_logs(self, query: str) -> None:
         params = urllib.parse.parse_qs(query)
         source = params.get("source", [""])[0]
         needle = params.get("filter", [""])[0].lower()
-        if source and source not in _LOG_SOURCES:
+        if source and source not in LOG_SOURCES:
             self._json(404, {"error": "unknown source"})
             return
-        self._json(200, {"logs": _collect_logs(source, needle)})
+        self._json(200, {"logs": collect_logs(source, needle)})
 
     def _api_handoff(self, query: str) -> None:
         reveal = urllib.parse.parse_qs(query).get("reveal", [""])[0] == "1"

@@ -4,7 +4,11 @@ Both parsers take the bytes exactly as observed on the wire and return a
 metadata dict, or None when there is nothing to observe (empty input, or a
 response that carries no JobView). Oversized input is reported as
 ``truncated`` and undecodable input as ``unparsed`` — never as silence.
-Payload fields (arguments, result.output) are never part of the result.
+Payload fields (arguments, result.output) are never part of the result; the
+only argument-derived values are the control-call identity keys
+``job_id``/``permission_id``, extracted from tools/call arguments and
+``JobView.permission`` so pending permissions can be answered from the
+event stream.
 """
 
 from __future__ import annotations
@@ -31,8 +35,15 @@ def parse_request(body: bytes, cap: int) -> dict[str, Any] | None:
         meta["rpc_id"] = rpc_id
     if message["method"] == "tools/call":
         params = message.get("params")
-        if isinstance(params, dict) and params.get("name") is not None:
-            meta["tool"] = params["name"]
+        if isinstance(params, dict):
+            if params.get("name") is not None:
+                meta["tool"] = params["name"]
+            arguments = params.get("arguments")
+            if isinstance(arguments, dict):
+                for key in ("job_id", "permission_id"):
+                    value = arguments.get(key)
+                    if isinstance(value, str):
+                        meta[key] = value
     return meta
 
 
@@ -61,9 +72,13 @@ def parse_response(raw: bytes, cap: int) -> dict[str, Any] | None:
     meta: dict[str, Any] = {"bytes": len(raw), "job_id": job.get("job_id")}
     if job.get("status") is not None:
         meta["status"] = job["status"]
-    permission = _permission_type(job.get("permission"))
-    if permission is not None:
-        meta["permission"] = permission
+    permission = job.get("permission")
+    permission_type = _permission_type(permission)
+    if permission_type is not None:
+        meta["permission"] = permission_type
+    permission_id = _permission_id(permission)
+    if permission_id is not None:
+        meta["permission_id"] = permission_id
     exit_code = _exit_code(job.get("result"))
     if exit_code is not None:
         meta["exit"] = exit_code
@@ -92,6 +107,13 @@ def _permission_type(permission: Any) -> str | None:
     if not isinstance(permission, dict):
         return None
     value = permission.get("permission") or permission.get("type")
+    return value if isinstance(value, str) else None
+
+
+def _permission_id(permission: Any) -> str | None:
+    if not isinstance(permission, dict):
+        return None
+    value = permission.get("id")
     return value if isinstance(value, str) else None
 
 

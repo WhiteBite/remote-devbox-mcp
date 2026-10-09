@@ -106,8 +106,8 @@ def test_bridge_tools_call_permission_event(tmp_path, monkeypatch):
         assert response_event["job_id"] == "job-2"
         assert response_event["status"] == "awaiting_permission"
         assert response_event["permission"] == "edit"
+        assert response_event["permission_id"] == "perm-9"
         raw = events_path.read_text(encoding="utf-8")
-        assert "perm-9" not in raw
         assert "/project/**" not in raw
     finally:
         fake.close()

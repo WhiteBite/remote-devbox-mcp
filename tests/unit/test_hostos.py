@@ -1,8 +1,12 @@
+import os
+import pathlib
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 
+import pytest
 from rdm import hostos
 
 CREATE_NO_WINDOW = 0x08000000
@@ -14,6 +18,15 @@ TOY_SCRIPT = (
     "import socket,time;"
     "s=socket.socket();s.bind(('127.0.0.1',0));s.listen();"
     "print(s.getsockname()[1],flush=True);time.sleep(60)"
+)
+
+_CHILD_LOCK_HOLDER = (
+    "import pathlib, sys\n"
+    "sys.path.insert(0, {home!r})\n"
+    "from rdm import hostos\n"
+    "with hostos.action_lock(pathlib.Path({path!r}), timeout=5.0):\n"
+    "    print('locked', flush=True)\n"
+    "    sys.stdin.readline()\n"
 )
 
 
@@ -154,3 +167,86 @@ def test_spawn_find_kill_roundtrip(tmp_path):
         assert _wait_until(lambda: hostos.find_pid_by_port(port) is None)
     finally:
         hostos.kill_tree(pid)
+
+
+def test_action_lock_writes_holder_pid(tmp_path):
+    path = tmp_path / "action.lock"
+    with hostos.action_lock(path, timeout=1.0):
+        text = path.read_text(encoding="utf-8")
+    assert text.startswith(f"{os.getpid()}|")
+
+
+def test_action_lock_released_for_next_acquire(tmp_path):
+    path = tmp_path / "action.lock"
+    with hostos.action_lock(path, timeout=1.0):
+        pass
+    with hostos.action_lock(path, timeout=1.0):
+        pass
+
+
+def test_action_lock_blocks_same_process_other_handle(tmp_path):
+    path = tmp_path / "action.lock"
+    held = threading.Event()
+    release = threading.Event()
+
+    def holder() -> None:
+        with hostos.action_lock(path, timeout=1.0):
+            held.set()
+            release.wait(5)
+
+    thread = threading.Thread(target=holder)
+    thread.start()
+    try:
+        assert held.wait(5)
+        with pytest.raises(hostos.ActionLockError) as error:
+            with hostos.action_lock(path, timeout=0.0):
+                pass
+        assert f"pid {os.getpid()}" in str(error.value)
+    finally:
+        release.set()
+        thread.join(timeout=5)
+
+
+def test_action_lock_waits_until_holder_releases(tmp_path):
+    path = tmp_path / "action.lock"
+    held = threading.Event()
+    release = threading.Event()
+
+    def holder() -> None:
+        with hostos.action_lock(path, timeout=1.0):
+            held.set()
+            release.wait(5)
+
+    thread = threading.Thread(target=holder)
+    thread.start()
+    assert held.wait(5)
+    release.set()
+    with hostos.action_lock(path, timeout=10.0):
+        pass
+    thread.join(timeout=5)
+
+
+def test_action_lock_excludes_other_process(tmp_path):
+    path = tmp_path / "action.lock"
+    home = str(pathlib.Path(__file__).resolve().parents[2] / "home")
+    code = _CHILD_LOCK_HOLDER.format(home=home, path=str(path))
+    proc = subprocess.Popen(
+        [sys.executable, "-c", code],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        assert proc.stdout.readline().strip() == "locked"
+        with pytest.raises(hostos.ActionLockError) as error:
+            with hostos.action_lock(path, timeout=0.0):
+                pass
+        assert f"pid {proc.pid}" in str(error.value)
+    finally:
+        proc.stdin.write("\n")
+        proc.stdin.flush()
+        proc.wait(timeout=15)
+        proc.stdout.close()
+        proc.stdin.close()
+    with hostos.action_lock(path, timeout=10.0):
+        pass

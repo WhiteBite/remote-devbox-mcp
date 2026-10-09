@@ -1,3 +1,4 @@
+import contextlib
 import os
 import pathlib
 import shutil
@@ -87,6 +88,74 @@ def owned(pid: int, recorded: float | None, marker: str) -> bool:
     if cmdline_matches(pid, marker):
         return True
     return recorded is not None and create_time(pid) == recorded
+
+
+class ActionLockError(RuntimeError):
+    """Конкурент держит lock-файл дольше timeout."""
+
+
+_LOCK_OFFSET = 4096
+
+
+def _lock_region(fd: int) -> None:
+    if sys.platform == "win32":
+        import msvcrt
+
+        msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+    else:
+        import fcntl
+
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+
+def _unlock_region(fd: int) -> None:
+    if sys.platform == "win32":
+        import msvcrt
+
+        msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+    else:
+        import fcntl
+
+        fcntl.flock(fd, fcntl.LOCK_UN)
+
+
+def _holder_pid(fd: int) -> str:
+    os.lseek(fd, 0, os.SEEK_SET)
+    text = os.read(fd, 128).decode("utf-8", errors="replace").strip()
+    return text.split("|", 1)[0] if text else ""
+
+
+@contextlib.contextmanager
+def action_lock(path: pathlib.Path, timeout: float = 10.0, poll: float = 0.05):
+    """Кросс-процессный мьютекс для мутирующих действий devbox.
+
+    Регион блокировки смещён за контент: Windows LockFile закрывает чужим
+    хендлам чтение заблокированного диапазона, а pid держателя в начале
+    файла должен оставаться читаемым конкуренту для сообщения об ошибке.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o644)
+    deadline = time.monotonic() + timeout
+    locked = False
+    try:
+        while not locked:
+            os.lseek(fd, _LOCK_OFFSET, os.SEEK_SET)
+            try:
+                _lock_region(fd)
+                locked = True
+            except OSError:
+                if time.monotonic() >= deadline:
+                    raise ActionLockError(f"pid {_holder_pid(fd) or 'unknown'}") from None
+                time.sleep(poll)
+        os.lseek(fd, 0, os.SEEK_SET)
+        os.ftruncate(fd, 0)
+        os.write(fd, f"{os.getpid()}|{create_time(os.getpid()) or ''}\n".encode("ascii"))
+        yield
+    finally:
+        if locked:
+            os.lseek(fd, _LOCK_OFFSET, os.SEEK_SET)
+            _unlock_region(fd)
+        os.close(fd)
 
 
 def _resolve(argv: list[str]) -> list[str]:

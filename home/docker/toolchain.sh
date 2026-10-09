@@ -36,7 +36,7 @@ if [ -n "$SETUP_SCRIPT_B64" ]; then
 fi
 
 # registry.json: refcount тулчейнов по /opt/tools/refs/*.list (рендерит devbox.ps1).
-# refcount=0 → кандидат на удаление (devbox.ps1 clean-tools в будущем).
+# refcount=0 → удаляет `devbox clean-tools` (rdm/clean_tools.py).
 node -e '
 const fs = require("fs");
 const P = "/opt/tools/";

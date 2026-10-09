@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+import subprocess
 import tempfile
 from pathlib import Path
 
@@ -25,6 +26,25 @@ def _index_key_lines(lines: list[str]) -> dict[str, int]:
         if match is not None and match.group(1) not in key_pos:
             key_pos[match.group(1)] = i
     return key_pos
+
+
+def _restrict_permissions(path: Path) -> None:
+    if os.name == "nt":
+        try:
+            user = subprocess.run(
+                ["whoami"], capture_output=True, text=True, check=True
+            ).stdout.strip()
+            subprocess.run(
+                ["icacls", str(path), "/inheritance:r", "/grant:r", f"{user}:F"],
+                capture_output=True, check=True,
+            )
+        except (OSError, subprocess.SubprocessError):
+            pass
+    else:
+        try:
+            path.chmod(0o600)
+        except OSError:
+            pass
 
 
 class EnvFile:
@@ -96,6 +116,7 @@ class EnvFile:
         try:
             with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
                 handle.write(self.render())
+            _restrict_permissions(tmp)
             os.replace(tmp, target)
         finally:
             tmp.unlink(missing_ok=True)
