@@ -252,6 +252,25 @@ def test_action_status_maps_recent_from_action_events(monkeypatch, tmp_path):
     assert interrupted["status"] == "interrupted"
 
 
+def test_action_status_recent_status_enum_is_frozen(monkeypatch, tmp_path):
+    monkeypatch.setattr(service, "_queue", None)
+    events_path = tmp_path / "events.jsonl"
+    now = time.time()
+    _write_events(
+        events_path,
+        [
+            {"ts": now - 20, "kind": "action", "job_id": "a1", "tool": "start", "status": "started"},
+            {"ts": now - 10, "kind": "action", "job_id": "a1", "tool": "start", "status": "finished", "exit": 0},
+            {"ts": now, "kind": "action", "job_id": "a2", "tool": "down", "status": "interrupted"},
+        ],
+    )
+    monkeypatch.setenv("RDM_EVENTS_PATH", str(events_path))
+
+    statuses = {row["status"] for row in service.action_status()["recent"]}
+
+    assert statuses <= {"started", "finished", "interrupted"}
+
+
 def _wait_recent_finished() -> dict[str, Any]:
     deadline = time.monotonic() + 5
     payload = service.action_status()
