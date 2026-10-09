@@ -2,7 +2,7 @@
   "schema": "stitch.plugin/v2",
   "id": "stitch-devbox",
   "name": "Stitch Devbox",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "service": "devbox",
   "kind": "service",
   "engine": {
@@ -50,6 +50,13 @@
     }
   ],
   "changelog": [
+    {
+      "version": "0.2.5",
+      "date": "2026-10-10",
+      "changes": [
+        "Failed actions keep their stdout in the payload (exit code carried on the event), so stack_start/doctor failures show their reason in the Actions table"
+      ]
+    },
     {
       "version": "0.2.4",
       "date": "2026-10-10",

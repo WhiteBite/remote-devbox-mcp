@@ -375,8 +375,10 @@ def _queue_submit(fn_name: str, *args: Any, payload_key: str = "") -> dict[str, 
     """Enqueue a cockpit CLI callable on the single-flight action queue.
 
     With ``payload_key`` the runner captures the cli callable's stdout and
-    returns it as ``{payload_key: text}`` on success; the ActionQueue stores
-    that dict on the finished action event (redacted, size-capped).
+    returns it as ``{"exit": rc, payload_key: text}`` — failure output is
+    kept too, so the Actions table can show why a command died; the
+    ActionQueue stores that dict on the finished action event (redacted,
+    size-capped).
     """
     import contextlib
     import io
@@ -395,9 +397,9 @@ def _queue_submit(fn_name: str, *args: Any, payload_key: str = "") -> dict[str, 
         buffer = io.StringIO()
         with contextlib.redirect_stdout(buffer):
             rc = int(fn(*args))
-        if rc or not payload_key:
+        if not payload_key:
             return rc
-        return {payload_key: buffer.getvalue()}
+        return {"exit": rc, payload_key: buffer.getvalue()}
 
     _runner.__name__ = fn_name
 
@@ -456,7 +458,7 @@ def reconcile_actions() -> dict[str, Any]:
 
 
 def stack_start(name: str = "", preview: bool = False) -> dict[str, Any]:
-    return _queue_submit("_start", name or None, bool(preview))
+    return _queue_submit("_start", name or None, bool(preview), payload_key="output")
 
 
 def stack_down() -> dict[str, Any]:

@@ -446,6 +446,24 @@ def test_issue_tokens_surfaces_chat_block_in_recent_payload(monkeypatch, tmp_pat
     assert finished["payload"] == {"chatBlock": "chat block body\n"}
 
 
+def test_action_payload_keeps_failure_output(monkeypatch, tmp_path):
+    monkeypatch.setattr(service, "_queue", None)
+    monkeypatch.setenv("RDM_EVENTS_PATH", str(tmp_path / "events.jsonl"))
+    rdm = service._rdm()
+
+    def fake_start(name: str, preview: bool) -> int:
+        print("docker compose up failed: no such service")
+        return 1
+
+    monkeypatch.setattr(rdm.cli, "_start", fake_start)
+
+    service.stack_start("alpha", False)
+    finished = _wait_recent_finished()
+
+    assert finished["exit"] == 1
+    assert "no such service" in finished["payload"]["output"]
+
+
 def test_action_payload_is_redacted(monkeypatch, tmp_path):
     monkeypatch.setattr(service, "_queue", None)
     monkeypatch.setenv("RDM_EVENTS_PATH", str(tmp_path / "events.jsonl"))

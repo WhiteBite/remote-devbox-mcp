@@ -73,8 +73,8 @@ class ActionQueue:
         try:
             result = fn(*args)
             if isinstance(result, dict):
-                payload = _action_payload(result)
-                rc = 0
+                rc = int(result.get("exit", 0))
+                payload = _action_payload({k: v for k, v in result.items() if k != "exit"})
             else:
                 rc = int(result)
         finally:
