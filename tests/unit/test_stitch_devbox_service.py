@@ -472,3 +472,37 @@ def test_profile_delete_removes_and_rejects_missing(monkeypatch, tmp_path):
     assert not (tmp_path / "doomed.json").exists()
     with pytest.raises(ValueError):
         service.profile_delete("doomed")
+
+
+def test_profile_put_git_identity_from_host_config(monkeypatch, tmp_path):
+    monkeypatch.setenv("RDM_PROJECTS_DIR", str(tmp_path))
+    monkeypatch.setattr(
+        service, "_git_config_value", lambda key: {"user.name": "Host User", "user.email": "h@x.dev"}[key]
+    )
+    project = tmp_path / "proj"
+    project.mkdir()
+
+    result = service.profile_put(
+        "hostgit", json.dumps({"project_dir": str(project), "mode": "readonly"})
+    )
+
+    assert result == {"valid": True, "errors": []}
+    written = json.loads((tmp_path / "hostgit.json").read_text(encoding="utf-8"))
+    assert written["git_name"] == "Host User"
+    assert written["git_email"] == "h@x.dev"
+
+
+def test_profile_put_git_identity_fallback_without_config(monkeypatch, tmp_path):
+    monkeypatch.setenv("RDM_PROJECTS_DIR", str(tmp_path))
+    monkeypatch.setattr(service, "_git_config_value", lambda key: "")
+    project = tmp_path / "proj"
+    project.mkdir()
+
+    result = service.profile_put(
+        "nogit", json.dumps({"project_dir": str(project), "mode": "readonly"})
+    )
+
+    assert result == {"valid": True, "errors": []}
+    written = json.loads((tmp_path / "nogit.json").read_text(encoding="utf-8"))
+    assert written["git_name"] == "nogit"
+    assert written["git_email"] == "nogit@devbox.local"

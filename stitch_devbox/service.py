@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 import time
 from datetime import datetime, timezone
@@ -309,6 +310,20 @@ def profile_get(name: str) -> dict[str, Any]:
     return {"json": json_text, "valid": not problems, "errors": problems}
 
 
+def _git_config_value(key: str) -> str:
+    try:
+        result = subprocess.run(
+            ["git", "config", "--get", key],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except OSError:
+        return ""
+    return result.stdout.strip() if result.returncode == 0 else ""
+
+
 def profile_put(name: str, json_text: str) -> dict[str, Any]:
     rdm = _rdm()
     if not name or not rdm.cli._NAME_RE.fullmatch(name):
@@ -322,6 +337,10 @@ def profile_put(name: str, json_text: str) -> dict[str, Any]:
         return {"valid": False, "errors": [f"json: {exc}"]}
     if not isinstance(data, dict):
         return {"valid": False, "errors": ["json: expected an object"]}
+    if not data.get("git_name"):
+        data["git_name"] = _git_config_value("user.name") or name
+    if not data.get("git_email"):
+        data["git_email"] = _git_config_value("user.email") or f"{name}@devbox.local"
     try:
         rdm.profiles.write_raw(path, data)
     except ValueError as exc:

@@ -2,7 +2,7 @@
   "schema": "stitch.plugin/v2",
   "id": "stitch-devbox",
   "name": "Stitch Devbox",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "service": "devbox",
   "kind": "service",
   "engine": {
@@ -50,6 +50,13 @@
     }
   ],
   "changelog": [
+    {
+      "version": "0.2.2",
+      "date": "2026-10-09",
+      "changes": [
+        "profile_put fills empty git identity from host git config user.name/user.email before falling back to placeholders"
+      ]
+    },
     {
       "version": "0.2.1",
       "date": "2026-10-09",
