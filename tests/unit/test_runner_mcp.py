@@ -234,7 +234,7 @@ def test_main_registers_kill_tool_for_background_script(monkeypatch, tmp_path):
     registered = []
 
     class FakeMCP:
-        def __init__(self, name, host, port):
+        def __init__(self, name):
             pass
 
         def tool(self):
@@ -247,10 +247,10 @@ def test_main_registers_kill_tool_for_background_script(monkeypatch, tmp_path):
         def add_tool(self, fn, name=None):
             registered.append(name)
 
-        def run(self, transport):
+        def run(self, transport, **kwargs):
             pass
 
-    monkeypatch.setattr(main, "FastMCP", FakeMCP)
+    monkeypatch.setattr(main, "MCPServer", FakeMCP)
     main.main()
     assert "run_script_shots" in registered
     assert "run_script_shots_kill" in registered

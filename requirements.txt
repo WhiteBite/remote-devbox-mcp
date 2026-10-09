@@ -1,4 +1,4 @@
 # Host core runtime deps. psutil gives process/port safety (PID-reuse guard,
 # cmdline checks); mcp is required only by the runner.
 psutil>=7.2.2,<8
-mcp>=1.0,<2
+mcp>=2.3.0,<3
