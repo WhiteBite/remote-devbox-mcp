@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from . import service
+from . import jobcontrol, service
 
 try:
     from autoreg.plugin.rpc import RpcPluginServer
@@ -39,6 +39,8 @@ def _handle_init(params: dict[str, Any]) -> dict[str, Any]:
     ctx.data_dir = str(params.get("data_dir", ""))
     supported = params.get("supported")
     ctx.supported = list(supported) if isinstance(supported, list) else []
+    service.set_host_capabilities(ctx.supported)
+    service.reconcile_actions()
     return {
         "plugin_id": params.get("plugin_id", ""),
         "db_path": ctx.db_path,
@@ -94,6 +96,7 @@ def _handle_logs(params: dict[str, Any]) -> dict[str, Any]:
     return service.logs(
         str(params.get("source", "")),
         str(params.get("filter", "")),
+        int(params.get("limit", 80)),
     )
 
 
@@ -107,6 +110,17 @@ def _handle_profiles_list(params: dict[str, Any]) -> list[dict[str, Any]]:
 
 def _handle_profile_get(params: dict[str, Any]) -> dict[str, Any]:
     return service.profile_get(str(params.get("name", "")))
+
+
+def _handle_profile_put(params: dict[str, Any]) -> dict[str, Any]:
+    return service.profile_put(
+        str(params.get("name", "")),
+        str(params.get("json", "")),
+    )
+
+
+def _handle_cockpit_open(params: dict[str, Any]) -> dict[str, Any]:
+    return service.cockpit_open()
 
 
 def _handle_action_status(params: dict[str, Any]) -> dict[str, Any]:
@@ -136,6 +150,14 @@ def _handle_ingress_control(params: dict[str, Any]) -> dict[str, Any]:
     return service.ingress_control(str(params.get("action", "up")))
 
 
+def _handle_watchdog_control(params: dict[str, Any]) -> dict[str, Any]:
+    return service.watchdog_control(str(params.get("action", "start")))
+
+
+def _handle_stack_full_down(params: dict[str, Any]) -> dict[str, Any]:
+    return service.stack_full_down()
+
+
 def _handle_issue_tokens(params: dict[str, Any]) -> dict[str, Any]:
     return service.issue_tokens()
 
@@ -144,8 +166,26 @@ def _handle_run_doctor(params: dict[str, Any]) -> dict[str, Any]:
     return service.run_doctor()
 
 
-def main() -> None:
-    """Register handlers and serve the JSON-RPC loop."""
+def _handle_jobs_live(params: dict[str, Any]) -> dict[str, Any]:
+    return jobcontrol.jobs_live()
+
+
+def _handle_job_cancel(params: dict[str, Any]) -> dict[str, Any]:
+    return jobcontrol.job_cancel(str(params.get("jobId", "")))
+
+
+def _handle_permissions_pending(params: dict[str, Any]) -> dict[str, Any]:
+    return jobcontrol.permissions_pending()
+
+
+def _handle_permission_reply(params: dict[str, Any]) -> dict[str, Any]:
+    return jobcontrol.permission_reply(
+        str(params.get("permissionId", "")),
+        str(params.get("decision", "")),
+    )
+
+
+def _build_server() -> RpcPluginServer:
     server = RpcPluginServer()
     server.set_init_handler(_handle_init)
     server.register("_migrate_db", _handle_migrate_db)
@@ -162,15 +202,28 @@ def main() -> None:
     server.register("logs_text", _handle_logs_text)
     server.register("profiles_list", _handle_profiles_list)
     server.register("profile_get", _handle_profile_get)
+    server.register("profile_put", _handle_profile_put)
+    server.register("cockpit_open", _handle_cockpit_open)
     server.register("action_status", _handle_action_status)
     server.register("stack_start", _handle_stack_start)
     server.register("stack_down", _handle_stack_down)
     server.register("profile_use", _handle_profile_use)
     server.register("stop_host", _handle_stop_host)
     server.register("ingress_control", _handle_ingress_control)
+    server.register("watchdog_control", _handle_watchdog_control)
+    server.register("stack_full_down", _handle_stack_full_down)
     server.register("issue_tokens", _handle_issue_tokens)
     server.register("run_doctor", _handle_run_doctor)
-    server.serve()
+    server.register("jobs_live", _handle_jobs_live)
+    server.register("job_cancel", _handle_job_cancel)
+    server.register("permissions_pending", _handle_permissions_pending)
+    server.register("permission_reply", _handle_permission_reply)
+    return server
+
+
+def main() -> None:
+    """Register handlers and serve the JSON-RPC loop."""
+    _build_server().serve()
 
 
 if __name__ == "__main__":

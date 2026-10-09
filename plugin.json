@@ -2,7 +2,7 @@
   "schema": "stitch.plugin/v2",
   "id": "stitch-devbox",
   "name": "Stitch Devbox",
-  "version": "0.1.3",
+  "version": "0.2.0",
   "service": "devbox",
   "kind": "service",
   "engine": {
@@ -13,7 +13,9 @@
   "entry": {
     "module": "stitch_devbox"
   },
-  "capabilities": [],
+  "capabilities": [
+    "host_driver"
+  ],
   "outputs": [],
   "signature": "",
   "description": {
@@ -47,7 +49,15 @@
       "status": "beta"
     }
   ],
-"changelog": [
+  "changelog": [
+    {
+      "version": "0.2.0",
+      "date": "2026-10-09",
+      "changes": [
+        "Control plane moves to the Stitch core page: live vitals, job/permission control, profile editor, action payloads",
+        "ui.kind flipped to core_page; declarative page nodes removed"
+      ]
+    },
     {
       "version": "0.1.3",
       "date": "2026-10-08",
@@ -66,12 +76,16 @@
     {
       "version": "0.1.1",
       "date": "2026-10-01",
-      "changes": ["Fix UI label i18n keys so the Devbox page resolves translations"]
+      "changes": [
+        "Fix UI label i18n keys so the Devbox page resolves translations"
+      ]
     },
     {
       "version": "0.1.0",
       "date": "2026-10-01",
-      "changes": ["Initial release"]
+      "changes": [
+        "Initial release"
+      ]
     }
   ],
   "generated_by": "stitch_plugin_tools scaffold v3",
@@ -88,30 +102,125 @@
   ],
   "contributions": {
     "commands": [
-      {"name": "health_check", "readonly": true},
-      {"name": "status", "readonly": true},
-      {"name": "overview", "readonly": true},
-      {"name": "jobs", "readonly": true},
-      {"name": "permissions", "readonly": true},
-      {"name": "exposure", "readonly": true},
-      {"name": "diff", "readonly": true},
-      {"name": "manifest", "readonly": true},
-      {"name": "events_tail", "readonly": true},
-      {"name": "logs", "readonly": true},
-      {"name": "logs_text", "readonly": true},
-      {"name": "profiles_list", "readonly": true},
-      {"name": "profile_get", "readonly": true},
-      {"name": "action_status", "readonly": true},
-      {"name": "stack_start", "readonly": false},
-      {"name": "stack_down", "readonly": false},
-      {"name": "profile_use", "readonly": false},
-      {"name": "stop_host", "readonly": false},
-      {"name": "ingress_control", "readonly": false},
-      {"name": "issue_tokens", "readonly": false},
-      {"name": "run_doctor", "readonly": false}
+      {
+        "name": "health_check",
+        "readonly": true
+      },
+      {
+        "name": "status",
+        "readonly": true
+      },
+      {
+        "name": "overview",
+        "readonly": true
+      },
+      {
+        "name": "jobs",
+        "readonly": true
+      },
+      {
+        "name": "permissions",
+        "readonly": true
+      },
+      {
+        "name": "exposure",
+        "readonly": true
+      },
+      {
+        "name": "diff",
+        "readonly": true
+      },
+      {
+        "name": "manifest",
+        "readonly": true
+      },
+      {
+        "name": "events_tail",
+        "readonly": true
+      },
+      {
+        "name": "logs",
+        "readonly": true
+      },
+      {
+        "name": "logs_text",
+        "readonly": true
+      },
+      {
+        "name": "profiles_list",
+        "readonly": true
+      },
+      {
+        "name": "profile_get",
+        "readonly": true
+      },
+      {
+        "name": "profile_put",
+        "readonly": false
+      },
+      {
+        "name": "cockpit_open",
+        "readonly": false
+      },
+      {
+        "name": "action_status",
+        "readonly": true
+      },
+      {
+        "name": "stack_start",
+        "readonly": false
+      },
+      {
+        "name": "stack_down",
+        "readonly": false
+      },
+      {
+        "name": "stack_full_down",
+        "readonly": false
+      },
+      {
+        "name": "profile_use",
+        "readonly": false
+      },
+      {
+        "name": "stop_host",
+        "readonly": false
+      },
+      {
+        "name": "ingress_control",
+        "readonly": false
+      },
+      {
+        "name": "watchdog_control",
+        "readonly": false
+      },
+      {
+        "name": "issue_tokens",
+        "readonly": false
+      },
+      {
+        "name": "run_doctor",
+        "readonly": false
+      },
+      {
+        "name": "jobs_live",
+        "readonly": true
+      },
+      {
+        "name": "job_cancel",
+        "readonly": false
+      },
+      {
+        "name": "permissions_pending",
+        "readonly": true
+      },
+      {
+        "name": "permission_reply",
+        "readonly": false
+      }
     ],
     "ui": {
-      "kind": "declarative",
+      "kind": "core_page",
       "tabs": [
         {
           "id": "devbox",
@@ -119,182 +228,7 @@
           "icon": "Terminal",
           "page": "main"
         }
-      ],
-      "page": {
-        "title": "stitch-devbox.title",
-        "nodes": [
-          {
-            "kind": "heading",
-            "text": "stitch-devbox.overview",
-            "level": 2
-          },
-          {
-            "kind": "card_grid",
-            "id": "overview",
-            "source": {"command": "overview"},
-            "card": {
-              "title": "title",
-              "subtitle": "value"
-            }
-          },
-          {
-            "kind": "section",
-            "title": "stitch-devbox.profiles",
-            "nodes": [
-              {
-                "kind": "table",
-                "id": "profiles",
-                "columns": [
-                  {"key": "name", "label": "stitch-devbox.col.profile"},
-                  {"key": "mode", "label": "stitch-devbox.col.mode"},
-                  {"key": "project_dir", "label": "stitch-devbox.col.project"},
-                  {"key": "active_label", "label": "stitch-devbox.col.active"}
-                ],
-                "source": {"command": "profiles_list"},
-                "rowActions": [
-                  {
-                    "id": "start-row",
-                    "label": "stitch-devbox.action.start",
-                    "command": "stack_start",
-                    "variant": "secondary",
-                    "paramsFromRow": {"name": "name"}
-                  },
-                  {
-                    "id": "use-row",
-                    "label": "stitch-devbox.action.use",
-                    "command": "profile_use",
-                    "variant": "secondary",
-                    "paramsFromRow": {"name": "name"}
-                  }
-                ]
-              }
-            ]
-          },
-          {
-            "kind": "section",
-            "title": "stitch-devbox.jobs",
-            "nodes": [
-              {
-                "kind": "table",
-                "id": "jobs",
-                "columns": [
-                  {"key": "tool", "label": "stitch-devbox.col.tool"},
-                  {"key": "status", "label": "stitch-devbox.col.status"},
-                  {"key": "job_id", "label": "ID"}
-                ],
-                "source": {"command": "jobs"},
-                "rowsKey": "jobs"
-              }
-            ]
-          },
-          {
-            "kind": "section",
-            "title": "stitch-devbox.permissions",
-            "nodes": [
-              {
-                "kind": "table",
-                "id": "permissions",
-                "columns": [
-                  {"key": "tool", "label": "stitch-devbox.col.tool"},
-                  {"key": "status", "label": "stitch-devbox.col.status"},
-                  {"key": "permission", "label": "stitch-devbox.col.permission"}
-                ],
-                "source": {"command": "permissions"},
-                "rowsKey": "permissions"
-              }
-            ]
-          },
-          {
-            "kind": "section",
-            "title": "stitch-devbox.events",
-            "nodes": [
-              {
-                "kind": "table",
-                "id": "events",
-                "columns": [
-                  {"key": "ts", "label": "stitch-devbox.col.time"},
-                  {"key": "kind", "label": "stitch-devbox.col.kind"},
-                  {"key": "tool", "label": "stitch-devbox.col.tool"},
-                  {"key": "status", "label": "stitch-devbox.col.status"}
-                ],
-                "source": {"command": "events_tail", "params": {"limit": 50}}
-              }
-            ]
-          },
-          {
-            "kind": "section",
-            "title": "stitch-devbox.logs",
-            "nodes": [
-              {
-                "kind": "markdown",
-                "id": "logs",
-                "source": {"command": "logs_text"}
-              }
-            ]
-          },
-          {
-            "kind": "section",
-            "title": "stitch-devbox.controls",
-            "nodes": [
-              {
-                "kind": "button",
-                "id": "stack-down-btn",
-                "label": "stitch-devbox.action.down",
-                "command": "stack_down",
-                "variant": "danger"
-              },
-              {
-                "kind": "button",
-                "id": "doctor-btn",
-                "label": "stitch-devbox.action.doctor",
-                "command": "run_doctor",
-                "variant": "secondary"
-              },
-              {
-                "kind": "button",
-                "id": "tokens-btn",
-                "label": "stitch-devbox.action.tokens",
-                "command": "issue_tokens",
-                "variant": "danger"
-              },
-              {
-                "kind": "button",
-                "id": "ingress-up-btn",
-                "label": "stitch-devbox.action.ingressUp",
-                "command": "ingress_control",
-                "params": {"action": "up"},
-                "variant": "secondary"
-              },
-              {
-                "kind": "button",
-                "id": "ingress-down-btn",
-                "label": "stitch-devbox.action.ingressDown",
-                "command": "ingress_control",
-                "params": {"action": "down"},
-                "variant": "ghost"
-              }
-            ]
-          },
-          {
-            "kind": "section",
-            "title": "stitch-devbox.actions",
-            "nodes": [
-              {
-                "kind": "table",
-                "id": "actions",
-                "columns": [
-                  {"key": "ts", "label": "stitch-devbox.col.time"},
-                  {"key": "tool", "label": "stitch-devbox.col.tool"},
-                  {"key": "status", "label": "stitch-devbox.col.status"},
-                  {"key": "exit", "label": "stitch-devbox.col.exit"}
-                ],
-                "source": {"command": "action_status"},
-                "rowsKey": "recent"
-              }
-            ]
-          }
-        ]
-      }
+      ]
     },
     "i18n": {
       "ru": {
@@ -304,11 +238,30 @@
           "overview": "Обзор",
           "profiles": "Профили проектов",
           "jobs": "Джобы агента",
-          "permissions": "Разрешения",
+          "permissions": "Запросы агента (наблюдение)",
           "events": "События (что делает агент)",
           "logs": "Логи",
           "controls": "Управление",
           "actions": "Действия (последние)",
+          "logsEmpty": "Логов пока нет.",
+          "card": {
+            "profile": "Профиль",
+            "ingress": "Ingress",
+            "bridge": "Bridge",
+            "runner": "Runner",
+            "watchdog": "Watchdog",
+            "hostServices": "Host-сервисы",
+            "project": "Проект",
+            "compose": "Compose"
+          },
+          "hint": {
+            "profile": "Нет активного профиля — выбери профиль и сделай его активным.",
+            "ingress": "Ingress выключен — подними стек или включи ingress.",
+            "bridge": "Bridge не отвечает — проверь, что контейнер toolbox запущен.",
+            "runner": "Runner не поднят — проверь RunnerPort и host-сервисы профиля.",
+            "watchdog": "Watchdog выключен — включи, чтобы стек восстанавливался сам.",
+            "hostServices": "Все host-сервисы лежат — проверь их логи."
+          },
           "col": {
             "profile": "Профиль",
             "mode": "Режим",
@@ -339,11 +292,30 @@
           "overview": "Overview",
           "profiles": "Project profiles",
           "jobs": "Agent jobs",
-          "permissions": "Permissions",
+          "permissions": "Agent requests (observed)",
           "events": "Events (what the agent is doing)",
           "logs": "Logs",
           "controls": "Controls",
           "actions": "Recent actions",
+          "logsEmpty": "No logs yet.",
+          "card": {
+            "profile": "Profile",
+            "ingress": "Ingress",
+            "bridge": "Bridge",
+            "runner": "Runner",
+            "watchdog": "Watchdog",
+            "hostServices": "Host services",
+            "project": "Project",
+            "compose": "Compose"
+          },
+          "hint": {
+            "profile": "No active profile — pick a profile and make it active.",
+            "ingress": "Ingress is down — start the stack or turn ingress on.",
+            "bridge": "Bridge is not responding — check that the toolbox container is running.",
+            "runner": "Runner is not up — check the profile's RunnerPort and host services.",
+            "watchdog": "Watchdog is off — enable it so the stack self-heals.",
+            "hostServices": "All host services are down — check their logs."
+          },
           "col": {
             "profile": "Profile",
             "mode": "Mode",
