@@ -5,13 +5,13 @@ from rdm.profiles import ArgSpec, HostService, Profile, RunnerCommand, Script, l
 
 def test_repo_profiles_validate_clean():
     repo = pathlib.Path(__file__).resolve().parents[2]
-    for name in ("example-service", "_template"):
-        profile = load(repo / "projects" / f"{name}.json")
+    for path in sorted((repo / "projects").glob("*.json")):
+        profile = load(path)
         problems = [
             problem for problem in validate(profile)
             if not problem.startswith("WARN") and not problem.startswith("R2:")
         ]
-        assert problems == [], (name, problems)
+        assert problems == [], (path.name, problems)
 
 
 def test_validate_r10_rejects_normalized_command_collision():

@@ -28,8 +28,53 @@ def test_load_rejects_unknown_key(tmp_path):
         load(path)
 
 
-def test_load_example_service_json():
-    profile = load(PROJECTS / "example-service.json")
+def test_load_example_service_json(tmp_path):
+    path = tmp_path / "example-service.json"
+    path.write_text(
+        json.dumps(
+            {
+                "project_dir": "d:/work/example-service",
+                "toolchain": "node22",
+                "git_name": "agent",
+                "git_email": "agent@example.test",
+                "preview_origin": "http://host.docker.internal:48095",
+                "ui_port": 48095,
+                "host_services": [
+                    {
+                        "port": 8792,
+                        "auth": "bearer",
+                        "cwd": "d:/work/example-service",
+                        "cmd": "python tools/example-supervisor/server.py",
+                    }
+                ],
+                "runner_commands": [
+                    {
+                        "name": "start_infra",
+                        "cmd": ["pwsh", "-NoProfile", "-File", "run.ps1", "infra"],
+                        "description": "поднять локальные postgres+redis",
+                    },
+                    {
+                        "name": "staging_logs",
+                        "cmd": ["pwsh", "-NoProfile", "-File", "scripts/staging-logs.ps1"],
+                        "args": {
+                            "service": {"type": "str", "position": "append"},
+                            "tail": {"type": "str", "position": "append"},
+                        },
+                        "timeout": 180,
+                        "description": "логи staging-сервиса",
+                    },
+                ],
+                "runner_port": 8796,
+                "allowed_ports": [48090, 48765],
+                "port_ranges": [[48080, 48100], [48760, 48770]],
+                "port_deny": [48091, 48093, 48094],
+                "deny_mounts": [".env.staging", "apps/backend/.env"],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    profile = load(path)
 
     assert profile.project_dir == "d:/work/example-service"
     assert profile.toolchain == "node22"
@@ -63,7 +108,7 @@ def test_find_prefers_rdm_projects_dir(monkeypatch, tmp_path):
 def test_find_falls_back_to_repo_dir(monkeypatch, tmp_path):
     monkeypatch.setenv("RDM_PROJECTS_DIR", str(tmp_path))
 
-    assert profiles.find("example-service") == PROJECTS / "example-service.json"
+    assert profiles.find("_template") == PROJECTS / "_template.json"
 
 
 def test_available_unions_candidate_dirs(monkeypatch, tmp_path):
@@ -73,7 +118,6 @@ def test_available_unions_candidate_dirs(monkeypatch, tmp_path):
     names = profiles.available()
 
     assert "extra" in names
-    assert "example-service" in names
     assert "_template" not in names
 
 

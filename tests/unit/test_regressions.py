@@ -191,9 +191,10 @@ def test_envfile_get_strips_render_preserves(tmp_path):
     assert env.render() == "KEY=  a b  \n"
 
 
-def test_profile_ui_port():
-    repo = pathlib.Path(__file__).resolve().parents[2]
-    assert load(repo / "projects" / "example-service.json").ui_port == 48095
+def test_profile_ui_port(tmp_path):
+    path = tmp_path / "p.json"
+    path.write_text('{"project_dir": ".", "ui_port": 48095}', encoding="utf-8")
+    assert load(path).ui_port == 48095
 
 
 def test_ingress_403s_cockpit_port_even_when_listed_allowed(tmp_path):

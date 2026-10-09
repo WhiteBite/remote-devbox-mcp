@@ -102,7 +102,7 @@ Control-плоскость с parity по cockpit (живая лента, ред
 │   SECURITY.md                    что запрещено монтировать, про изоляцию честно
 │
 ├─ projects/ → шаблон и санитизированные примеры профилей, JSON
-│   _template.json, example-service.json, example-simple.json
+│   _template.json
 │   личные профили — вне репо: ~/.devbox/projects/ или $RDM_PROJECTS_DIR
 │
 ├─ arena/ → сторона агента (скачивает сам, ничего ставить не нужно)

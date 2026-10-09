@@ -124,6 +124,9 @@ def test_info_masked_vs_share_full(monkeypatch, tmp_path, capsys):
 
 def test_profile_show_example_service(monkeypatch, tmp_path, capsys):
     _setup(monkeypatch, tmp_path)
+    (tmp_path / "projects" / "example-service.json").write_text(
+        '{"project_dir": "x"}', encoding="utf-8"
+    )
     assert cli.main(["profile", "show", "example-service"]) == 0
     assert "project_dir" in capsys.readouterr().out
 
