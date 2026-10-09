@@ -123,6 +123,14 @@ def _handle_profile_delete(params: dict[str, Any]) -> dict[str, Any]:
     return service.profile_delete(str(params.get("name", "")))
 
 
+def _handle_folder_check(params: dict[str, Any]) -> dict[str, Any]:
+    return service.folder_check(str(params.get("path", "")))
+
+
+def _handle_profile_defaults(params: dict[str, Any]) -> dict[str, Any]:
+    return service.profile_defaults()
+
+
 def _handle_cockpit_open(params: dict[str, Any]) -> dict[str, Any]:
     return service.cockpit_open()
 
@@ -208,6 +216,8 @@ def _build_server() -> RpcPluginServer:
     server.register("profile_get", _handle_profile_get)
     server.register("profile_put", _handle_profile_put)
     server.register("profile_delete", _handle_profile_delete)
+    server.register("folder_check", _handle_folder_check)
+    server.register("profile_defaults", _handle_profile_defaults)
     server.register("cockpit_open", _handle_cockpit_open)
     server.register("action_status", _handle_action_status)
     server.register("stack_start", _handle_stack_start)

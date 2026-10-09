@@ -506,3 +506,23 @@ def test_profile_put_git_identity_fallback_without_config(monkeypatch, tmp_path)
     written = json.loads((tmp_path / "nogit.json").read_text(encoding="utf-8"))
     assert written["git_name"] == "nogit"
     assert written["git_email"] == "nogit@devbox.local"
+
+
+def test_folder_check_reports_dir_and_git(monkeypatch, tmp_path):
+    monkeypatch.setenv("RDM_PROJECTS_DIR", str(tmp_path))
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+
+    assert service.folder_check(str(plain)) == {"exists": True, "is_git": False}
+    assert service.folder_check(str(repo)) == {"exists": True, "is_git": True}
+    assert service.folder_check(str(tmp_path / "ghost")) == {"exists": False, "is_git": False}
+
+
+def test_profile_defaults_exposes_host_git_identity(monkeypatch):
+    monkeypatch.setattr(
+        service, "_git_config_value", lambda key: {"user.name": "Host User", "user.email": "h@x.dev"}[key]
+    )
+
+    assert service.profile_defaults() == {"git_name": "Host User", "git_email": "h@x.dev"}

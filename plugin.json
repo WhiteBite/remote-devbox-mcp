@@ -2,7 +2,7 @@
   "schema": "stitch.plugin/v2",
   "id": "stitch-devbox",
   "name": "Stitch Devbox",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "service": "devbox",
   "kind": "service",
   "engine": {
@@ -50,6 +50,14 @@
     }
   ],
   "changelog": [
+    {
+      "version": "0.2.4",
+      "date": "2026-10-10",
+      "changes": [
+        "folder_check and profile_defaults readonly commands back the create-project form",
+        "Bridge reachability is a 0.3s TCP probe before any MCP call; vitals port probes use the same short timeout"
+      ]
+    },
     {
       "version": "0.2.3",
       "date": "2026-10-10",
@@ -184,6 +192,14 @@
       {
         "name": "profile_delete",
         "readonly": false
+      },
+      {
+        "name": "folder_check",
+        "readonly": true
+      },
+      {
+        "name": "profile_defaults",
+        "readonly": true
       },
       {
         "name": "cockpit_open",

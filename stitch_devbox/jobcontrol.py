@@ -16,6 +16,7 @@ from . import service
 TERMINAL_STATUSES = frozenset(("completed", "failed", "cancelled"))
 DECISIONS = frozenset(("once", "reject"))
 BRIDGE_DOWN_TTL_SECONDS = 15.0
+BRIDGE_PROBE_TIMEOUT_SECONDS = 0.3
 
 _client: Any = None
 _bridge_down_until = 0.0
@@ -23,6 +24,22 @@ _bridge_down_until = 0.0
 
 def _bridge_known_down() -> bool:
     return time.monotonic() < _bridge_down_until
+
+
+def _bridge_reachable() -> bool:
+    from rdm import netprobe
+
+    rdm = service._rdm()
+    return netprobe.can_connect(rdm.profiles.BRIDGE_PORT, timeout=BRIDGE_PROBE_TIMEOUT_SECONDS)
+
+
+def _bridge_down_gate() -> bool:
+    if _bridge_known_down():
+        return True
+    if _bridge_reachable():
+        return False
+    _remember_bridge_down()
+    return True
 
 
 def _remember_bridge_down() -> None:
@@ -38,7 +55,7 @@ def _remember_bridge_up() -> None:
 def jobs_live() -> dict[str, Any]:
     from rdm.bridge_client import BridgeDenied, BridgeError, BridgeUnreachable
 
-    if _bridge_known_down():
+    if _bridge_down_gate():
         return {"rows": _events_job_rows(), "source": "events", "bridge": "down"}
     client = _bridge()
     try:
@@ -75,7 +92,7 @@ def permissions_pending() -> dict[str, Any]:
 
     rows: list[dict[str, Any]] = []
     bridge = "up"
-    if _bridge_known_down():
+    if _bridge_down_gate():
         bridge = "down"
     else:
         try:

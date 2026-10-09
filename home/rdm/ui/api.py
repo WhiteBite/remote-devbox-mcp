@@ -18,6 +18,7 @@ from rdm.events import jobs, sink
 
 COMPOSE_PS_TTL_SECONDS = 10.0
 PROBE_PORTS_TTL_SECONDS = 5.0
+VITALS_PROBE_TIMEOUT_SECONDS = 0.3
 LOG_SOURCES: dict[str, tuple[str, ...]] = {
     "host": ("rdm-host/*.out", "rdm-host/*.err"),
     "ingress": ("rdm-ingress/ingress.out", "rdm-ingress/ingress.err"),
@@ -108,14 +109,17 @@ def _probe_ports(port: int, runner_port: int | None) -> dict[str, bool | None]:
 
 
 def _probe_ports_live(port: int, runner_port: int | None) -> dict[str, bool | None]:
+    def probe(target: int) -> bool:
+        return netprobe.can_connect(target, timeout=VITALS_PROBE_TIMEOUT_SECONDS)
+
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
         pending: dict[str, concurrent.futures.Future[bool]] = {
-            "cockpit": pool.submit(netprobe.can_connect, port),
-            "ingress": pool.submit(netprobe.can_connect, procman.INGRESS_PORT),
-            "bridge": pool.submit(netprobe.can_connect, profiles.BRIDGE_PORT),
+            "cockpit": pool.submit(probe, port),
+            "ingress": pool.submit(probe, procman.INGRESS_PORT),
+            "bridge": pool.submit(probe, profiles.BRIDGE_PORT),
         }
         if runner_port:
-            pending["runner"] = pool.submit(netprobe.can_connect, runner_port)
+            pending["runner"] = pool.submit(probe, runner_port)
         return {name: future.result() for name, future in pending.items()}
 
 

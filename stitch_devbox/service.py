@@ -324,6 +324,18 @@ def _git_config_value(key: str) -> str:
     return result.stdout.strip() if result.returncode == 0 else ""
 
 
+def folder_check(path: str) -> dict[str, Any]:
+    target = Path(path).expanduser()
+    return {"exists": target.is_dir(), "is_git": (target / ".git").exists()}
+
+
+def profile_defaults() -> dict[str, Any]:
+    return {
+        "git_name": _git_config_value("user.name"),
+        "git_email": _git_config_value("user.email"),
+    }
+
+
 def profile_put(name: str, json_text: str) -> dict[str, Any]:
     rdm = _rdm()
     if not name or not rdm.cli._NAME_RE.fullmatch(name):

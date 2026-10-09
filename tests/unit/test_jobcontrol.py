@@ -20,6 +20,7 @@ MANIFEST = REPO / "plugin.json"
 def bridge(monkeypatch):
     stub = BridgeStub()
     monkeypatch.setattr(jobcontrol, "_client", BridgeClient(stub.url, TOKEN))
+    monkeypatch.setattr(jobcontrol, "_bridge_reachable", lambda: True)
     yield stub
     stub.close()
 
@@ -65,6 +66,7 @@ def test_jobs_live_rows_from_bridge(bridge):
 
 def test_jobs_live_falls_back_to_events_when_bridge_down(events_path, monkeypatch):
     monkeypatch.setattr(jobcontrol, "_client", BridgeClient(dead_bridge_url(), TOKEN))
+    monkeypatch.setattr(jobcontrol, "_bridge_reachable", lambda: False)
     now = time.time()
     _write_events(
         events_path,
@@ -99,6 +101,7 @@ def test_jobs_live_degrades_on_generic_bridge_error(events_path, monkeypatch):
             raise BridgeError("HTTP 502")
 
     monkeypatch.setattr(jobcontrol, "_client", _ErrorClient())
+    monkeypatch.setattr(jobcontrol, "_bridge_reachable", lambda: True)
     _write_events(events_path, [])
 
     payload = jobcontrol.jobs_live()
@@ -178,6 +181,7 @@ def test_permissions_pending_unions_bridge_and_tap(events_path, bridge):
 
 def test_permissions_pending_tap_only_when_bridge_down(events_path, monkeypatch):
     monkeypatch.setattr(jobcontrol, "_client", BridgeClient(dead_bridge_url(), TOKEN))
+    monkeypatch.setattr(jobcontrol, "_bridge_reachable", lambda: False)
     now = time.time()
     _write_events(
         events_path,
@@ -220,35 +224,25 @@ def test_jobs_live_skips_bridge_while_down_cache_is_warm(events_path, monkeypatc
             raise BridgeUnreachable("refused")
 
     monkeypatch.setattr(jobcontrol, "_client", _SpyClient())
+    monkeypatch.setattr(jobcontrol, "_bridge_reachable", lambda: False)
     _write_events(events_path, [])
 
     first = jobcontrol.jobs_live()
     second = jobcontrol.jobs_live()
     pending = jobcontrol.permissions_pending()
 
-    assert calls == ["job_list"]
+    assert calls == []
     assert first["bridge"] == "down"
     assert second == {"source": "events", "bridge": "down", "rows": []}
     assert pending == {"bridge": "down", "rows": []}
 
 
 def test_jobs_live_probes_again_after_down_cache_expires(events_path, bridge, monkeypatch):
-    import contextlib
-
-    from rdm.bridge_client import BridgeUnreachable
-
-    class _SpyClient:
-        def budget(self):
-            return contextlib.nullcontext()
-
-        def job_list(self):
-            raise BridgeUnreachable("refused")
-
-    monkeypatch.setattr(jobcontrol, "_client", _SpyClient())
+    monkeypatch.setattr(jobcontrol, "_bridge_reachable", lambda: False)
     _write_events(events_path, [])
     assert jobcontrol.jobs_live()["bridge"] == "down"
 
-    monkeypatch.setattr(jobcontrol, "_client", BridgeClient(bridge.url, TOKEN))
+    monkeypatch.setattr(jobcontrol, "_bridge_reachable", lambda: True)
     monkeypatch.setattr(jobcontrol, "_bridge_down_until", 0.0)
     assert jobcontrol.jobs_live()["bridge"] == "up"
 
