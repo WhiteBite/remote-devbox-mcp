@@ -121,8 +121,45 @@ def test_parse_response_permission_type_extracted() -> None:
     meta = mcp_tap.parse_response(_job_response(job), CAP)
     assert meta is not None
     assert meta["permission"] == "bash"
-    assert "perm-9" not in meta.values()
+    assert meta["permission_id"] == "perm-9"
     assert "patterns" not in meta
+
+
+def test_parse_response_permission_id_missing_omits_key() -> None:
+    job = {
+        "job_id": "job-6",
+        "status": "awaiting_permission",
+        "permission": {"permission": "bash"},
+    }
+    meta = mcp_tap.parse_response(_job_response(job), CAP)
+    assert meta is not None
+    assert meta["permission"] == "bash"
+    assert "permission_id" not in meta
+
+
+def test_parse_request_permission_reply_extracts_ids() -> None:
+    body = _rpc(
+        "tools/call",
+        {
+            "name": "opencode_permission_reply",
+            "arguments": {"job_id": "job-7", "permission_id": "perm-3", "reply": "once"},
+        },
+    )
+    meta = mcp_tap.parse_request(body, CAP)
+    assert meta is not None
+    assert meta["tool"] == "opencode_permission_reply"
+    assert meta["job_id"] == "job-7"
+    assert meta["permission_id"] == "perm-3"
+    assert "reply" not in meta
+    assert "arguments" not in meta
+
+
+def test_parse_request_native_arguments_leave_no_ids() -> None:
+    body = _rpc("tools/call", {"name": "bash", "arguments": {"command": "ls"}})
+    meta = mcp_tap.parse_request(body, CAP)
+    assert meta is not None
+    assert "job_id" not in meta
+    assert "permission_id" not in meta
 
 
 def test_parse_response_over_cap_truncated() -> None:

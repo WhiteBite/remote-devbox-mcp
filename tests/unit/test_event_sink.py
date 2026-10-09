@@ -59,3 +59,19 @@ def test_emit_drops_args_and_output(tmp_path, monkeypatch):
     assert "args" not in obj
     assert "output" not in obj
     assert obj["tool"] == "bash"
+
+
+def test_emit_persists_permission_id_and_job_id(tmp_path, monkeypatch):
+    path = _events_file(tmp_path, monkeypatch)
+    sink.emit(
+        {
+            "kind": "mcp_response",
+            "job_id": "job-1",
+            "status": "awaiting_permission",
+            "permission": "bash",
+            "permission_id": "perm-4",
+        }
+    )
+    obj = json.loads(path.read_text(encoding="utf-8").splitlines()[0])
+    assert obj["permission_id"] == "perm-4"
+    assert obj["job_id"] == "job-1"
