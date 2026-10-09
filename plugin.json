@@ -2,7 +2,7 @@
   "schema": "stitch.plugin/v2",
   "id": "stitch-devbox",
   "name": "Stitch Devbox",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "service": "devbox",
   "kind": "service",
   "engine": {
@@ -48,6 +48,13 @@
     }
   ],
 "changelog": [
+    {
+      "version": "0.1.3",
+      "date": "2026-10-08",
+      "changes": [
+        "Adopt the real user home so profiles and devbox commands work under the plugin sandbox"
+      ]
+    },
     {
       "version": "0.1.2",
       "date": "2026-10-08",

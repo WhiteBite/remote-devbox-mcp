@@ -10,6 +10,7 @@ stays clean.
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -23,10 +24,49 @@ _rd: Any = None
 _queue: Any = None
 
 
+def _adopt_real_home() -> None:
+    """Restore the real user home before rdm resolves its paths.
+
+    The Stitch host spawns plugin children with a sandbox-scoped
+    ``USERPROFILE``/``HOME``; rdm resolves profiles (``~/.devbox/projects``)
+    and the devbox CLI relative to ``Path.home()``, so under the sandbox the
+    real profiles are invisible and every profile command fails.  Recover the
+    real home from the OS (registry on Windows, passwd on POSIX).
+    """
+    real: str | None = None
+    if os.name == "nt":
+        try:
+            import winreg  # noqa: PLC0415
+
+            with winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER, r"Volatile Environment"
+            ) as key:
+                real = str(winreg.QueryValueEx(key, "USERPROFILE")[0])
+        except OSError:
+            real = None
+    else:
+        try:
+            import pwd  # noqa: PLC0415
+
+            real = pwd.getpwuid(os.getuid()).pw_dir
+        except (ImportError, KeyError, OSError):
+            real = None
+    if not real or Path(real) == Path.home():
+        return
+    os.environ["HOME"] = real
+    if os.name == "nt":
+        drive, _, tail = real.partition(":")
+        if tail:
+            os.environ["HOMEDRIVE"] = f"{drive}:"
+            os.environ["HOMEPATH"] = tail
+        os.environ["USERPROFILE"] = real
+
+
 def _rdm() -> Any:
     """Lazily import the rdm package; raise a clear error when unavailable."""
     global _rd
     if _rd is None:
+        _adopt_real_home()
         try:
             import rdm  # noqa: F401
         except ImportError as exc:
