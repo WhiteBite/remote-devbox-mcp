@@ -15,6 +15,8 @@ audiences:
   - "Windows + Docker Desktop users running Java/Gradle or Flutter projects"
 
 use_cases:
+  - "operate the devbox from a local loopback cockpit: live SSE log river, JSON profile editor, command palette, secret redaction"
+  - "control plane for your own machine: start/stop the stack, switch profiles, rotate tokens from tray or CLI"
   - "agent compiles and runs tests for large projects on your CPU/RAM/build cache"
   - "work on private code without uploading it anywhere (only tool calls cross the tunnel)"
   - "preview a running dev server to the agent through a second tunnel"
@@ -23,7 +25,6 @@ use_cases:
   - "read-only audit sessions where mutations are denied by permission mode"
   - "drive the devbox from a stock MCP client (OpenCode/Codex/Claude) through a stdio adapter"
   - "discover every endpoint from a machine-readable manifest with per-endpoint token roles"
-  - "watch what the agent calls (tools/jobs/permissions) in a local loopback cockpit"
 
 keywords:
   github_topics:
@@ -33,6 +34,8 @@ keywords:
     - "whitebite"
     - "remote"
     - "devbox"
+    - "self-hosted"
+    - "control-plane"
     - "mcp"   # 8-20 terms, lowercase with hyphens
     - "cloudflare-tunnel"
 
