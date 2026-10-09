@@ -7,6 +7,7 @@ runs; the queue rule remains for host-mutating cli actions only.
 
 from __future__ import annotations
 
+import time
 from datetime import datetime, timezone
 from typing import Any
 
@@ -14,21 +15,43 @@ from . import service
 
 TERMINAL_STATUSES = frozenset(("completed", "failed", "cancelled"))
 DECISIONS = frozenset(("once", "reject"))
+BRIDGE_DOWN_TTL_SECONDS = 15.0
 
 _client: Any = None
+_bridge_down_until = 0.0
+
+
+def _bridge_known_down() -> bool:
+    return time.monotonic() < _bridge_down_until
+
+
+def _remember_bridge_down() -> None:
+    global _bridge_down_until
+    _bridge_down_until = time.monotonic() + BRIDGE_DOWN_TTL_SECONDS
+
+
+def _remember_bridge_up() -> None:
+    global _bridge_down_until
+    _bridge_down_until = 0.0
 
 
 def jobs_live() -> dict[str, Any]:
-    from rdm.bridge_client import BridgeDenied, BridgeError
+    from rdm.bridge_client import BridgeDenied, BridgeError, BridgeUnreachable
 
+    if _bridge_known_down():
+        return {"rows": _events_job_rows(), "source": "events", "bridge": "down"}
     client = _bridge()
     try:
         with client.budget():
             views = client.job_list()
     except BridgeDenied:
         raise
+    except BridgeUnreachable:
+        _remember_bridge_down()
+        return {"rows": _events_job_rows(), "source": "events", "bridge": "down"}
     except BridgeError:
         return {"rows": _events_job_rows(), "source": "events", "bridge": "down"}
+    _remember_bridge_up()
     rows = [_job_row(view) for view in views if view.get("status") not in TERMINAL_STATUSES]
     return {"rows": rows, "source": "bridge", "bridge": "up"}
 
@@ -48,16 +71,23 @@ def job_cancel(job_id: str) -> dict[str, Any]:
 
 
 def permissions_pending() -> dict[str, Any]:
-    from rdm.bridge_client import BridgeDenied, BridgeError
+    from rdm.bridge_client import BridgeDenied, BridgeError, BridgeUnreachable
 
     rows: list[dict[str, Any]] = []
     bridge = "up"
-    try:
-        rows = _bridge_permission_rows()
-    except BridgeDenied:
-        raise
-    except BridgeError:
+    if _bridge_known_down():
         bridge = "down"
+    else:
+        try:
+            rows = _bridge_permission_rows()
+            _remember_bridge_up()
+        except BridgeDenied:
+            raise
+        except BridgeUnreachable:
+            _remember_bridge_down()
+            bridge = "down"
+        except BridgeError:
+            bridge = "down"
     known = {row["id"] for row in rows}
     for row in _tap_permission_rows():
         if row["id"] not in known:

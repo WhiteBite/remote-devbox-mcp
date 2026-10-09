@@ -2,7 +2,7 @@
   "schema": "stitch.plugin/v2",
   "id": "stitch-devbox",
   "name": "Stitch Devbox",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "service": "devbox",
   "kind": "service",
   "engine": {
@@ -50,6 +50,14 @@
     }
   ],
   "changelog": [
+    {
+      "version": "0.2.3",
+      "date": "2026-10-10",
+      "changes": [
+        "jobs_live and permissions_pending skip bridge probes for 15s after an unreachable bridge (negative health cache)",
+        "Port probes in overview payloads are TTL-cached for 5s instead of re-probing dead ports on every poll"
+      ]
+    },
     {
       "version": "0.2.2",
       "date": "2026-10-09",

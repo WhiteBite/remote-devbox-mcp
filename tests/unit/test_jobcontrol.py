@@ -31,6 +31,13 @@ def events_path(tmp_path, monkeypatch):
     return path
 
 
+@pytest.fixture(autouse=True)
+def reset_bridge_health():
+    jobcontrol._remember_bridge_up()
+    yield
+    jobcontrol._remember_bridge_up()
+
+
 def _write_events(path: Path, events: list[dict[str, Any]]) -> None:
     path.write_text("\n".join(json.dumps(event) for event in events) + "\n", encoding="utf-8")
 
@@ -195,6 +202,55 @@ def test_permissions_pending_tap_only_when_bridge_down(events_path, monkeypatch)
             {"id": "perm-7", "tool": "bash", "summary": "bash", "startedAt": _iso(now - 59)}
         ],
     }
+
+
+def test_jobs_live_skips_bridge_while_down_cache_is_warm(events_path, monkeypatch):
+    import contextlib
+
+    from rdm.bridge_client import BridgeUnreachable
+
+    calls: list[str] = []
+
+    class _SpyClient:
+        def budget(self):
+            return contextlib.nullcontext()
+
+        def job_list(self):
+            calls.append("job_list")
+            raise BridgeUnreachable("refused")
+
+    monkeypatch.setattr(jobcontrol, "_client", _SpyClient())
+    _write_events(events_path, [])
+
+    first = jobcontrol.jobs_live()
+    second = jobcontrol.jobs_live()
+    pending = jobcontrol.permissions_pending()
+
+    assert calls == ["job_list"]
+    assert first["bridge"] == "down"
+    assert second == {"source": "events", "bridge": "down", "rows": []}
+    assert pending == {"bridge": "down", "rows": []}
+
+
+def test_jobs_live_probes_again_after_down_cache_expires(events_path, bridge, monkeypatch):
+    import contextlib
+
+    from rdm.bridge_client import BridgeUnreachable
+
+    class _SpyClient:
+        def budget(self):
+            return contextlib.nullcontext()
+
+        def job_list(self):
+            raise BridgeUnreachable("refused")
+
+    monkeypatch.setattr(jobcontrol, "_client", _SpyClient())
+    _write_events(events_path, [])
+    assert jobcontrol.jobs_live()["bridge"] == "down"
+
+    monkeypatch.setattr(jobcontrol, "_client", BridgeClient(bridge.url, TOKEN))
+    monkeypatch.setattr(jobcontrol, "_bridge_down_until", 0.0)
+    assert jobcontrol.jobs_live()["bridge"] == "up"
 
 
 def test_job_cancel_accepted(bridge):

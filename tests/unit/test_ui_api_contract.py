@@ -481,3 +481,24 @@ def test_action_payload_over_cap_is_dropped(monkeypatch, tmp_path):
 
     assert finished["status"] == "finished"
     assert "payload" not in finished
+
+
+def test_probe_ports_result_cached_within_ttl(monkeypatch):
+    from rdm import netprobe
+    from rdm.ui import api
+
+    calls: list[int] = []
+
+    def fake_can_connect(port: int, timeout: float = 1.0) -> bool:
+        calls.append(port)
+        return True
+
+    monkeypatch.setattr(netprobe, "can_connect", fake_can_connect)
+    api.invalidate_status_cache()
+
+    first = api._probe_ports(0, None)
+    second = api._probe_ports(0, None)
+
+    assert first == second
+    assert len(calls) == 3
+    api.invalidate_status_cache()

@@ -17,6 +17,7 @@ from rdm import cli, docker, envfile, hostos, netprobe, procman, profiles, redac
 from rdm.events import jobs, sink
 
 COMPOSE_PS_TTL_SECONDS = 10.0
+PROBE_PORTS_TTL_SECONDS = 5.0
 LOG_SOURCES: dict[str, tuple[str, ...]] = {
     "host": ("rdm-host/*.out", "rdm-host/*.err"),
     "ingress": ("rdm-ingress/ingress.out", "rdm-ingress/ingress.err"),
@@ -66,13 +67,17 @@ def _watchdog_alive() -> bool:
 
 _compose_ps_lock = threading.Lock()
 _compose_ps_cache: tuple[str, str, float] | None = None
+_probe_lock = threading.Lock()
+_probe_cache: tuple[int, int | None, dict[str, bool | None], float] | None = None
 _clock = time.monotonic
 
 
 def invalidate_status_cache() -> None:
-    global _compose_ps_cache
+    global _compose_ps_cache, _probe_cache
     with _compose_ps_lock:
         _compose_ps_cache = None
+    with _probe_lock:
+        _probe_cache = None
 
 
 def _compose_ps(compose_file: str) -> str:
@@ -89,6 +94,20 @@ def _compose_ps(compose_file: str) -> str:
 
 
 def _probe_ports(port: int, runner_port: int | None) -> dict[str, bool | None]:
+    global _probe_cache
+    with _probe_lock:
+        now = _clock()
+        if _probe_cache is not None:
+            cached_port, cached_runner, value, at = _probe_cache
+            if cached_port == port and cached_runner == runner_port and now - at < PROBE_PORTS_TTL_SECONDS:
+                return value
+    value = _probe_ports_live(port, runner_port)
+    with _probe_lock:
+        _probe_cache = (port, runner_port, value, _clock())
+    return value
+
+
+def _probe_ports_live(port: int, runner_port: int | None) -> dict[str, bool | None]:
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
         pending: dict[str, concurrent.futures.Future[bool]] = {
             "cockpit": pool.submit(netprobe.can_connect, port),
