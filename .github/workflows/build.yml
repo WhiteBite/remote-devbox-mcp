@@ -29,7 +29,7 @@ jobs:
         with:
           name: devbox-${{ matrix.platform }}
           path: dist/devbox-*.zip
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: dist/devbox-*.zip
