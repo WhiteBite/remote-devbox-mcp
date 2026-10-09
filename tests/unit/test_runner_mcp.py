@@ -234,7 +234,7 @@ def test_main_registers_kill_tool_for_background_script(monkeypatch, tmp_path):
     registered = []
 
     class FakeMCP:
-        def __init__(self, name):
+        def __init__(self, name, **settings):
             pass
 
         def tool(self):

@@ -2,7 +2,7 @@
   "schema": "stitch.plugin/v2",
   "id": "stitch-devbox",
   "name": "Stitch Devbox",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "service": "devbox",
   "kind": "service",
   "engine": {
@@ -50,6 +50,13 @@
     }
   ],
   "changelog": [
+    {
+      "version": "0.2.6",
+      "date": "2026-10-10",
+      "changes": [
+        "runner-mcp imports and configures the mcp 2.x FastMCP server (host/port via constructor settings)"
+      ]
+    },
     {
       "version": "0.2.5",
       "date": "2026-10-10",
