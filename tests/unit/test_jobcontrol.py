@@ -49,6 +49,7 @@ def test_jobs_live_rows_from_bridge(bridge):
 
     assert payload == {
         "source": "bridge",
+        "bridge": "up",
         "rows": [
             {"id": "job-1", "tool": "bash", "status": "running", "startedAt": "2026-10-09T10:00:00Z"}
         ],
@@ -71,10 +72,31 @@ def test_jobs_live_falls_back_to_events_when_bridge_down(events_path, monkeypatc
 
     assert payload == {
         "source": "events",
+        "bridge": "down",
         "rows": [
             {"id": "j1", "tool": "bash", "status": "running", "startedAt": _iso(now - 60)}
         ],
     }
+
+
+def test_jobs_live_degrades_on_generic_bridge_error(events_path, monkeypatch):
+    import contextlib
+
+    from rdm.bridge_client import BridgeError
+
+    class _ErrorClient:
+        def budget(self):
+            return contextlib.nullcontext()
+
+        def job_list(self):
+            raise BridgeError("HTTP 502")
+
+    monkeypatch.setattr(jobcontrol, "_client", _ErrorClient())
+    _write_events(events_path, [])
+
+    payload = jobcontrol.jobs_live()
+
+    assert payload == {"source": "events", "bridge": "down", "rows": []}
 
 
 def test_jobs_live_denied_propagates(bridge, monkeypatch):
@@ -168,9 +190,10 @@ def test_permissions_pending_tap_only_when_bridge_down(events_path, monkeypatch)
     payload = jobcontrol.permissions_pending()
 
     assert payload == {
+        "bridge": "down",
         "rows": [
             {"id": "perm-7", "tool": "bash", "summary": "bash", "startedAt": _iso(now - 59)}
-        ]
+        ],
     }
 
 

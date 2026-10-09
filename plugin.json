@@ -2,7 +2,7 @@
   "schema": "stitch.plugin/v2",
   "id": "stitch-devbox",
   "name": "Stitch Devbox",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "service": "devbox",
   "kind": "service",
   "engine": {
@@ -50,6 +50,14 @@
     }
   ],
   "changelog": [
+    {
+      "version": "0.2.1",
+      "date": "2026-10-09",
+      "changes": [
+        "profile_put creates new profiles; profile_delete command added",
+        "jobs_live and permissions_pending degrade to event journal on any bridge error"
+      ]
+    },
     {
       "version": "0.2.0",
       "date": "2026-10-09",
@@ -156,6 +164,10 @@
       },
       {
         "name": "profile_put",
+        "readonly": false
+      },
+      {
+        "name": "profile_delete",
         "readonly": false
       },
       {

@@ -119,6 +119,10 @@ def _handle_profile_put(params: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+def _handle_profile_delete(params: dict[str, Any]) -> dict[str, Any]:
+    return service.profile_delete(str(params.get("name", "")))
+
+
 def _handle_cockpit_open(params: dict[str, Any]) -> dict[str, Any]:
     return service.cockpit_open()
 
@@ -203,6 +207,7 @@ def _build_server() -> RpcPluginServer:
     server.register("profiles_list", _handle_profiles_list)
     server.register("profile_get", _handle_profile_get)
     server.register("profile_put", _handle_profile_put)
+    server.register("profile_delete", _handle_profile_delete)
     server.register("cockpit_open", _handle_cockpit_open)
     server.register("action_status", _handle_action_status)
     server.register("stack_start", _handle_stack_start)

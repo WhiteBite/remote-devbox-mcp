@@ -311,11 +311,11 @@ def test_profile_put_returns_validation_errors(monkeypatch, tmp_path):
     assert any(problem.startswith("R1") for problem in result["errors"])
 
 
-def test_profile_put_rejects_unknown_profile(monkeypatch, tmp_path):
+def test_profile_put_rejects_invalid_name(monkeypatch, tmp_path):
     monkeypatch.setenv("RDM_PROJECTS_DIR", str(tmp_path))
 
     with pytest.raises(ValueError):
-        service.profile_put("ghost", json.dumps(_profile_data(tmp_path)))
+        service.profile_put("bad name!", json.dumps(_profile_data(tmp_path)))
 
 
 def test_cockpit_open_returns_bootstrap_url(monkeypatch):
@@ -435,3 +435,40 @@ def test_profiles_rows_carry_frozen_contract_keys():
     for row in service.profiles_list():
         assert {"name", "mode", "project_dir", "active"} <= set(row)
         assert isinstance(row["active"], bool)
+
+
+def test_profile_put_creates_missing_profile(monkeypatch, tmp_path):
+    monkeypatch.setenv("RDM_PROJECTS_DIR", str(tmp_path))
+    project = tmp_path / "proj"
+    project.mkdir()
+    body = {
+        "project_dir": str(project),
+        "mode": "readonly",
+        "toolchain": "",
+        "git_name": "tester",
+        "git_email": "tester@example.com",
+    }
+
+    result = service.profile_put("brand-new", json.dumps(body))
+
+    assert result == {"valid": True, "errors": []}
+    assert (tmp_path / "brand-new.json").exists()
+
+
+def test_profile_delete_removes_and_rejects_missing(monkeypatch, tmp_path):
+    monkeypatch.setenv("RDM_PROJECTS_DIR", str(tmp_path))
+    project = tmp_path / "proj"
+    project.mkdir()
+    body = {
+        "project_dir": str(project),
+        "mode": "readonly",
+        "toolchain": "",
+        "git_name": "tester",
+        "git_email": "tester@example.com",
+    }
+    service.profile_put("doomed", json.dumps(body))
+
+    assert service.profile_delete("doomed") == {"deleted": True}
+    assert not (tmp_path / "doomed.json").exists()
+    with pytest.raises(ValueError):
+        service.profile_delete("doomed")

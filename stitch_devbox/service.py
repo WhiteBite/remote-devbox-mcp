@@ -315,7 +315,7 @@ def profile_put(name: str, json_text: str) -> dict[str, Any]:
         raise ValueError(f"invalid profile name: {name!r}")
     path = rdm.profiles.find(name)
     if path is None:
-        raise ValueError(f"profile not found: {name}")
+        path = rdm.profiles.new_path(name)
     try:
         data = json.loads(json_text)
     except ValueError as exc:
@@ -327,6 +327,17 @@ def profile_put(name: str, json_text: str) -> dict[str, Any]:
     except ValueError as exc:
         return {"valid": False, "errors": str(exc).split("; ")}
     return {"valid": True, "errors": []}
+
+
+def profile_delete(name: str) -> dict[str, Any]:
+    rdm = _rdm()
+    if not name or not rdm.cli._NAME_RE.fullmatch(name):
+        raise ValueError(f"invalid profile name: {name!r}")
+    path = rdm.profiles.find(name)
+    if path is None:
+        raise ValueError(f"profile not found: {name}")
+    path.unlink()
+    return {"deleted": True}
 
 
 def _queue_submit(fn_name: str, *args: Any, payload_key: str = "") -> dict[str, Any]:

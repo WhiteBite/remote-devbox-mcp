@@ -40,6 +40,15 @@ def find(name: str) -> Path | None:
     return None
 
 
+def new_path(name: str) -> Path:
+    for directory in projects_dirs():
+        if directory.is_dir():
+            return directory / f"{name}.json"
+    target = projects_dirs()[0]
+    target.mkdir(parents=True, exist_ok=True)
+    return target / f"{name}.json"
+
+
 def available() -> list[str]:
     names: set[str] = set()
     for directory in projects_dirs():

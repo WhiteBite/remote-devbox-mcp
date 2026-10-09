@@ -19,16 +19,18 @@ _client: Any = None
 
 
 def jobs_live() -> dict[str, Any]:
-    from rdm.bridge_client import BridgeUnreachable
+    from rdm.bridge_client import BridgeDenied, BridgeError
 
     client = _bridge()
     try:
         with client.budget():
             views = client.job_list()
-    except BridgeUnreachable:
-        return {"rows": _events_job_rows(), "source": "events"}
+    except BridgeDenied:
+        raise
+    except BridgeError:
+        return {"rows": _events_job_rows(), "source": "events", "bridge": "down"}
     rows = [_job_row(view) for view in views if view.get("status") not in TERMINAL_STATUSES]
-    return {"rows": rows, "source": "bridge"}
+    return {"rows": rows, "source": "bridge", "bridge": "up"}
 
 
 def job_cancel(job_id: str) -> dict[str, Any]:
@@ -46,12 +48,21 @@ def job_cancel(job_id: str) -> dict[str, Any]:
 
 
 def permissions_pending() -> dict[str, Any]:
-    rows = _bridge_permission_rows()
+    from rdm.bridge_client import BridgeDenied, BridgeError
+
+    rows: list[dict[str, Any]] = []
+    bridge = "up"
+    try:
+        rows = _bridge_permission_rows()
+    except BridgeDenied:
+        raise
+    except BridgeError:
+        bridge = "down"
     known = {row["id"] for row in rows}
     for row in _tap_permission_rows():
         if row["id"] not in known:
             rows.append(row)
-    return {"rows": rows}
+    return {"rows": rows, "bridge": bridge}
 
 
 def permission_reply(permission_id: str, decision: str) -> dict[str, Any]:
@@ -111,15 +122,10 @@ def _events_job_rows() -> list[dict[str, Any]]:
 
 
 def _bridge_permission_rows() -> list[dict[str, Any]]:
-    from rdm.bridge_client import BridgeError
-
     client = _bridge()
-    try:
-        with client.budget():
-            views = client.job_list()
-            requests = client.permissions_pending()
-    except BridgeError:
-        return []
+    with client.budget():
+        views = client.job_list()
+        requests = client.permissions_pending()
     by_job = {view.get("job_id"): view for view in views}
     rows = []
     for request in requests:
