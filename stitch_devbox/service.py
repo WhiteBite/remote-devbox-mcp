@@ -31,6 +31,7 @@ _host_capabilities: frozenset[str] = frozenset()
 _REAL_ENV_KEYS = ("USERPROFILE", "HOMEDRIVE", "HOMEPATH", "TEMP", "TMP")
 _COCKPIT_WAIT_SECONDS = 5.0
 _INGRESS_ACTIONS = {"up": "start", "down": "stop"}
+_WATCHDOG_START_GRACE_SECONDS = 1.5
 
 
 def set_host_capabilities(supported: list[str]) -> None:
@@ -502,7 +503,26 @@ def ingress_control(action: str = "up") -> dict[str, Any]:
 def watchdog_control(action: str = "start") -> dict[str, Any]:
     if str(action) not in ("start", "stop"):
         raise ValueError(f"unknown watchdog action: {action!r}")
-    return _queue_submit("_watchdog_control", str(action))
+    if str(action) == "stop":
+        return _queue_submit("_watchdog_control", "stop")
+    # start must stay synchronous: the UI toasts accepted=False from the RPC result itself
+    rdm = _rdm()
+    ports = rdm.ui.api.build_status(0).get("ports") or {}
+    if not any(ports.get(key) for key in ("ingress", "bridge", "runner")):
+        return {
+            "accepted": False,
+            "reason": "watchdog cannot run while the devbox stack is down; raise the project stack first",
+        }
+    env_map = rdm.envfile.EnvFile.load(rdm.cli.ENV_FILE).as_map()
+    rdm.procman.start_watchdog(env_map, rdm.cli.HOME_DIR)
+    time.sleep(_WATCHDOG_START_GRACE_SECONDS)
+    if not rdm.ui.api.build_status(0).get("watchdog"):
+        rdm.procman.stop_watchdog()
+        return {
+            "accepted": False,
+            "reason": "watchdog did not stay running; check rdm-watchdog logs and retry",
+        }
+    return {"accepted": True}
 
 
 def stack_full_down() -> dict[str, Any]:

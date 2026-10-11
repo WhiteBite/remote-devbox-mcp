@@ -132,18 +132,80 @@ def _patch_cli_fn(monkeypatch: pytest.MonkeyPatch, fn_name: str, recorded: list[
     monkeypatch.setattr(rdm.cli, fn_name, fake_fn)
 
 
-def test_watchdog_control_passes_start(monkeypatch, tmp_path):
+def _patch_watchdog_start(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    stack_up: bool,
+    stays_alive: bool,
+) -> list[str]:
+    rdm = service._rdm()
+    calls: list[str] = []
+    state = {"watchdog": False}
+
+    def fake_build_status(port: int) -> dict[str, Any]:
+        return {
+            "ports": {"ingress": stack_up, "bridge": stack_up, "runner": None},
+            "watchdog": state["watchdog"],
+        }
+
+    def fake_start_watchdog(env_map: dict[str, str], home_dir: Path) -> int:
+        calls.append("start")
+        state["watchdog"] = stays_alive
+        return 4242
+
+    def fake_stop_watchdog() -> None:
+        calls.append("stop")
+        state["watchdog"] = False
+
+    monkeypatch.setattr(rdm.ui.api, "build_status", fake_build_status)
+    monkeypatch.setattr(rdm.procman, "start_watchdog", fake_start_watchdog)
+    monkeypatch.setattr(rdm.procman, "stop_watchdog", fake_stop_watchdog)
+    monkeypatch.setattr(service, "_WATCHDOG_START_GRACE_SECONDS", 0.0, raising=False)
+    return calls
+
+
+def test_watchdog_control_start_refuses_when_stack_down(monkeypatch, tmp_path):
     monkeypatch.setattr(service, "_queue", None)
     monkeypatch.setenv("RDM_EVENTS_PATH", str(tmp_path / "events.jsonl"))
-    recorded: list[str] = []
-    done = threading.Event()
-    _patch_cli_fn(monkeypatch, "_watchdog_control", recorded, done)
+    rdm = service._rdm()
+    monkeypatch.setattr(rdm.cli, "ENV_FILE", tmp_path / "missing.env")
+    calls = _patch_watchdog_start(monkeypatch, stack_up=False, stays_alive=True)
+    _patch_cli_fn(monkeypatch, "_watchdog_control", [], threading.Event())
+
+    result = service.watchdog_control("start")
+
+    assert result["accepted"] is False
+    assert result["reason"]
+    assert calls == []
+
+
+def test_watchdog_control_start_accepts_when_watchdog_stays_alive(monkeypatch, tmp_path):
+    monkeypatch.setattr(service, "_queue", None)
+    monkeypatch.setenv("RDM_EVENTS_PATH", str(tmp_path / "events.jsonl"))
+    rdm = service._rdm()
+    monkeypatch.setattr(rdm.cli, "ENV_FILE", tmp_path / "missing.env")
+    calls = _patch_watchdog_start(monkeypatch, stack_up=True, stays_alive=True)
+    _patch_cli_fn(monkeypatch, "_watchdog_control", [], threading.Event())
 
     result = service.watchdog_control("start")
 
     assert result["accepted"] is True
-    assert done.wait(5)
-    assert recorded == ["start"]
+    assert calls == ["start"]
+
+
+def test_watchdog_control_start_fails_and_cleans_up_when_watchdog_dies(monkeypatch, tmp_path):
+    monkeypatch.setattr(service, "_queue", None)
+    monkeypatch.setenv("RDM_EVENTS_PATH", str(tmp_path / "events.jsonl"))
+    rdm = service._rdm()
+    monkeypatch.setattr(rdm.cli, "ENV_FILE", tmp_path / "missing.env")
+    calls = _patch_watchdog_start(monkeypatch, stack_up=True, stays_alive=False)
+    _patch_cli_fn(monkeypatch, "_watchdog_control", [], threading.Event())
+
+    result = service.watchdog_control("start")
+
+    assert result["accepted"] is False
+    assert result["reason"]
+    assert calls == ["start", "stop"]
 
 
 def test_watchdog_control_passes_stop(monkeypatch, tmp_path):

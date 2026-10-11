@@ -28,7 +28,6 @@ def _profile_data(tmp_path: Path) -> dict[str, Any]:
     [
         (service.ingress_control, "_ingress", ("up",), ("start",)),
         (service.ingress_control, "_ingress", ("down",), ("stop",)),
-        (service.watchdog_control, "_watchdog_control", ("start",), ("start",)),
         (service.watchdog_control, "_watchdog_control", ("stop",), ("stop",)),
         (service.stack_start, "_start", ("alpha", True), ("alpha", True)),
         (service.stack_down, "_down", (), ()),
