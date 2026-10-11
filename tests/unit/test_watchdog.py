@@ -141,6 +141,18 @@ def test_watchdog_single_instance_guard_exits_when_foreign_alive(monkeypatch, tm
         hostos.kill_tree(pid)
 
 
+def test_watchdog_guard_treats_venv_launcher_pid_as_self(monkeypatch, tmp_path):
+    calls = _wire(monkeypatch, tmp_path, ps="rdm-toolbox Up (unhealthy)")
+    path = procman.watchdog_pids_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    parent = os.getppid()
+    path.write_text(f"{parent}|{hostos.create_time(parent)}| watch\n", encoding="utf-8")
+
+    watchdog.run(_env(), iterations=1, prober=lambda url, token, timeout=10.0: 200)
+
+    assert calls["compose"] != []
+
+
 def test_watchdog_guard_passes_on_stale_pidfile(monkeypatch, tmp_path):
     calls = _wire(monkeypatch, tmp_path, ps="rdm-toolbox Up (unhealthy)")
     path = procman.watchdog_pids_path()

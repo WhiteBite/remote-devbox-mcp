@@ -25,7 +25,8 @@ def _log(path: pathlib.Path, message: str) -> None:
 def _acquire_single_instance(log_path: pathlib.Path) -> bool:
     path = procman.watchdog_pids_path()
     for pid, recorded, marker in procman._read_entries(path):
-        if pid != os.getpid() and hostos.owned(pid, recorded, marker):
+        # venv-спавн: pidfile держит pid лончера, реальный процесс — его ребёнок
+        if pid not in (os.getpid(), os.getppid()) and hostos.owned(pid, recorded, marker):
             _log(log_path, f"watchdog already running (pid {pid})")
             print(f"watchdog уже запущен (pid {pid}); выходим")
             return False
