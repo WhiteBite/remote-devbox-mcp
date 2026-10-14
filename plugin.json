@@ -274,6 +274,10 @@
       {
         "name": "permission_reply",
         "readonly": false
+      },
+      {
+        "name": "handoff_block",
+        "readonly": true
       }
     ],
     "ui": {

@@ -535,3 +535,18 @@ def issue_tokens() -> dict[str, Any]:
 
 def run_doctor() -> dict[str, Any]:
     return _queue_submit("_doctor", payload_key="report")
+
+
+def handoff_block(reveal: bool = False) -> dict[str, Any]:
+    rdm = _rdm()
+    full = bool(reveal)
+    env_map = rdm.envfile.EnvFile.load(rdm.cli.ENV_FILE).as_map()
+    block = rdm.tokens.chat_block(
+        env_map,
+        rdm.netprobe.ingress_url(env_map, rdm.cli.COMPOSE_FILE),
+        full,
+        preview_url=env_map.get("PUBLIC_PREVIEW_URL", ""),
+        runner_port=rdm.cli._runner_port(env_map),
+        self_authed_ports=rdm.cli._self_authed_ports(env_map),
+    )
+    return {"block": block, "masked": not full}

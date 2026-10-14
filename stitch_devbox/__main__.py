@@ -197,6 +197,10 @@ def _handle_permission_reply(params: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+def _handle_handoff_block(params: dict[str, Any]) -> dict[str, Any]:
+    return service.handoff_block(bool(params.get("reveal", False)))
+
+
 def _build_server() -> RpcPluginServer:
     server = RpcPluginServer()
     server.set_init_handler(_handle_init)
@@ -233,6 +237,7 @@ def _build_server() -> RpcPluginServer:
     server.register("job_cancel", _handle_job_cancel)
     server.register("permissions_pending", _handle_permissions_pending)
     server.register("permission_reply", _handle_permission_reply)
+    server.register("handoff_block", _handle_handoff_block)
     return server
 
 
