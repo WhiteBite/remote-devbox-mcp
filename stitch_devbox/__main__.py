@@ -201,6 +201,14 @@ def _handle_handoff_block(params: dict[str, Any]) -> dict[str, Any]:
     return service.handoff_block(bool(params.get("reveal", False)))
 
 
+def _handle_agent_prompt(params: dict[str, Any]) -> dict[str, Any]:
+    return service.agent_prompt(
+        str(params.get("task", "")),
+        str(params.get("acceptance", "")),
+        bool(params.get("reveal", False)),
+    )
+
+
 def _build_server() -> RpcPluginServer:
     server = RpcPluginServer()
     server.set_init_handler(_handle_init)
@@ -238,6 +246,7 @@ def _build_server() -> RpcPluginServer:
     server.register("permissions_pending", _handle_permissions_pending)
     server.register("permission_reply", _handle_permission_reply)
     server.register("handoff_block", _handle_handoff_block)
+    server.register("agent_prompt", _handle_agent_prompt)
     return server
 
 

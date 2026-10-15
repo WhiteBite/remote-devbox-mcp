@@ -49,7 +49,7 @@ def chat_block(
     lines = [
         f"Репозиторий: {_REPO_URL}",
         f"Скилл + инструкция: {_SKILL_URL} , {_INSTRUCTION_URL}",
-        f"INGRESS={ingress_url}",
+        f"INGRESS={ingress_url}" if ingress_url else "INGRESS НЕ ПОДНЯТ - включи ingress до передачи промпта",
         f"BRIDGE_TOKEN={bridge}  # /p/8787/mcp — код: read/edit/write/bash",
         f"INGRESS_TOKEN={ingress_token}  # UI и прочие порты (Authorization: Bearer)",
         *_TOKEN_SURFACES,

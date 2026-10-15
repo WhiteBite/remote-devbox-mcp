@@ -139,3 +139,10 @@ def test_chat_block_maps_token_names_to_surfaces():
     assert "a" * 32 not in masked
     assert "b" * 32 not in masked
     assert "c" * 32 not in masked
+
+
+def test_chat_block_empty_ingress_emits_marker():
+    env_map = {"MCP_BEARER_TOKEN": "a" * 32}
+    block = tokens.chat_block(env_map, "", full=False)
+    assert "INGRESS НЕ ПОДНЯТ - включи ingress до передачи промпта" in block
+    assert "INGRESS=" not in block

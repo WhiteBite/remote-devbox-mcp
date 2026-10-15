@@ -278,6 +278,10 @@
       {
         "name": "handoff_block",
         "readonly": true
+      },
+      {
+        "name": "agent_prompt",
+        "readonly": true
       }
     ],
     "ui": {

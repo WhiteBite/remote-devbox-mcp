@@ -118,6 +118,7 @@ def _rdm() -> Any:
             ) from exc
         _rd = True
     import rdm.cli  # noqa: PLC0415
+    import rdm.prompt  # noqa: PLC0415
     import rdm.ui.api  # noqa: PLC0415
 
     return rdm
@@ -550,3 +551,43 @@ def handoff_block(reveal: bool = False) -> dict[str, Any]:
         self_authed_ports=rdm.cli._self_authed_ports(env_map),
     )
     return {"block": block, "masked": not full}
+
+
+def _active_profile_context(env_map: dict[str, Any]) -> dict[str, str] | None:
+    rdm = _rdm()
+    name = env_map.get("ACTIVE_PROFILE", "")
+    path = rdm.profiles.find(name) if name else None
+    if path is None:
+        return None
+    try:
+        profile = rdm.profiles.load(path)
+    except (ValueError, OSError):
+        return None
+    return {"project_dir": profile.project_dir, "mode": profile.mode, "toolchain": profile.toolchain}
+
+
+def agent_prompt(task: str = "", acceptance: str = "", reveal: bool = False) -> dict[str, Any]:
+    rdm = _rdm()
+    full = bool(reveal)
+    env_map = rdm.envfile.EnvFile.load(rdm.cli.ENV_FILE).as_map()
+    ingress_url = rdm.netprobe.ingress_url(env_map, rdm.cli.COMPOSE_FILE)
+    prompt_text = rdm.prompt.compose_prompt(
+        env_map,
+        ingress_url,
+        env_map.get("PUBLIC_PREVIEW_URL", ""),
+        rdm.cli._runner_port(env_map),
+        rdm.cli._self_authed_ports(env_map),
+        _active_profile_context(env_map),
+        task,
+        acceptance,
+        full,
+    )
+    ports = rdm.ui.api.build_status(0).get("ports", {}) or {}
+    ready = {
+        "profile": bool(env_map.get("ACTIVE_PROFILE", "")),
+        "bridge": bool(ports.get("bridge")),
+        # the ingress port probe only sees the local proxy; the agent needs the public tunnel URL
+        "ingress": bool(ports.get("ingress")) and bool(ingress_url),
+        "runner": bool(ports.get("runner")),
+    }
+    return {"prompt": prompt_text, "masked": not full, "ready": ready}
