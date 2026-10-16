@@ -209,6 +209,10 @@ def _handle_agent_prompt(params: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+def _handle_poll(params: dict[str, Any]) -> dict[str, Any]:
+    return service.poll()
+
+
 def _build_server() -> RpcPluginServer:
     server = RpcPluginServer()
     server.set_init_handler(_handle_init)
@@ -247,6 +251,7 @@ def _build_server() -> RpcPluginServer:
     server.register("permission_reply", _handle_permission_reply)
     server.register("handoff_block", _handle_handoff_block)
     server.register("agent_prompt", _handle_agent_prompt)
+    server.register("poll", _handle_poll)
     return server
 
 

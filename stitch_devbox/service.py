@@ -397,8 +397,13 @@ def _queue_submit(fn_name: str, *args: Any, payload_key: str = "") -> dict[str, 
     def _runner() -> int | dict[str, Any]:
         # cli entry points print human output; keep the RPC stdout clean.
         buffer = io.StringIO()
-        with contextlib.redirect_stdout(buffer):
-            rc = int(fn(*args))
+        try:
+            with contextlib.redirect_stdout(buffer):
+                rc = int(fn(*args))
+        finally:
+            # actions mutate host state; the TTL caches must not keep serving
+            # pre-action vitals to the poll loop after the action is done.
+            rdm.ui.api.invalidate_status_cache()
         if not payload_key:
             return rc
         return {"exit": rc, payload_key: buffer.getvalue()}
@@ -591,3 +596,20 @@ def agent_prompt(task: str = "", acceptance: str = "", reveal: bool = False) -> 
         "runner": bool(ports.get("runner")),
     }
     return {"prompt": prompt_text, "masked": not full, "ready": ready}
+
+
+def poll() -> dict[str, Any]:
+    """Batch the five page-refresh reads into one RPC round-trip.
+
+    Payload keys mirror the individual commands verbatim; overview's cached
+    build_status makes the docker compose ps cost paid once per batch.
+    """
+    from . import jobcontrol  # noqa: PLC0415 - jobcontrol imports service
+
+    return {
+        "overview": overview(),
+        "action_status": action_status(),
+        "jobs": jobcontrol.jobs_live(),
+        "permissions": jobcontrol.permissions_pending(),
+        "events": events_tail(100),
+    }

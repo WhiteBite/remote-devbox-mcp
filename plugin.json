@@ -282,6 +282,10 @@
       {
         "name": "agent_prompt",
         "readonly": true
+      },
+      {
+        "name": "poll",
+        "readonly": true
       }
     ],
     "ui": {

@@ -588,3 +588,81 @@ def test_profile_defaults_exposes_host_git_identity(monkeypatch):
     )
 
     assert service.profile_defaults() == {"git_name": "Host User", "git_email": "h@x.dev"}
+
+
+def test_poll_batch_matches_individual_commands(monkeypatch, tmp_path):
+    from stitch_devbox import jobcontrol
+
+    rdm = service._rdm()
+    monkeypatch.setattr(service, "_queue", None)
+    monkeypatch.setenv("RDM_EVENTS_PATH", str(tmp_path / "events.jsonl"))
+    now = time.time()
+    events = [
+        {"ts": now - 60, "kind": "mcp_request", "rpc_method": "tools/call", "tool": "bash", "session": "s1"},
+        {"ts": now - 59, "kind": "mcp_response", "job_id": "j1", "tool": "bash", "status": "running"},
+    ]
+    (tmp_path / "events.jsonl").write_text("\n".join(json.dumps(event) for event in events) + "\n", encoding="utf-8")
+    status_payload = {
+        "env": {"ACTIVE_PROFILE": "alpha"},
+        "ports": {"ingress": True, "bridge": True, "runner": None},
+        "watchdog": True,
+        "host_services": {"alive": 1, "recorded": 1},
+    }
+    monkeypatch.setattr(rdm.ui.api, "build_status", lambda port: dict(status_payload))
+    monkeypatch.setattr(jobcontrol, "_bridge_reachable", lambda: False)
+    monkeypatch.setattr(jobcontrol, "_bridge_down_until", 0.0)
+
+    batch = service.poll()
+
+    assert set(batch) == {"overview", "action_status", "jobs", "permissions", "events"}
+
+    def _vitals(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return [{key: value for key, value in row.items() if key != "updatedAt"} for row in rows]
+
+    assert _vitals(batch["overview"]) == _vitals(service.overview())
+    assert batch["action_status"] == service.action_status()
+    assert batch["jobs"] == jobcontrol.jobs_live()
+    assert batch["permissions"] == jobcontrol.permissions_pending()
+    assert batch["events"] == service.events_tail(100)
+
+
+def test_poll_handler_registered_and_manifest_readonly():
+    from stitch_devbox import __main__ as plugin_main
+
+    handlers = plugin_main._build_server()._handlers
+    assert "poll" in handlers
+
+    commands = {command["name"]: command["readonly"] for command in _manifest()["contributions"]["commands"]}
+    assert commands["poll"] is True
+
+
+def test_action_completion_invalidates_status_cache(monkeypatch, tmp_path):
+    monkeypatch.setattr(service, "_queue", None)
+    monkeypatch.setenv("RDM_EVENTS_PATH", str(tmp_path / "events.jsonl"))
+    rdm = service._rdm()
+    invalidated = threading.Event()
+
+    def fake_ingress(action: str) -> int:
+        return 0
+
+    monkeypatch.setattr(rdm.cli, "_ingress", fake_ingress)
+    monkeypatch.setattr(rdm.ui.api, "invalidate_status_cache", invalidated.set)
+
+    assert service.ingress_control("up")["accepted"] is True
+    assert invalidated.wait(5)
+
+
+def test_failed_action_completion_invalidates_status_cache(monkeypatch, tmp_path):
+    monkeypatch.setattr(service, "_queue", None)
+    monkeypatch.setenv("RDM_EVENTS_PATH", str(tmp_path / "events.jsonl"))
+    rdm = service._rdm()
+    invalidated = threading.Event()
+
+    def failing_ingress(action: str) -> int:
+        raise RuntimeError("compose exploded mid-action")
+
+    monkeypatch.setattr(rdm.cli, "_ingress", failing_ingress)
+    monkeypatch.setattr(rdm.ui.api, "invalidate_status_cache", invalidated.set)
+
+    assert service.ingress_control("up")["accepted"] is True
+    assert invalidated.wait(5)
