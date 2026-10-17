@@ -571,7 +571,9 @@ def _active_profile_context(env_map: dict[str, Any]) -> dict[str, str] | None:
     return {"project_dir": profile.project_dir, "mode": profile.mode, "toolchain": profile.toolchain}
 
 
-def agent_prompt(task: str = "", acceptance: str = "", reveal: bool = False) -> dict[str, Any]:
+def agent_prompt(
+    task: str = "", acceptance: str = "", reveal: bool = False, client: str = "universal"
+) -> dict[str, Any]:
     rdm = _rdm()
     full = bool(reveal)
     env_map = rdm.envfile.EnvFile.load(rdm.cli.ENV_FILE).as_map()
@@ -586,6 +588,7 @@ def agent_prompt(task: str = "", acceptance: str = "", reveal: bool = False) -> 
         task,
         acceptance,
         full,
+        client,
     )
     ports = rdm.ui.api.build_status(0).get("ports", {}) or {}
     ready = {

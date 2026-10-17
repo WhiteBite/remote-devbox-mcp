@@ -206,6 +206,7 @@ def _handle_agent_prompt(params: dict[str, Any]) -> dict[str, Any]:
         str(params.get("task", "")),
         str(params.get("acceptance", "")),
         bool(params.get("reveal", False)),
+        str(params.get("client", "universal")),
     )
 
 

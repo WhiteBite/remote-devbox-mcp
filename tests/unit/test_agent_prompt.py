@@ -402,3 +402,192 @@ def test_agent_prompt_manifest_is_readonly():
         command["name"]: command["readonly"] for command in manifest["contributions"]["commands"]
     }
     assert commands["agent_prompt"] is True
+
+
+_MODE_A_HEADERS = [
+    "## 1. Подключение",
+    "## 2. Правила devbox",
+    "## 3. Полные инструкции (по желанию)",
+    "## 4. Доступы",
+    "## 5. Проект",
+    "## 6. Задача",
+    "## 7. Готовность и отчёт",
+]
+
+_ALL_CLIENTS = (
+    "universal", "claude-code", "opencode", "codex", "cursor", "vscode",
+    "cline", "roo", "gemini", "zed", "factory", "kiro", "windsurf",
+)
+
+
+def _mode_a_rules_digest(prompt: str) -> list[str]:
+    block = prompt[prompt.index("## 2. Правила devbox") :].split("\n\n", 1)[0]
+    return [line for line in block.splitlines() if line.startswith("- ")]
+
+
+def test_agent_prompt_universal_explicit_equals_default(monkeypatch, tmp_path):
+    _fixture_env(monkeypatch, tmp_path)
+
+    assert service.agent_prompt(client="universal")["prompt"] == service.agent_prompt()["prompt"]
+
+
+def test_agent_prompt_codex_dialect(monkeypatch, tmp_path):
+    _fixture_env(monkeypatch, tmp_path)
+
+    prompt = service.agent_prompt(client="codex")["prompt"]
+
+    assert "## 1. Подключение (Codex)" in prompt
+    assert "Файл: `~/.codex/config.toml`." in prompt
+    assert "[mcp_servers.devbox]" in prompt
+    assert 'url = "https://prompt.example.com/p/8787/mcp"' in prompt
+    assert 'bearer_token_env_var = "DEVBOX_BRIDGE_TOKEN"' in prompt
+    assert "export DEVBOX_BRIDGE_TOKEN=bbbb...bbbb" in prompt
+    assert "Проверка: codex mcp list показывает devbox" in prompt
+    assert "литеральный токен в конфиге Codex запрещён — только имя переменной" in prompt
+    assert _TOKENS["MCP_BEARER_TOKEN"] not in prompt
+
+
+def test_agent_prompt_vscode_dialect(monkeypatch, tmp_path):
+    _fixture_env(monkeypatch, tmp_path)
+
+    prompt = service.agent_prompt(client="vscode")["prompt"]
+
+    assert "## 1. Подключение (VS Code)" in prompt
+    assert "Файл: `.vscode/mcp.json`." in prompt
+    assert '"inputs":[{"type":"promptString","id":"devbox-bridge-token"' in prompt
+    assert '"Authorization":"Bearer ${input:devbox-bridge-token}"' in prompt
+    assert "export DEVBOX_BRIDGE_TOKEN=" not in prompt
+    assert "Проверка: VS Code: чат агента -> сервер devbox в списке, статус running" in prompt
+
+
+def test_agent_prompt_zed_literal_token_masked(monkeypatch, tmp_path):
+    _fixture_env(monkeypatch, tmp_path)
+
+    prompt = service.agent_prompt(client="zed")["prompt"]
+
+    assert "## 1. Подключение (Zed)" in prompt
+    assert "ключ `context_servers`" in prompt
+    assert '"context_servers":{"devbox"' in prompt
+    assert '"Authorization":"Bearer bbbb...bbbb"' in prompt
+    assert "Zed не подставляет env в headers — токен в конфиге литеральный; не коммить файл" in prompt
+    assert _TOKENS["MCP_BEARER_TOKEN"] not in prompt
+
+
+def test_agent_prompt_zed_reveal_puts_token_in_block(monkeypatch, tmp_path):
+    _fixture_env(monkeypatch, tmp_path)
+
+    prompt = service.agent_prompt(client="zed", reveal=True)["prompt"]
+
+    assert f'"Authorization":"Bearer {_TOKENS["MCP_BEARER_TOKEN"]}"' in prompt
+    assert "bbbb...bbbb" not in prompt
+
+
+def test_agent_prompt_claude_code_env_var_dialect(monkeypatch, tmp_path):
+    _fixture_env(monkeypatch, tmp_path)
+
+    prompt = service.agent_prompt(client="claude-code")["prompt"]
+
+    assert "## 1. Подключение (Claude Code)" in prompt
+    assert "Файл: `.mcp.json` (project root) или `~/.claude.json`." in prompt
+    assert '"type":"http"' in prompt
+    assert '"Authorization":"Bearer ${DEVBOX_BRIDGE_TOKEN}"' in prompt
+    assert "export DEVBOX_BRIDGE_TOKEN=bbbb...bbbb" in prompt
+    assert "Проверка: в Claude Code: /mcp — сервер devbox с 16 тулами" in prompt
+    assert (
+        "имя переменной не должно выглядеть как креды (ANTHROPIC_*/AWS_* подставляются пустыми)"
+        in prompt
+    )
+
+
+def test_agent_prompt_invalid_client_raises_with_whitelist(monkeypatch, tmp_path):
+    _fixture_env(monkeypatch, tmp_path)
+
+    with pytest.raises(ValueError) as exc:
+        service.agent_prompt(client="notepad")
+
+    message = str(exc.value)
+    assert "notepad" in message
+    for name in _ALL_CLIENTS:
+        assert name in message
+
+
+def test_agent_prompt_mode_a_mcp_remote_fallback_line(monkeypatch, tmp_path):
+    _fixture_env(monkeypatch, tmp_path)
+
+    prompt = service.agent_prompt(client="opencode")["prompt"]
+
+    assert (
+        "stdio-only клиент: npx mcp-remote https://prompt.example.com/p/8787/mcp"
+        ' --transport http-only --header "Authorization:${AUTH_HEADER}"'
+        " (без пробела вокруг ':'), env AUTH_HEADER='Bearer bbbb...bbbb'." in prompt
+    )
+
+
+def test_agent_prompt_mode_a_rules_has_permissions_bullet(monkeypatch, tmp_path):
+    _fixture_env(monkeypatch, tmp_path)
+
+    prompt = service.agent_prompt(client="cursor")["prompt"]
+
+    bullets = _mode_a_rules_digest(prompt)
+    assert len(bullets) == 6
+    assert (
+        "- Мутации уходят в awaiting_permission: следи за статусами джобов, одобряй/отклоняй"
+        " через тула opencode_permissions_pending / opencode_permission_reply." in bullets
+    )
+
+
+def test_agent_prompt_mode_a_section_order(monkeypatch, tmp_path):
+    _fixture_env(monkeypatch, tmp_path, active_profile="demo")
+    _fixture_profile(monkeypatch, tmp_path)
+
+    prompt = service.agent_prompt(client="codex", task="Сделай X")["prompt"]
+
+    positions = [prompt.index(header) for header in _MODE_A_HEADERS]
+    assert positions == sorted(positions)
+    assert prompt.index("Ты — внешний кодинг-агент") < positions[0]
+
+
+def test_agent_prompt_mode_a_has_no_repo_clone(monkeypatch, tmp_path):
+    _fixture_env(monkeypatch, tmp_path)
+
+    prompt = service.agent_prompt(client="gemini")["prompt"]
+
+    assert "git clone" not in prompt
+    assert "## 1. Bootstrap" not in prompt
+
+
+def test_agent_prompt_mode_a_dod_uses_mcp_connection(monkeypatch, tmp_path):
+    _fixture_env(monkeypatch, tmp_path)
+
+    prompt = service.agent_prompt(client="roo")["prompt"]
+
+    assert "Готово = подключение MCP зелёное (тулы devbox видны)" in prompt
+    assert "./mcp check" not in prompt
+
+
+def test_agent_prompt_mode_a_accesses_renumbered_and_filtered(monkeypatch, tmp_path):
+    _fixture_env(monkeypatch, tmp_path)
+
+    prompt = service.agent_prompt(client="kiro")["prompt"]
+
+    assert "## 4. Доступы" in prompt
+    assert "Токены и поверхности:" in prompt
+    assert (
+        "Токены не повторяй в ответах, логах, коде и коммитах;"
+        " по завершении работы я их ротирую." in prompt
+    )
+    assert "Репозиторий:" not in prompt
+    assert "Песочница сбрасывается" not in prompt
+    assert "Kiro требует https (кроме localhost)" in prompt
+
+
+def test_agent_prompt_mode_a_opener_line(monkeypatch, tmp_path):
+    _fixture_env(monkeypatch, tmp_path)
+
+    prompt = service.agent_prompt(client="windsurf")["prompt"]
+
+    assert prompt.startswith(
+        "Ты — внешний кодинг-агент. Твой клиент умеет удалённые MCP: подключи мой devbox"
+        " как MCP-сервер по разделу 1 и выполняй задачу из раздела «Задача»."
+    )
+    assert "Проверка: Windsurf: MCP -> devbox active" in prompt
