@@ -129,9 +129,40 @@ UI=<INGRESS>/p/<порт>/                        # UI приложения дл
 PREVIEW=<preview-URL>                         # если поднят preview-туннель
 RUNNER_URL=<INGRESS>/p/<порт раннера>/mcp     # MCP_URL для ~/.mcp-runner.conf (только если есть runner)
 HOST_TOKEN=<MCP_PUBLIC_TOKEN из home/.env>    # MCP_TOKEN для RUNNER_URL
+GATEWAY_URL=<INGRESS>/p/8794/mcp              # шлюз MCP хозяина (только если exposed_mcps непустой)
+GATEWAY_TOKEN=<GATEWAY_TOKEN из home/.env>    # Bearer для GATEWAY_URL (env DEVBOX_GATEWAY_TOKEN у клиента)
 ```
 
 Реестр эндпоинтов: GET <INGRESS>/p/9000/manifest.json с заголовком Authorization: Bearer <INGRESS_TOKEN> — машиночитаемый список эндпоинтов, портов и команд раннера; не перечисляй порты вручную.
 
 Актуальный INGRESS: `docker compose logs cloudflared-ingress | Select-String trycloudflare`
 из папки `home\` на машине пользователя.
+
+## 7. MCP хозяина (gateway)
+
+Четвёртая поверхность (в блоке передачи — строка `GATEWAY_TOKEN=...`): шлюз,
+через который пользователь разрешает тебе подключать **его собственные**
+локальные MCP-серверы (те, что живут в его opencode-конфигах) поверх туннеля,
+не отдавая всю машину. Отдельный streamable-HTTP сервер `devbox-gateway`,
+эндпоинт `<INGRESS>/p/<gw>/mcp` (порт по умолчанию 8794, сам сервер слушает
+8795; переопределяется полем `gateway_port` профиля), авторизация — четвёртый
+ротационный токен `GATEWAY_TOKEN` из `home/.env` (`issue-tokens` ротирует его
+вместе с остальными).
+
+- Имена тулов неймспейсятся: `<server>__<tool>` (например `codegraph__explore`).
+  Состав того, что открыто, читай из манифеста: секция `exposed_mcps` в
+  `/p/9000/manifest.json` — сервер, режим и allowlist тулов. Не угадывай.
+- Режимы P1: `readonly` (только чтение/диагностика из allowlist) и `full`.
+  Approval-flow в P1 нет: мутации проходят только там, где они явно вписаны в
+  allowlist сервера в режиме `full`.
+- Default-deny набор серверов не экспортируется никогда: `stitch-manager`,
+  `lgm`, `ssh`, `playwright`; мета-тулы (`execute_any`, `list_mcp_commands` и
+  подобные) закрыты жёстко, независимо от allowlist.
+- В v1 шлюз рассчитан на одного удалённого агента: сессии изолированы друг от
+  друга (у каждой свои дети-процессы серверов), но конфигурация общая.
+- SSE-поток уведомлений не резюмируется: после обрыва — новая сессия
+  (`initialize` заново), а не догон пропущенных событий.
+- Политика редактируется **только владельцем машины** в профиле
+  (`exposed_mcps`: name/mode/tool_allow) — не агентом и не правкой снапшота;
+  состав серверов снапшотится с пинами при сохранении политики, дрейф
+  конфигов владелец пересохраняет сам.

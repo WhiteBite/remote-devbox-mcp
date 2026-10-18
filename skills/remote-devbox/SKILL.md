@@ -196,6 +196,35 @@ guards all `/p/<port>` HTTP including `/p/9000/manifest.json`. Stdio-only
 clients (Codex-class):
 `npx mcp-remote <url> --header "Authorization: Bearer <token>"`.
 
+### Owner MCP gateway (`devbox-gateway`)
+
+When the hand-off block carries a `GATEWAY_TOKEN=` line, the user exposes some
+of their **own local MCP servers** through a fourth surface: a streamable-HTTP
+gateway at `<INGRESS>/p/<gw>/mcp` (default port 8794; the gateway process
+listens on 8795 behind its own auth-proxy). The hand-off template in `ARENA.md`
+(section «MCP хозяина (gateway)») documents the policy model. Config entry per
+client — env interpolation clients:
+
+```json
+{"mcpServers":{"devbox-gateway":{"type":"http","url":"<INGRESS>/p/8794/mcp","headers":{"Authorization":"Bearer ${DEVBOX_GATEWAY_TOKEN}"}}}}
+```
+
+OpenCode family: `{"mcp":{"devbox-gateway":{"type":"remote","url":"...","enabled":true,"oauth":false,"headers":{"Authorization":"Bearer {env:DEVBOX_GATEWAY_TOKEN}"}}}}`.
+Codex (`~/.codex/config.toml`, bearer token only via env var name):
+`[mcp_servers.devbox-gateway]` + `url = "<INGRESS>/p/8794/mcp"` +
+`bearer_token_env_var = "DEVBOX_GATEWAY_TOKEN"`. The env variable holding the
+token is always named `DEVBOX_GATEWAY_TOKEN`.
+
+Verify: `tools/list` on the gateway shows namespaced names `<server>__<tool>`
+(e.g. `codegraph__explore`). What is exposed, in which mode, with which tool
+allowlist: the `exposed_mcps` section of `/p/9000/manifest.json`. P1 modes are
+`readonly` and `full`; there is no approval flow — a mutation only passes where
+the owner explicitly put it in a `full` server's allowlist. Servers
+`stitch-manager`, `lgm`, `ssh`, `playwright` are default-deny and meta-tools
+(`execute_any`, `list_mcp_commands`, ...) are hard-denied regardless. SSE
+notification streams are not resumable: after a disconnect re-initialize a new
+session instead of expecting missed events.
+
 ## OpenCode integration
 
 For a **local** OpenCode install driving the devbox:
@@ -248,6 +277,12 @@ that never finished (polls exhausted) — a failed or hung test is never a succe
 - **Don't** run `cat > file` via `bash`; use the file tools.
 - **Don't** install packages inside the container for host-build projects
   (MidasAI etc.) — use the runner there instead.
+- **Don't** call gateway meta-tools (`execute_any`, `list_mcp_commands`, ...)
+  even if they appear somewhere — they are hard-denied by design, not by
+  oversight.
+- **Don't** treat a denied gateway tool as an outage: a denial
+  (`default-deny` / `tool-not-allowed` / `meta-tool-deny`) is the owner's
+  policy; report it and move on, do not retry or work around it.
 
 ## Verify UI (Playwright)
 
