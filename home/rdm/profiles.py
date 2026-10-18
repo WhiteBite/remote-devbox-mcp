@@ -1,4 +1,4 @@
-"""Типизированные профили projects/*.json и валидация R1-R33.
+"""Типизированные профили projects/*.json и валидация R1-R42.
 
 Ключи JSON нормализуются регистронезависимо (наследие профилей
 PowerShell ConvertTo-Json).
@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from rdm.freeze import app_dir
+from rdm.gateway.data import DEFAULT_DENY_SERVERS, NETWORK_EGRESS_SERVERS, SECRET_TOUCHING_SERVERS
 
 BRIDGE_PORT = 8787
 MAX_PORT_RANGES = 32
@@ -107,6 +108,13 @@ class Script:
 
 
 @dataclass(frozen=True, slots=True)
+class ExposedMcp:
+    name: str = ""
+    mode: str = "readonly"
+    tool_allow: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
 class Profile:
     project_dir: str = ""
     toolchain: str = ""
@@ -124,6 +132,8 @@ class Profile:
     deny_mounts: tuple[str, ...] = ()
     setup_cmds: tuple[SetupCommand, ...] = ()
     scripts: tuple[Script, ...] = ()
+    gateway_port: int | None = None
+    exposed_mcps: tuple[ExposedMcp, ...] = ()
 
 
 _TOP_KEYS = {
@@ -143,6 +153,8 @@ _TOP_KEYS = {
     "denymounts": "deny_mounts",
     "setupcmds": "setup_cmds",
     "scripts": "scripts",
+    "gatewayport": "gateway_port",
+    "exposedmcps": "exposed_mcps",
 }
 _HOST_KEYS = {"port": "port", "auth": "auth", "cwd": "cwd", "cmd": "cmd"}
 _RUNNER_KEYS = {
@@ -157,9 +169,11 @@ _RUNNER_KEYS = {
 _SETUP_KEYS = {"cmd": "cmd", "marker": "marker", "required": "required"}
 _SCRIPT_KEYS = {"name": "name", "cmd": "cmd", "description": "description"}
 _ARGSPEC_KEYS = {"type": "type", "position": "position"}
+_EXPOSED_KEYS = {"name": "name", "mode": "mode", "toolallow": "tool_allow"}
 
 _MOUNT_RE = re.compile(r"[A-Za-z0-9._\-/]+")
 _TOOLCHAIN_RE = re.compile(r"[A-Za-z0-9._:\-+ ]*")
+_SERVER_NAME_RE = re.compile(r"[a-z0-9][a-z0-9-]*")
 
 
 def _norm(key: str) -> str:
@@ -266,6 +280,15 @@ def _script(raw: object) -> Script:
     return Script(name=_str(values, "name"), cmd=_cmd(values), description=_str(values, "description"))
 
 
+def _exposed(raw: object) -> ExposedMcp:
+    values = _fields(raw, _EXPOSED_KEYS, "exposedmcp")
+    return ExposedMcp(
+        name=_str(values, "name"),
+        mode=_str(values, "mode", "readonly"),
+        tool_allow=tuple(str(item) for item in _seq(values, "tool_allow")),
+    )
+
+
 def _build(values: Mapping[str, object]) -> Profile:
     return Profile(
         project_dir=_str(values, "project_dir"),
@@ -284,6 +307,8 @@ def _build(values: Mapping[str, object]) -> Profile:
         deny_mounts=tuple(str(item) for item in _seq(values, "deny_mounts")),
         setup_cmds=tuple(_setup(item) for item in _seq(values, "setup_cmds")),
         scripts=tuple(_script(item) for item in _seq(values, "scripts")),
+        gateway_port=_opt_int(values, "gateway_port"),
+        exposed_mcps=tuple(_exposed(item) for item in _seq(values, "exposed_mcps")),
     )
 
 
@@ -311,7 +336,7 @@ def write_raw(path: str | os.PathLike[str], data: dict) -> None:
 
 def validate(profile: Profile) -> list[str]:
     # отложенный импорт: ports импортирует profiles на уровне модуля
-    from rdm.ports import COCKPIT_PORT
+    from rdm.ports import COCKPIT_PORT, DEFAULT_GATEWAY_PORT
 
     problems: list[str] = []
     if not profile.project_dir:
@@ -380,6 +405,26 @@ def validate(profile: Profile) -> list[str]:
         else:
             tool_owners[tool] = raw_name
 
+    exposed_names: list[str] = []
+    for i, mcp in enumerate(profile.exposed_mcps, 1):
+        if not _SERVER_NAME_RE.fullmatch(mcp.name):
+            problems.append(f"R36: ExposedMcp[{i}]: name {mcp.name!r} должен соответствовать ^[a-z0-9][a-z0-9-]*$")
+        else:
+            exposed_names.append(mcp.name)
+        if mcp.mode not in ("readonly", "full"):
+            problems.append(f"R37: ExposedMcp[{i}]: mode должен быть readonly или full")
+        if any(not tool for tool in mcp.tool_allow):
+            problems.append(f"R38: ExposedMcp[{i}]: tool_allow: только непустые строки")
+        if len(mcp.tool_allow) != len(set(mcp.tool_allow)):
+            problems.append(f"R38: ExposedMcp[{i}]: tool_allow: дубликаты")
+        if mcp.name in DEFAULT_DENY_SERVERS:
+            problems.append(f"R40: ExposedMcp[{i}]: сервер {mcp.name} не подлежит экспорту")
+    if len(exposed_names) != len(set(exposed_names)):
+        problems.append("R39: дубликат имени в ExposedMcps")
+    exposed_set = set(exposed_names)
+    if exposed_set & NETWORK_EGRESS_SERVERS and exposed_set & SECRET_TOUCHING_SERVERS:
+        problems.append("R41: exposed_mcps: egress-серверы и секретные серверы вместе запрещены")
+
     runner_port = profile.runner_port
     if profile.runner_commands and (not runner_port or runner_port < 1 or runner_port > 65535):
         problems.append("R11: $RunnerPort 1-65535")
@@ -440,6 +485,26 @@ def validate(profile: Profile) -> list[str]:
     for i, command in enumerate(profile.runner_commands, 1):
         if command.port == COCKPIT_PORT:
             problems.append(f"R35: RunnerCommand[{i}] Port содержит cockpit-порт {COCKPIT_PORT}")
+
+    if profile.exposed_mcps:
+        gateway_port = profile.gateway_port or DEFAULT_GATEWAY_PORT
+        if not 1 <= gateway_port <= 65534:
+            problems.append(f"R42: GatewayPort {gateway_port} вне 1-65534")
+        else:
+            for port in (gateway_port, gateway_port + 1):
+                if port in (BRIDGE_PORT, BRIDGE_PORT + 1):
+                    problems.append(f"R42: GatewayPort {port} конфликтует с портом моста {BRIDGE_PORT}")
+                if runner_port and port in (runner_port, runner_port + 1):
+                    problems.append(f"R42: GatewayPort {port} конфликтует с runner-портом {runner_port}")
+                if port == COCKPIT_PORT:
+                    problems.append(f"R42: GatewayPort {port} конфликтует с cockpit-портом {COCKPIT_PORT}")
+                if port in ports:
+                    problems.append(f"R42: GatewayPort {port} в HostServices")
+                if port in allowed:
+                    problems.append(f"R42: GatewayPort {port} в AllowedPorts")
+                for lo, hi in ordered:
+                    if lo <= port <= hi:
+                        problems.append(f"R42: GatewayPort {port} внутри диапазона {lo}-{hi}")
 
     if profile.ui_port is not None:
         in_policy = profile.ui_port in profile.allowed_ports or any(

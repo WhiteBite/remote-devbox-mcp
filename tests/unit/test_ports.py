@@ -1,5 +1,12 @@
-from rdm.ports import DEFAULT_RUNNER_PORT, compute_port_policy, is_port_allowed, with_runner_service
-from rdm.profiles import HostService, Profile, RunnerCommand
+from rdm.ports import (
+    DEFAULT_GATEWAY_PORT,
+    DEFAULT_RUNNER_PORT,
+    compute_port_policy,
+    is_port_allowed,
+    with_gateway_service,
+    with_runner_service,
+)
+from rdm.profiles import ExposedMcp, HostService, Profile, RunnerCommand
 
 
 def _profile(**overrides) -> Profile:
@@ -90,3 +97,56 @@ def test_port_deny_beats_allowed_and_range():
 def test_ranges_do_not_enter_self_authed():
     policy = compute_port_policy(_profile(port_ranges=((47000, 47999),)))
     assert all(not 47000 <= port <= 47999 for port in policy.self_authed)
+
+
+def test_gateway_default_port_is_8794():
+    assert DEFAULT_GATEWAY_PORT == 8794
+
+
+def test_with_gateway_service_noop_without_exposed_mcps():
+    profile = _profile()
+    assert with_gateway_service(profile) is profile
+
+
+def test_with_gateway_service_appends_bearer_service():
+    profile = _profile(exposed_mcps=(ExposedMcp(name="websearch"),))
+
+    enriched = with_gateway_service(profile)
+
+    assert enriched is not profile
+    service = enriched.host_services[-1]
+    assert service.port == DEFAULT_GATEWAY_PORT
+    assert service.auth == "bearer"
+    assert service.cmd
+    assert service.cwd
+    assert enriched.exposed_mcps == profile.exposed_mcps
+
+
+def test_with_gateway_service_uses_profile_gateway_port():
+    profile = _profile(exposed_mcps=(ExposedMcp(name="websearch"),), gateway_port=8800)
+
+    enriched = with_gateway_service(profile)
+
+    assert enriched.host_services[-1].port == 8800
+
+
+def test_policy_gateway_port_self_authed_backend_closed():
+    profile = _profile(
+        exposed_mcps=(ExposedMcp(name="websearch"),),
+        allowed_ports=(DEFAULT_GATEWAY_PORT + 1,),
+        port_ranges=((DEFAULT_GATEWAY_PORT - 2, DEFAULT_GATEWAY_PORT + 2),),
+    )
+
+    policy = compute_port_policy(with_gateway_service(profile))
+
+    assert DEFAULT_GATEWAY_PORT in policy.self_authed
+    assert not is_port_allowed(policy, DEFAULT_GATEWAY_PORT)
+    assert not is_port_allowed(policy, DEFAULT_GATEWAY_PORT + 1)
+
+
+def test_policy_gateway_service_composes_with_runner_service():
+    profile = _profile(exposed_mcps=(ExposedMcp(name="websearch"),))
+
+    policy = compute_port_policy(with_gateway_service(with_runner_service(profile)))
+
+    assert policy.self_authed == (8787, 8792, 8794, 8796)

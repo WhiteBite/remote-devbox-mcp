@@ -3,7 +3,14 @@ from pathlib import Path
 
 import pytest
 from rdm import profiles
-from rdm.profiles import Profile, load
+from rdm.gateway.data import (
+    ARG_CONSTRAINTS,
+    DEFAULT_DENY_SERVERS,
+    META_TOOL_DENY,
+    NETWORK_EGRESS_SERVERS,
+    SECRET_TOUCHING_SERVERS,
+)
+from rdm.profiles import ExposedMcp, Profile, load
 
 REPO = Path(__file__).resolve().parents[2]
 PROJECTS = REPO / "projects"
@@ -205,3 +212,169 @@ def test_validate_rejects_ui_port_in_deny(tmp_path):
 def test_validate_rejects_range_containing_protected_port(tmp_path):
     problems = profiles.validate(_valid(tmp_path, port_ranges=((8788, 8788),)))
     assert any(problem.startswith("R34") for problem in problems)
+
+
+def _exposed(**overrides):
+    data = dict(name="websearch", mode="readonly", tool_allow=())
+    data.update(overrides)
+    return ExposedMcp(**data)
+
+
+def test_load_defaults_gateway_keys(tmp_path):
+    path = tmp_path / "profile.json"
+    path.write_text(json.dumps({"project_dir": "x"}), encoding="utf-8")
+
+    profile = load(path)
+
+    assert profile.gateway_port is None
+    assert profile.exposed_mcps == ()
+
+
+def test_load_parses_gateway_port_and_exposed_mcps(tmp_path):
+    path = tmp_path / "profile.json"
+    path.write_text(
+        json.dumps(
+            {
+                "project_dir": "x",
+                "GatewayPort": 8800,
+                "ExposedMcps": [
+                    {"Name": "websearch", "Mode": "full", "ToolAllow": ["web_search", "fetch"]},
+                    {"name": "context7"},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    profile = load(path)
+
+    assert profile.gateway_port == 8800
+    assert len(profile.exposed_mcps) == 2
+    first = profile.exposed_mcps[0]
+    assert first.name == "websearch"
+    assert first.mode == "full"
+    assert first.tool_allow == ("web_search", "fetch")
+    second = profile.exposed_mcps[1]
+    assert second.name == "context7"
+    assert second.mode == "readonly"
+    assert second.tool_allow == ()
+
+
+def test_load_rejects_unknown_key_in_exposed_mcp(tmp_path):
+    path = tmp_path / "profile.json"
+    path.write_text(
+        json.dumps({"project_dir": "x", "exposed_mcps": [{"name": "websearch", "bogus": 1}]}),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError):
+        load(path)
+
+
+def test_validate_rejects_bad_exposed_name(tmp_path):
+    for name in ("Stitch-Manager", "bad.name", "bad__name", "-lead", ""):
+        problems = profiles.validate(_valid(tmp_path, exposed_mcps=(_exposed(name=name),)))
+        assert any(problem.startswith("R36") for problem in problems), name
+
+
+def test_validate_rejects_duplicate_exposed_names(tmp_path):
+    problems = profiles.validate(
+        _valid(tmp_path, exposed_mcps=(_exposed(), _exposed()))
+    )
+
+    assert any(problem.startswith("R39") for problem in problems)
+
+
+def test_validate_rejects_bad_exposed_mode(tmp_path):
+    problems = profiles.validate(_valid(tmp_path, exposed_mcps=(_exposed(mode="standard"),)))
+
+    assert any(problem.startswith("R37") for problem in problems)
+
+
+def test_validate_rejects_empty_or_duplicate_tool_allow(tmp_path):
+    problems = profiles.validate(
+        _valid(tmp_path, exposed_mcps=(_exposed(tool_allow=("", "web_search", "web_search")),))
+    )
+
+    assert any(problem.startswith("R38") for problem in problems)
+
+
+def test_validate_rejects_default_deny_server(tmp_path):
+    for name in DEFAULT_DENY_SERVERS:
+        problems = profiles.validate(_valid(tmp_path, exposed_mcps=(_exposed(name=name),)))
+        assert any(problem.startswith("R40") for problem in problems), name
+
+
+def test_validate_rejects_egress_and_secret_joint_exposure(tmp_path):
+    problems = profiles.validate(
+        _valid(
+            tmp_path,
+            exposed_mcps=(
+                _exposed(name="websearch"),
+                _exposed(name="stitch-mail"),
+            ),
+        )
+    )
+
+    assert any(problem.startswith("R41") for problem in problems)
+
+
+def test_validate_accepts_egress_only_exposure(tmp_path):
+    problems = profiles.validate(
+        _valid(
+            tmp_path,
+            exposed_mcps=(_exposed(name="websearch"), _exposed(name="context7")),
+        )
+    )
+
+    assert not [problem for problem in problems if problem.startswith("R41")]
+
+
+def test_validate_accepts_secret_only_exposure(tmp_path):
+    problems = profiles.validate(_valid(tmp_path, exposed_mcps=(_exposed(name="stitch-totp"),)))
+
+    assert not [problem for problem in problems if problem.startswith(("R40", "R41"))]
+
+
+def test_validate_accepts_valid_exposed_mcp(tmp_path):
+    problems = profiles.validate(
+        _valid(
+            tmp_path,
+            exposed_mcps=(_exposed(name="websearch", mode="full", tool_allow=("web_search",)),)
+        )
+    )
+
+    assert not [problem for problem in problems if problem.startswith(("R36", "R37", "R38", "R39", "R40", "R41"))]
+
+
+def test_validate_default_deny_not_bypassed_by_readonly_mode_or_tool_allow(tmp_path):
+    problems = profiles.validate(
+        _valid(
+            tmp_path,
+            exposed_mcps=(_exposed(name="stitch-manager", mode="readonly", tool_allow=("status",)),),
+        )
+    )
+
+    assert any(problem.startswith("R40") for problem in problems)
+
+
+def test_validate_default_deny_case_variant_rejected_by_name_regex(tmp_path):
+    problems = profiles.validate(_valid(tmp_path, exposed_mcps=(_exposed(name="Stitch-Manager"),)))
+
+    assert any(problem.startswith("R36") for problem in problems)
+    assert not any(problem.startswith("R40") for problem in problems)
+
+
+def test_gateway_data_tables_locked():
+    assert DEFAULT_DENY_SERVERS >= frozenset({"stitch-manager", "lgm", "ssh", "playwright"})
+    assert META_TOOL_DENY >= frozenset(
+        {"execute_any", "list_mcp_commands", "import_accounts_payload", "bulk_export_accounts"}
+    )
+    assert "import_secrets" in META_TOOL_DENY
+    assert NETWORK_EGRESS_SERVERS >= frozenset({"websearch", "context7"})
+    assert SECRET_TOUCHING_SERVERS >= frozenset(
+        {"stitch-manager", "lgm", "ssh", "playwright", "stitch-totp", "stitch-mail"}
+    )
+    assert not (NETWORK_EGRESS_SERVERS & SECRET_TOUCHING_SERVERS)
+    assert DEFAULT_DENY_SERVERS <= SECRET_TOUCHING_SERVERS
+    assert ARG_CONSTRAINTS["codegraph"]["projectPath"] == "project_dir"

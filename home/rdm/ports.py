@@ -13,6 +13,7 @@ from rdm import freeze
 from rdm.profiles import BRIDGE_PORT, HostService, Profile
 
 DEFAULT_RUNNER_PORT = 8796
+DEFAULT_GATEWAY_PORT = 8794
 COCKPIT_PORT = 8793
 
 
@@ -50,6 +51,18 @@ def with_runner_service(profile: Profile) -> Profile:
         cmd = f'"{sys.executable}" runner'
     else:
         cmd = "python host/runner-mcp.py"
+    service = HostService(port=port, auth="bearer", cwd=str(freeze.app_dir()), cmd=cmd)
+    return dataclasses.replace(profile, host_services=(*profile.host_services, service))
+
+
+def with_gateway_service(profile: Profile) -> Profile:
+    if not profile.exposed_mcps:
+        return profile
+    port = profile.gateway_port or DEFAULT_GATEWAY_PORT
+    if freeze.FROZEN:
+        cmd = f'"{sys.executable}" gateway'
+    else:
+        cmd = "python -m rdm.gateway"
     service = HostService(port=port, auth="bearer", cwd=str(freeze.app_dir()), cmd=cmd)
     return dataclasses.replace(profile, host_services=(*profile.host_services, service))
 
