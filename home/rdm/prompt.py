@@ -79,7 +79,8 @@ def _bootstrap(runner_port: int | None) -> str:
 
 
 def _accesses(env_map: dict[str, str], ingress_url: str, full: bool, preview_url: str,
-              runner_port: int | None, self_authed_ports: tuple[int, ...], number: int = 3) -> str:
+              runner_port: int | None, self_authed_ports: tuple[int, ...], number: int = 3,
+              gateway_port: int | None = None) -> str:
     block = chat_block(
         env_map,
         ingress_url,
@@ -87,6 +88,7 @@ def _accesses(env_map: dict[str, str], ingress_url: str, full: bool, preview_url
         preview_url=preview_url,
         runner_port=runner_port,
         self_authed_ports=self_authed_ports,
+        gateway_port=gateway_port,
     )
     kept = [line for line in block.splitlines() if not line.startswith(_CHAT_DROP_PREFIXES)]
     return "\n".join((
@@ -292,6 +294,7 @@ def compose_prompt(
     acceptance: str,
     full: bool,
     client: str = "universal",
+    gateway_port: int | None = None,
 ) -> str:
     if client != "universal" and client not in CLIENTS:
         raise ValueError(
@@ -303,7 +306,7 @@ def compose_prompt(
             _PREAMBLE,
             _bootstrap(runner_port),
             "\n".join(_DOCS),
-            _accesses(env_map, ingress_url, full, preview_url, runner_port, self_authed_ports),
+            _accesses(env_map, ingress_url, full, preview_url, runner_port, self_authed_ports, gateway_port=gateway_port),
         ]
         if profile is not None:
             sections.append(_project(profile))
@@ -321,7 +324,8 @@ def compose_prompt(
         "\n".join(("## 2. Правила devbox", *_RULES_BULLETS, _PERMISSION_BULLET)),
         _docs_mode_a(),
         _accesses(
-            env_map, ingress_url, full, preview_url, runner_port, self_authed_ports, number=4
+            env_map, ingress_url, full, preview_url, runner_port, self_authed_ports, number=4,
+            gateway_port=gateway_port,
         ),
     ]
     if profile is not None:

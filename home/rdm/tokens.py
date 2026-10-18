@@ -1,15 +1,20 @@
 from __future__ import annotations
 
 import secrets
+from typing import TYPE_CHECKING
 
 from .envfile import EnvFile
 
-_TOKEN_KEYS = ("MCP_BEARER_TOKEN", "MCP_PUBLIC_TOKEN", "INGRESS_TOKEN")
+if TYPE_CHECKING:
+    from .profiles import Profile
+
+_TOKEN_KEYS = ("MCP_BEARER_TOKEN", "MCP_PUBLIC_TOKEN", "INGRESS_TOKEN", "GATEWAY_TOKEN")
 _TOKEN_SURFACES = (
     "Токены и поверхности:",
     "BRIDGE_TOKEN  -> /p/8787/mcp (bridge: read/edit/write/bash)",
     "HOST_TOKEN    -> runner + host-сервисы со своей авторизацией (/p/<порт>/mcp)",
     "INGRESS_TOKEN -> все HTTP-эндпоинты /p/<порт>, включая /p/9000/manifest.json",
+    "GATEWAY_TOKEN -> /p/<gw>/mcp (шлюз MCP хозяина)",
 )
 _REPO_URL = "https://github.com/WhiteBite/remote-devbox-mcp"
 _INSTRUCTION_URL = f"{_REPO_URL}/blob/main/ARENA.md"
@@ -33,6 +38,16 @@ def mask(token: str) -> str:
     return f"{token[:4]}...{token[-4:]}"
 
 
+def gateway_port_for(profile: Profile) -> int | None:
+    from . import ports
+
+    if profile.gateway_port:
+        return profile.gateway_port
+    if profile.exposed_mcps:
+        return ports.DEFAULT_GATEWAY_PORT
+    return None
+
+
 def chat_block(
     env_map: dict[str, str],
     ingress_url: str,
@@ -40,6 +55,7 @@ def chat_block(
     preview_url: str = "",
     runner_port: int | None = None,
     self_authed_ports: tuple[int, ...] = (),
+    gateway_port: int | None = None,
 ) -> str:
     def show(token: str) -> str:
         return token if full else mask(token)
@@ -66,6 +82,9 @@ def chat_block(
         lines.append(
             f"HOST_TOKEN={host}  # MCP_TOKEN: runner (run_<имя>) + host-сервисы со своей авторизацией /p/<порт>/mcp"
         )
+    if gateway_port:
+        gateway = show(env_map.get("GATEWAY_TOKEN", ""))
+        lines.append(f"GATEWAY_TOKEN={gateway}  # /p/{gateway_port}/mcp — MCP хозяина: твои серверы через шлюз")
     if ingress_url:
         lines.append(f"Реестр эндпоинтов: GET {ingress_url}/p/9000/manifest.json (Bearer INGRESS_TOKEN)")
     lines.append(

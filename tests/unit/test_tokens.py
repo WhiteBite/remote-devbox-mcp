@@ -4,7 +4,7 @@ from rdm import tokens
 from rdm.envfile import EnvFile
 
 HEX64 = re.compile(r"\A[0-9a-f]{64}\Z")
-TOKEN_KEYS = ("MCP_BEARER_TOKEN", "MCP_PUBLIC_TOKEN", "INGRESS_TOKEN")
+TOKEN_KEYS = ("MCP_BEARER_TOKEN", "MCP_PUBLIC_TOKEN", "INGRESS_TOKEN", "GATEWAY_TOKEN")
 
 
 def test_generate_token_is_64_hex():
@@ -29,7 +29,8 @@ def test_rotate_tokens_preserves_env_comments(tmp_path):
         "\n"
         "MCP_PUBLIC_TOKEN=old_public_token_value_00000\n"
         "# tail comment\n"
-        "INGRESS_TOKEN=old_ingress_token_value_0000\n",
+        "INGRESS_TOKEN=old_ingress_token_value_0000\n"
+        "GATEWAY_TOKEN=old_gateway_token_value_0000000\n",
         encoding="utf-8",
     )
     env = EnvFile.load(path)
@@ -146,3 +147,43 @@ def test_chat_block_empty_ingress_emits_marker():
     block = tokens.chat_block(env_map, "", full=False)
     assert "INGRESS НЕ ПОДНЯТ - включи ingress до передачи промпта" in block
     assert "INGRESS=" not in block
+
+
+def test_chat_block_gateway_line_full_and_masked():
+    env_map = {
+        "MCP_PUBLIC_TOKEN": "b" * 32,
+        "GATEWAY_TOKEN": "g" * 32,
+    }
+    full_block = tokens.chat_block(env_map, "https://x", full=True, gateway_port=8794)
+    assert (
+        "GATEWAY_TOKEN=" + "g" * 32
+        + "  # /p/8794/mcp — MCP хозяина: твои серверы через шлюз"
+    ) in full_block
+    masked = tokens.chat_block(env_map, "https://x", full=False, gateway_port=8794)
+    assert "GATEWAY_TOKEN=gggg...gggg  # /p/8794/mcp" in masked
+    assert "g" * 32 not in masked
+
+
+def test_chat_block_gateway_line_absent_without_port():
+    env_map = {"GATEWAY_TOKEN": "g" * 32}
+    for kwargs in ({}, {"gateway_port": None}, {"gateway_port": 0}):
+        block = tokens.chat_block(env_map, "https://x", full=True, **kwargs)
+        assert "GATEWAY_TOKEN=" not in block
+
+
+def test_chat_block_gateway_line_without_ingress():
+    env_map = {"GATEWAY_TOKEN": "g" * 32}
+    block = tokens.chat_block(env_map, "", full=True, gateway_port=8794)
+    assert "GATEWAY_TOKEN=" + "g" * 32 in block
+
+
+def test_gateway_port_for_profile():
+    from rdm import ports
+    from rdm.profiles import ExposedMcp, Profile
+
+    assert tokens.gateway_port_for(Profile()) is None
+    assert tokens.gateway_port_for(Profile(gateway_port=8800)) == 8800
+    assert tokens.gateway_port_for(Profile(exposed_mcps=(ExposedMcp(name="websearch"),))) == (
+        ports.DEFAULT_GATEWAY_PORT
+    )
+    assert tokens.gateway_port_for(Profile(gateway_port=8800, exposed_mcps=(ExposedMcp(name="w"),))) == 8800

@@ -93,6 +93,22 @@ def _self_authed_ports(env_map: dict[str, str]) -> tuple[int, ...]:
     return tuple(port for port in ports.compute_port_policy(profile).self_authed if port != BRIDGE_PORT)
 
 
+def _load_active_profile(env_map: dict[str, str]) -> profiles.Profile | None:
+    name = env_map.get("ACTIVE_PROFILE")
+    path = profiles.find(name) if name else None
+    if path is None:
+        return None
+    try:
+        return profiles.load(path)
+    except (ValueError, OSError):
+        return None
+
+
+def _gateway_port(env_map: dict[str, str]) -> int | None:
+    profile = _load_active_profile(env_map)
+    return tokens.gateway_port_for(profile) if profile is not None else None
+
+
 def _runner_json(command: profiles.RunnerCommand) -> dict[str, object]:
     return {
         "name": command.name,
@@ -338,7 +354,7 @@ def _chat(full: bool) -> int:
     print(
         tokens.chat_block(
             env_map, _ingress_url(env_map), full, _preview_url(env_map),
-            _runner_port(env_map), _self_authed_ports(env_map),
+            _runner_port(env_map), _self_authed_ports(env_map), _gateway_port(env_map),
         )
     )
     return 0
@@ -367,7 +383,7 @@ def _start(name: str | None, with_preview: bool, with_watchdog: bool = True) -> 
     print(
         tokens.chat_block(
             env_map, _ingress_url(env_map), True, _preview_url(env_map),
-            _runner_port(env_map), _self_authed_ports(env_map),
+            _runner_port(env_map), _self_authed_ports(env_map), _gateway_port(env_map),
         )
     )
     print("=== Затем напиши задачу. ===")
@@ -421,7 +437,7 @@ def _issue_tokens() -> int:
     print(
         tokens.chat_block(
             env_map, _ingress_url(env_map), True, _preview_url(env_map),
-            _runner_port(env_map), _self_authed_ports(env_map),
+            _runner_port(env_map), _self_authed_ports(env_map), _gateway_port(env_map),
         )
     )
     return 0
@@ -477,7 +493,7 @@ def _block(masked: bool) -> int:
     print(
         tokens.chat_block(
             env_map, _ingress_url(env_map), not masked, _preview_url(env_map),
-            _runner_port(env_map), _self_authed_ports(env_map),
+            _runner_port(env_map), _self_authed_ports(env_map), _gateway_port(env_map),
         )
     )
     return 0

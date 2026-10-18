@@ -43,6 +43,7 @@ def _handoff_payload(reveal: bool) -> dict[str, str]:
         preview_url=env_map.get("PUBLIC_PREVIEW_URL", ""),
         runner_port=cli._runner_port(env_map),
         self_authed_ports=cli._self_authed_ports(env_map),
+        gateway_port=cli._gateway_port(env_map),
     )
     return {"handoff": block}
 

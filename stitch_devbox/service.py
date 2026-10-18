@@ -554,6 +554,7 @@ def handoff_block(reveal: bool = False) -> dict[str, Any]:
         preview_url=env_map.get("PUBLIC_PREVIEW_URL", ""),
         runner_port=rdm.cli._runner_port(env_map),
         self_authed_ports=rdm.cli._self_authed_ports(env_map),
+        gateway_port=rdm.cli._gateway_port(env_map),
     )
     return {"block": block, "masked": not full}
 
@@ -589,6 +590,7 @@ def agent_prompt(
         acceptance,
         full,
         client,
+        gateway_port=rdm.cli._gateway_port(env_map),
     )
     ports = rdm.ui.api.build_status(0).get("ports", {}) or {}
     ready = {
