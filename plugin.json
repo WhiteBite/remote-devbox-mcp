@@ -2,7 +2,7 @@
   "schema": "stitch.plugin/v2",
   "id": "stitch-devbox",
   "name": "Stitch Devbox",
-  "version": "0.2.6",
+  "version": "0.3.0",
   "service": "devbox",
   "kind": "service",
   "engine": {
@@ -50,6 +50,13 @@
     }
   ],
   "changelog": [
+    {
+      "version": "0.3.0",
+      "date": "2026-10-19",
+      "changes": [
+        "MCP gateway: expose owner MCP servers to the agent as namespaced tools under a dedicated GATEWAY_TOKEN, allowlist policy with default-deny set, per-session stdio children, metadata-only audit"
+      ]
+    },
     {
       "version": "0.2.6",
       "date": "2026-10-10",
