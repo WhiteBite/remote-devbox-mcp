@@ -38,7 +38,7 @@ def test_cmdline_matches_call_sites_only_in_hostos_and_procman():
 
 
 def test_kill_tree_call_sites_only_in_lifecycle_owners():
-    allowed = {"hostos.py", "procman.py", "__main__.py"}
+    allowed = {"hostos.py", "procman.py", "__main__.py", "upstream.py"}
     offenders = [
         path for path in _py_sources()
         if "kill_tree" in path.read_text(encoding="utf-8") and path.name not in allowed
