@@ -559,17 +559,34 @@ def handoff_block(reveal: bool = False) -> dict[str, Any]:
     return {"block": block, "masked": not full}
 
 
-def _active_profile_context(env_map: dict[str, Any]) -> dict[str, str] | None:
+def _load_profile(env_map: dict[str, Any]) -> Any:
     rdm = _rdm()
     name = env_map.get("ACTIVE_PROFILE", "")
     path = rdm.profiles.find(name) if name else None
     if path is None:
         return None
     try:
-        profile = rdm.profiles.load(path)
+        return rdm.profiles.load(path)
     except (ValueError, OSError):
         return None
+
+
+def _active_profile_context(env_map: dict[str, Any]) -> dict[str, str] | None:
+    profile = _load_profile(env_map)
+    if profile is None:
+        return None
     return {"project_dir": profile.project_dir, "mode": profile.mode, "toolchain": profile.toolchain}
+
+
+def _gateway_mcps(
+    env_map: dict[str, Any], gateway_port: int | None
+) -> tuple[tuple[str, str, tuple[str, ...]], ...] | None:
+    if gateway_port is None:
+        return None
+    profile = _load_profile(env_map)
+    if profile is None:
+        return None
+    return tuple((mcp.name, mcp.mode, mcp.tool_allow) for mcp in profile.exposed_mcps)
 
 
 def agent_prompt(
@@ -579,6 +596,7 @@ def agent_prompt(
     full = bool(reveal)
     env_map = rdm.envfile.EnvFile.load(rdm.cli.ENV_FILE).as_map()
     ingress_url = rdm.netprobe.ingress_url(env_map, rdm.cli.COMPOSE_FILE)
+    gateway_port = rdm.cli._gateway_port(env_map)
     prompt_text = rdm.prompt.compose_prompt(
         env_map,
         ingress_url,
@@ -590,7 +608,8 @@ def agent_prompt(
         acceptance,
         full,
         client,
-        gateway_port=rdm.cli._gateway_port(env_map),
+        gateway_port=gateway_port,
+        gateway_mcps=_gateway_mcps(env_map, gateway_port),
     )
     ports = rdm.ui.api.build_status(0).get("ports", {}) or {}
     ready = {

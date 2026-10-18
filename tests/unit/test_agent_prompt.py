@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import hashlib
 import json
 
 import pytest
+from rdm.prompt import _BRIDGE_CONTROL_TOOLS, _BRIDGE_NATIVE_TOOLS, _BRIDGE_TOOLS
 
 from stitch_devbox import service
 
@@ -11,6 +13,8 @@ _TOKENS = {
     "MCP_PUBLIC_TOKEN": "c" * 64,
     "INGRESS_TOKEN": "d" * 64,
 }
+
+_GATEWAY_TOKEN = "g" * 64
 
 _PORTS_UP = {"ingress": True, "bridge": True, "runner": True}
 
@@ -33,9 +37,12 @@ def _fixture_env(
     ports: dict[str, bool] | None = None,
     ingress_url: str | None = None,
     runner_port: int | None = 8796,
+    gateway_token: str | None = None,
 ) -> None:
     rdm = service._rdm()
     lines = ["PUBLIC_URL=https://prompt.example.com"] + [f"{key}={value}" for key, value in _TOKENS.items()]
+    if gateway_token:
+        lines.append(f"GATEWAY_TOKEN={gateway_token}")
     if active_profile:
         lines.append(f"ACTIVE_PROFILE={active_profile}")
     env_path = tmp_path / ".env"
@@ -55,6 +62,24 @@ def _fixture_profile(monkeypatch: pytest.MonkeyPatch, tmp_path, *, mode: str = "
         json.dumps({"project_dir": "d:/work/demo", "mode": mode, "toolchain": toolchain}),
         encoding="utf-8",
     )
+    monkeypatch.setenv("RDM_PROJECTS_DIR", str(projects))
+
+
+def _fixture_gateway_profile(monkeypatch: pytest.MonkeyPatch, tmp_path, *, gateway_port: int | None = None) -> None:
+    projects = tmp_path / "projects"
+    projects.mkdir(exist_ok=True)
+    data: dict[str, object] = {
+        "project_dir": "d:/work/demo",
+        "mode": "standard",
+        "toolchain": "java21",
+        "exposed_mcps": [
+            {"name": "codegraph", "mode": "readonly", "tool_allow": ["explore", "symbols"]},
+            {"name": "playwright", "mode": "full", "tool_allow": ["click", "navigate", "snapshot"]},
+        ],
+    }
+    if gateway_port:
+        data["gateway_port"] = gateway_port
+    (projects / "demo.json").write_text(json.dumps(data), encoding="utf-8")
     monkeypatch.setenv("RDM_PROJECTS_DIR", str(projects))
 
 
@@ -112,7 +137,8 @@ def test_agent_prompt_bootstrap_fence_verbatim(monkeypatch, tmp_path):
         "MCP_TOKEN=<BRIDGE_TOKEN>",
         "MCP_TIMEOUT=300",
         "EOF",
-        "./mcp check        # PASS: opencode-mcp-bridge и 16 тулов (10 native + 6 control)",
+        f"./mcp check        # PASS: opencode-mcp-bridge и {len(_BRIDGE_TOOLS)} тулов"
+        f" ({len(_BRIDGE_NATIVE_TOOLS)} native + {len(_BRIDGE_CONTROL_TOOLS)} control)",
     ):
         assert line in prompt
     fence = prompt[prompt.index("```bash") : prompt.index("```", prompt.index("```bash") + 7)]
@@ -492,7 +518,7 @@ def test_agent_prompt_claude_code_env_var_dialect(monkeypatch, tmp_path):
     assert '"type":"http"' in prompt
     assert '"Authorization":"Bearer ${DEVBOX_BRIDGE_TOKEN}"' in prompt
     assert "export DEVBOX_BRIDGE_TOKEN=bbbb...bbbb" in prompt
-    assert "Проверка: в Claude Code: /mcp — сервер devbox с 16 тулами" in prompt
+    assert f"Проверка: в Claude Code: /mcp — сервер devbox с {len(_BRIDGE_TOOLS)} тулами" in prompt
     assert (
         "имя переменной не должно выглядеть как креды (ANTHROPIC_*/AWS_* подставляются пустыми)"
         in prompt
@@ -591,3 +617,142 @@ def test_agent_prompt_mode_a_opener_line(monkeypatch, tmp_path):
         " как MCP-сервер по разделу 1 и выполняй задачу из раздела «Задача»."
     )
     assert "Проверка: Windsurf: MCP -> devbox active" in prompt
+
+
+def test_prompt_bridge_tools_match_manifest_registry():
+    from rdm import render
+
+    assert _BRIDGE_TOOLS == tuple(tool["name"] for tool in render._BRIDGE_TOOLS)
+
+
+def test_agent_prompt_universal_gateway_pointer_line(monkeypatch, tmp_path):
+    _fixture_env(monkeypatch, tmp_path, active_profile="demo", gateway_token=_GATEWAY_TOKEN)
+    _fixture_gateway_profile(monkeypatch, tmp_path)
+
+    prompt = service.agent_prompt(task="Сделай X")["prompt"]
+
+    assert (
+        "Шлюз MCP хозяина: https://prompt.example.com/p/8794/mcp, токен GATEWAY_TOKEN"
+        " (env DEVBOX_GATEWAY_TOKEN у клиента); состав и режимы - в manifest exposed_mcps." in prompt
+    )
+
+
+def test_agent_prompt_universal_gateway_pointer_uses_profile_port(monkeypatch, tmp_path):
+    _fixture_env(monkeypatch, tmp_path, active_profile="demo", gateway_token=_GATEWAY_TOKEN)
+    _fixture_gateway_profile(monkeypatch, tmp_path, gateway_port=8801)
+
+    prompt = service.agent_prompt(task="Сделай X")["prompt"]
+
+    assert "Шлюз MCP хозяина: https://prompt.example.com/p/8801/mcp" in prompt
+
+
+def test_agent_prompt_universal_no_gateway_pointer_when_disabled(monkeypatch, tmp_path):
+    _fixture_env(monkeypatch, tmp_path)
+
+    prompt = service.agent_prompt()["prompt"]
+
+    assert "Шлюз MCP хозяина" not in prompt
+    assert "DEVBOX_GATEWAY_TOKEN" not in prompt
+
+
+_ENV_GATEWAY_HEADERS = {
+    "claude-code": '"Authorization":"Bearer ${DEVBOX_GATEWAY_TOKEN}"',
+    "opencode": '"Authorization":"Bearer {env:DEVBOX_GATEWAY_TOKEN}"',
+    "cursor": '"Authorization":"Bearer ${env:DEVBOX_GATEWAY_TOKEN}"',
+    "gemini": '"Authorization":"Bearer ${DEVBOX_GATEWAY_TOKEN}"',
+    "factory": '"Authorization":"Bearer ${DEVBOX_GATEWAY_TOKEN}"',
+    "kiro": '"Authorization":"Bearer ${DEVBOX_GATEWAY_TOKEN}"',
+    "windsurf": '"Authorization":"Bearer ${env:DEVBOX_GATEWAY_TOKEN}"',
+}
+
+
+@pytest.mark.parametrize("client", sorted(_ENV_GATEWAY_HEADERS))
+def test_agent_prompt_env_clients_gain_gateway_server(monkeypatch, tmp_path, client):
+    _fixture_env(monkeypatch, tmp_path, active_profile="demo", gateway_token=_GATEWAY_TOKEN)
+    _fixture_gateway_profile(monkeypatch, tmp_path)
+
+    prompt = service.agent_prompt(client=client)["prompt"]
+
+    assert '"devbox-gateway"' in prompt
+    assert "https://prompt.example.com/p/8794/mcp" in prompt
+    assert _ENV_GATEWAY_HEADERS[client] in prompt
+    assert "export DEVBOX_GATEWAY_TOKEN=gggg...gggg" in prompt
+    assert "Проверка: devbox-gateway с 5 тулами шлюза" in prompt
+    assert "Шлюз MCP хозяина" not in prompt
+
+
+def test_agent_prompt_codex_gateway_toml_section(monkeypatch, tmp_path):
+    _fixture_env(monkeypatch, tmp_path, active_profile="demo", gateway_token=_GATEWAY_TOKEN)
+    _fixture_gateway_profile(monkeypatch, tmp_path)
+
+    prompt = service.agent_prompt(client="codex")["prompt"]
+
+    assert '[mcp_servers.devbox-gateway]' in prompt
+    assert 'url = "https://prompt.example.com/p/8794/mcp"' in prompt
+    assert 'bearer_token_env_var = "DEVBOX_GATEWAY_TOKEN"' in prompt
+    assert "export DEVBOX_GATEWAY_TOKEN=gggg...gggg" in prompt
+    assert "Проверка: devbox-gateway с 5 тулами шлюза" in prompt
+
+
+def test_agent_prompt_vscode_gateway_input_and_server(monkeypatch, tmp_path):
+    _fixture_env(monkeypatch, tmp_path, active_profile="demo", gateway_token=_GATEWAY_TOKEN)
+    _fixture_gateway_profile(monkeypatch, tmp_path)
+
+    prompt = service.agent_prompt(client="vscode")["prompt"]
+
+    assert '"type":"promptString","id":"devbox-gateway-token"' in prompt
+    assert (
+        '"servers":{"devbox-gateway":{"type":"http","url":"https://prompt.example.com/p/8794/mcp",'
+        '"headers":{"Authorization":"Bearer ${input:devbox-gateway-token}"}}}' in prompt
+    )
+    assert "export DEVBOX_GATEWAY_TOKEN=" not in prompt
+    assert "Проверка: devbox-gateway с 5 тулами шлюза" in prompt
+
+
+@pytest.mark.parametrize("client", ("cline", "roo", "zed"))
+def test_agent_prompt_literal_clients_gain_no_gateway(monkeypatch, tmp_path, client):
+    _fixture_env(monkeypatch, tmp_path, active_profile="demo", gateway_token=_GATEWAY_TOKEN)
+    _fixture_gateway_profile(monkeypatch, tmp_path)
+
+    prompt = service.agent_prompt(client=client)["prompt"]
+
+    assert "devbox-gateway" not in prompt
+    assert "DEVBOX_GATEWAY_TOKEN" not in prompt
+    assert "тулами шлюза" not in prompt
+
+
+def test_agent_prompt_gateway_token_reveal(monkeypatch, tmp_path):
+    _fixture_env(monkeypatch, tmp_path, active_profile="demo", gateway_token=_GATEWAY_TOKEN)
+    _fixture_gateway_profile(monkeypatch, tmp_path)
+
+    prompt = service.agent_prompt(client="claude-code", reveal=True)["prompt"]
+
+    assert f"export DEVBOX_GATEWAY_TOKEN={_GATEWAY_TOKEN}" in prompt
+    assert "gggg...gggg" not in prompt
+
+
+_DISABLED_PROMPT_SHA256: dict[str, str] = {
+    "universal": "919a9a3db579cf4bcdce46ceea418960ed44bc2b02084c2af782516f673a6d46",
+    "claude-code": "c1429336d79c0b6eafb67aaa4c58d82744a6b9b00cfc4b82b8dede8e75119877",
+    "opencode": "c6a4a7675b9da45f368ed87b10761b001c941ec2da9858b5d58e7661d20c0e92",
+    "codex": "e26d0f3f96549ddfa66fe60ee0a28aef1b7ab8dc544a657ebd1cb8aa7ddc908e",
+    "cursor": "5d68000b527584ee6720340e8caa958ff918effa3ebdbfa28599c5be8e5c9eee",
+    "vscode": "622a97dc7c39299bcc6dcc84e8289fa9185f08b5f8ecf3ea27a1f5b3029f2cce",
+    "cline": "f6cac3e42e43ba123952549ba2e460bc55df4fabad176027e4b68908ef8967d2",
+    "roo": "9f4429ad424be8dba899c9081d11acd5362359bec9252f19609c39e6f8b6d979",
+    "gemini": "14e3e5e32646c6eafe6d6084932d56987664d16fe7419038911d1c9c312f1d4e",
+    "zed": "68392b2fa25e9cbbb11778d985640a20568b76481684cc0cf19d2e10b887d9c0",
+    "factory": "5db9a929b8980210bd52508b72fa4bd8ea97233dbe41737903bbf1c9a5788543",
+    "kiro": "0289ea406e85dfbb7784c21274892fb2272fbcf96760c966683c64ea7a96867c",
+    "windsurf": "f21526826e9fb1030d2c3e704f36c94fde23555b1e1e470ca1ed0603ec147f37",
+}
+
+
+@pytest.mark.parametrize("client", _ALL_CLIENTS)
+def test_agent_prompt_gateway_disabled_byte_identical(monkeypatch, tmp_path, client):
+    _fixture_env(monkeypatch, tmp_path, active_profile="demo")
+    _fixture_profile(monkeypatch, tmp_path)
+
+    prompt = service.agent_prompt(client=client, task="Сделай X")["prompt"]
+
+    assert hashlib.sha256(prompt.encode("utf-8")).hexdigest() == _DISABLED_PROMPT_SHA256[client]

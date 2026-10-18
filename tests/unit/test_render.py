@@ -5,7 +5,7 @@ from dataclasses import replace
 
 from rdm import ports
 from rdm.envfile import _CANONICAL_ORDER
-from rdm.profiles import HostService, Profile, RunnerCommand, Script, SetupCommand
+from rdm.profiles import ExposedMcp, HostService, Profile, RunnerCommand, Script, SetupCommand
 from rdm.render import (
     build_manifest,
     build_setup_script,
@@ -41,6 +41,14 @@ PROFILE = Profile(
         SetupCommand(cmd="echo two", marker="m2", required=True),
     ),
     scripts=(Script(name="shots", cmd=("python", "shots.py"), description="take screenshots"),),
+)
+
+GATEWAY_PROFILE = replace(
+    PROFILE,
+    exposed_mcps=(
+        ExposedMcp(name="codegraph", mode="readonly", tool_allow=("explore", "symbols")),
+        ExposedMcp(name="playwright", mode="full", tool_allow=("click", "navigate", "snapshot")),
+    ),
 )
 
 
@@ -323,3 +331,47 @@ def test_manifest_allowed_matches_computed_policy():
     manifest = build_manifest(profile, "example", "https://x", "standard")
 
     assert manifest["allowed_ports"] == list(ports.compute_port_policy(profile).allowed)
+
+
+def test_manifest_gateway_endpoint_when_exposed_mcps():
+    manifest = build_manifest(GATEWAY_PROFILE, "example", "https://x", "standard")
+
+    assert {
+        "name": "gateway",
+        "port": 8794,
+        "auth": "self",
+        "token": "GATEWAY_TOKEN",
+        "header": "Authorization: Bearer",
+        "path": "/p/8794/mcp",
+    } in manifest["endpoints"]
+
+
+def test_manifest_gateway_endpoint_uses_profile_gateway_port():
+    profile = replace(GATEWAY_PROFILE, gateway_port=8801)
+
+    manifest = build_manifest(profile, "example", "https://x", "standard")
+
+    assert {
+        "name": "gateway",
+        "port": 8801,
+        "auth": "self",
+        "token": "GATEWAY_TOKEN",
+        "header": "Authorization: Bearer",
+        "path": "/p/8801/mcp",
+    } in manifest["endpoints"]
+
+
+def test_manifest_exposed_mcps_block_names_mode_tools_only():
+    manifest = build_manifest(GATEWAY_PROFILE, "example", "https://x", "standard")
+
+    assert manifest["exposed_mcps"] == [
+        {"name": "codegraph", "mode": "readonly", "tools": ["explore", "symbols"]},
+        {"name": "playwright", "mode": "full", "tools": ["click", "navigate", "snapshot"]},
+    ]
+
+
+def test_manifest_no_gateway_without_exposed_mcps():
+    manifest = build_manifest(PROFILE, "example", "https://x", "standard")
+
+    assert "exposed_mcps" not in manifest
+    assert all(endpoint["name"] != "gateway" for endpoint in manifest["endpoints"])

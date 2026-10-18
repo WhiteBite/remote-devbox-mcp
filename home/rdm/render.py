@@ -7,6 +7,7 @@ import hashlib
 
 from rdm import ports
 from rdm.profiles import BRIDGE_PORT, Profile, runner_kill_tool_name, runner_tool_name
+from rdm.tokens import gateway_port_for
 
 _PERMISSIONS_JSON = {
     "readonly": '{"write":"deny","edit":"deny","apply_patch":"deny","bash":"deny","webfetch":"deny"}',
@@ -94,6 +95,7 @@ def build_manifest(
 ) -> dict[str, object]:
     policy = ports.compute_port_policy(profile)
     allowed = list(policy.allowed)
+    gateway_port = gateway_port_for(profile)
     endpoints: list[dict[str, object]] = [
         {
             "name": "manifest",
@@ -112,6 +114,17 @@ def build_manifest(
             "path": f"/p/{BRIDGE_PORT}/mcp",
         },
     ]
+    if gateway_port:
+        endpoints.append(
+            {
+                "name": "gateway",
+                "port": gateway_port,
+                "auth": "self",
+                "token": "GATEWAY_TOKEN",
+                "header": "Authorization: Bearer",
+                "path": f"/p/{gateway_port}/mcp",
+            }
+        )
     for service in profile.host_services:
         if service.port in policy.self_authed:
             auth = "self"
@@ -140,7 +153,7 @@ def build_manifest(
                 "path": f"/p/{port}",
             }
         )
-    return {
+    manifest = {
         "profile": profile_name,
         "project": profile.project_dir,
         "ingress_url": ingress_url,
@@ -175,6 +188,12 @@ def build_manifest(
             "note": "toolchains in /opt/tools volume",
         },
     }
+    if profile.exposed_mcps:
+        manifest["exposed_mcps"] = [
+            {"name": mcp.name, "mode": mcp.mode, "tools": list(mcp.tool_allow)}
+            for mcp in profile.exposed_mcps
+        ]
+    return manifest
 
 
 def render_agents_md(

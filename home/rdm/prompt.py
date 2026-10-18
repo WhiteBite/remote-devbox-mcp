@@ -10,6 +10,28 @@ _MODE_HUMAN = {
     "full": "full - полный доступ",
 }
 
+_BRIDGE_NATIVE_TOOLS: tuple[str, ...] = (
+    "read",
+    "write",
+    "edit",
+    "apply_patch",
+    "glob",
+    "grep",
+    "bash",
+    "webfetch",
+    "todowrite",
+    "lsp",
+)
+_BRIDGE_CONTROL_TOOLS: tuple[str, ...] = (
+    "opencode_native_info",
+    "opencode_job_list",
+    "opencode_job_result",
+    "opencode_job_cancel",
+    "opencode_permissions_pending",
+    "opencode_permission_reply",
+)
+_BRIDGE_TOOLS: tuple[str, ...] = _BRIDGE_NATIVE_TOOLS + _BRIDGE_CONTROL_TOOLS
+
 # chat_block строки, продублированные в разделах 1-2 промпта; фильтр по префиксам
 _CHAT_DROP_PREFIXES = ("Репозиторий:", "Скилл + инструкция:", "Песочница сбрасывается")
 
@@ -68,7 +90,8 @@ def _bootstrap(runner_port: int | None) -> str:
         "MCP_TOKEN=<BRIDGE_TOKEN>",
         "MCP_TIMEOUT=300",
         "EOF",
-        "./mcp check        # PASS: opencode-mcp-bridge и 16 тулов (10 native + 6 control)",
+        f"./mcp check        # PASS: opencode-mcp-bridge и {len(_BRIDGE_TOOLS)} тулов"
+        f" ({len(_BRIDGE_NATIVE_TOOLS)} native + {len(_BRIDGE_CONTROL_TOOLS)} control)",
         "```",
         f"Сразу скопируй {confs} в persistent Workspace — песочница сбрасывается, Workspace нет;"
         " на старте каждой сессии восстанавливай.",
@@ -80,7 +103,7 @@ def _bootstrap(runner_port: int | None) -> str:
 
 def _accesses(env_map: dict[str, str], ingress_url: str, full: bool, preview_url: str,
               runner_port: int | None, self_authed_ports: tuple[int, ...], number: int = 3,
-              gateway_port: int | None = None) -> str:
+              gateway_port: int | None = None, gateway_pointer: str = "") -> str:
     block = chat_block(
         env_map,
         ingress_url,
@@ -91,11 +114,11 @@ def _accesses(env_map: dict[str, str], ingress_url: str, full: bool, preview_url
         gateway_port=gateway_port,
     )
     kept = [line for line in block.splitlines() if not line.startswith(_CHAT_DROP_PREFIXES)]
-    return "\n".join((
-        f"## {number}. Доступы",
-        *kept,
-        "Токены не повторяй в ответах, логах, коде и коммитах; по завершении работы я их ротирую.",
-    ))
+    lines = [f"## {number}. Доступы", *kept]
+    if gateway_pointer:
+        lines.append(gateway_pointer)
+    lines.append("Токены не повторяй в ответах, логах, коде и коммитах; по завершении работы я их ротирую.")
+    return "\n".join(lines)
 
 
 def _project(profile: dict[str, str], number: int = 4) -> str:
@@ -145,6 +168,7 @@ class _ClientSpec:
     token_mode: str  # env | literal | prompt
     verify: str = ""
     notes: tuple[str, ...] = ()
+    gateway_block: str = ""
 
 
 CLIENTS: dict[str, _ClientSpec] = {
@@ -154,8 +178,9 @@ CLIENTS: dict[str, _ClientSpec] = {
         lang="json",
         block='{"mcpServers":{"devbox":{"type":"http","url":"__URL__","headers":{"Authorization":"Bearer ${DEVBOX_BRIDGE_TOKEN}"}}}}',
         token_mode="env",
-        verify="в Claude Code: /mcp — сервер devbox с 16 тулами",
+        verify="в Claude Code: /mcp — сервер devbox с {tools} тулами",
         notes=("имя переменной не должно выглядеть как креды (ANTHROPIC_*/AWS_* подставляются пустыми)",),
+        gateway_block='{"mcpServers":{"devbox-gateway":{"type":"http","url":"__URL__","headers":{"Authorization":"Bearer ${DEVBOX_GATEWAY_TOKEN}"}}}}',
     ),
     "opencode": _ClientSpec(
         display="OpenCode",
@@ -164,6 +189,7 @@ CLIENTS: dict[str, _ClientSpec] = {
         block='{"mcp":{"devbox":{"type":"remote","url":"__URL__","enabled":true,"oauth":false,"headers":{"Authorization":"Bearer {env:DEVBOX_BRIDGE_TOKEN}"}}}}',
         token_mode="env",
         verify="сервер devbox в списке MCP",
+        gateway_block='{"mcp":{"devbox-gateway":{"type":"remote","url":"__URL__","enabled":true,"oauth":false,"headers":{"Authorization":"Bearer {env:DEVBOX_GATEWAY_TOKEN}"}}}}',
     ),
     "codex": _ClientSpec(
         display="Codex",
@@ -173,6 +199,7 @@ CLIENTS: dict[str, _ClientSpec] = {
         token_mode="env",
         verify="codex mcp list показывает devbox",
         notes=("литеральный токен в конфиге Codex запрещён — только имя переменной",),
+        gateway_block='[mcp_servers.devbox-gateway]\nurl = "__URL__"\nbearer_token_env_var = "DEVBOX_GATEWAY_TOKEN"',
     ),
     "cursor": _ClientSpec(
         display="Cursor",
@@ -181,6 +208,7 @@ CLIENTS: dict[str, _ClientSpec] = {
         block='{"mcpServers":{"devbox":{"url":"__URL__","headers":{"Authorization":"Bearer ${env:DEVBOX_BRIDGE_TOKEN}"}}}}',
         token_mode="env",
         verify="Cursor: MCP servers -> devbox connected",
+        gateway_block='{"mcpServers":{"devbox-gateway":{"url":"__URL__","headers":{"Authorization":"Bearer ${env:DEVBOX_GATEWAY_TOKEN}"}}}}',
     ),
     "vscode": _ClientSpec(
         display="VS Code",
@@ -189,6 +217,7 @@ CLIENTS: dict[str, _ClientSpec] = {
         block='{"inputs":[{"type":"promptString","id":"devbox-bridge-token","description":"Devbox BRIDGE_TOKEN","password":true}],"servers":{"devbox":{"type":"http","url":"__URL__","headers":{"Authorization":"Bearer ${input:devbox-bridge-token}"}}}}',
         token_mode="prompt",
         verify="VS Code: чат агента -> сервер devbox в списке, статус running",
+        gateway_block='{"inputs":[{"type":"promptString","id":"devbox-gateway-token","description":"Devbox GATEWAY_TOKEN","password":true}],"servers":{"devbox-gateway":{"type":"http","url":"__URL__","headers":{"Authorization":"Bearer ${input:devbox-gateway-token}"}}}}',
     ),
     "cline": _ClientSpec(
         display="Cline",
@@ -196,7 +225,7 @@ CLIENTS: dict[str, _ClientSpec] = {
         lang="json",
         block='{"mcpServers":{"devbox":{"type":"streamableHttp","url":"__URL__","headers":{"Authorization":"Bearer __TOKEN__"},"disabled":false}}}',
         token_mode="literal",
-        verify="Cline: MCP Servers -> devbox (16 tools)",
+        verify="Cline: MCP Servers -> devbox ({tools} tools)",
     ),
     "roo": _ClientSpec(
         display="Roo Code",
@@ -204,7 +233,7 @@ CLIENTS: dict[str, _ClientSpec] = {
         lang="json",
         block='{"mcpServers":{"devbox":{"type":"streamable-http","url":"__URL__","headers":{"Authorization":"Bearer __TOKEN__"},"disabled":false}}}',
         token_mode="literal",
-        verify="Roo: MCP Servers -> devbox (16 tools)",
+        verify="Roo: MCP Servers -> devbox ({tools} tools)",
     ),
     "gemini": _ClientSpec(
         display="Gemini CLI",
@@ -213,6 +242,7 @@ CLIENTS: dict[str, _ClientSpec] = {
         block='{"mcpServers":{"devbox":{"httpUrl":"__URL__","headers":{"Authorization":"Bearer ${DEVBOX_BRIDGE_TOKEN}"}}}}',
         token_mode="env",
         verify="gemini: /mcp показывает devbox",
+        gateway_block='{"mcpServers":{"devbox-gateway":{"httpUrl":"__URL__","headers":{"Authorization":"Bearer ${DEVBOX_GATEWAY_TOKEN}"}}}}',
     ),
     "zed": _ClientSpec(
         display="Zed",
@@ -229,6 +259,7 @@ CLIENTS: dict[str, _ClientSpec] = {
         block='{"mcpServers":{"devbox":{"type":"http","url":"__URL__","headers":{"Authorization":"Bearer ${DEVBOX_BRIDGE_TOKEN}"},"oauth":false}}}',
         token_mode="env",
         verify="droid: MCP-сервер devbox подключён",
+        gateway_block='{"mcpServers":{"devbox-gateway":{"type":"http","url":"__URL__","headers":{"Authorization":"Bearer ${DEVBOX_GATEWAY_TOKEN}"},"oauth":false}}}',
     ),
     "kiro": _ClientSpec(
         display="Kiro",
@@ -237,6 +268,7 @@ CLIENTS: dict[str, _ClientSpec] = {
         block='{"mcpServers":{"devbox":{"url":"__URL__","type":"http","headers":{"Authorization":"Bearer ${DEVBOX_BRIDGE_TOKEN}"}}}}',
         token_mode="env",
         notes=("Kiro требует https (кроме localhost)",),
+        gateway_block='{"mcpServers":{"devbox-gateway":{"url":"__URL__","type":"http","headers":{"Authorization":"Bearer ${DEVBOX_GATEWAY_TOKEN}"}}}}',
     ),
     "windsurf": _ClientSpec(
         display="Windsurf",
@@ -245,6 +277,7 @@ CLIENTS: dict[str, _ClientSpec] = {
         block='{"mcpServers":{"devbox":{"url":"__URL__","headers":{"Authorization":"Bearer ${env:DEVBOX_BRIDGE_TOKEN}"}}}}',
         token_mode="env",
         verify="Windsurf: MCP -> devbox active",
+        gateway_block='{"mcpServers":{"devbox-gateway":{"url":"__URL__","headers":{"Authorization":"Bearer ${env:DEVBOX_GATEWAY_TOKEN}"}}}}',
     ),
 }
 
@@ -255,7 +288,14 @@ _FALLBACK = (
 )
 
 
-def _connection(spec: _ClientSpec, url: str, token_shown: str) -> str:
+def _connection(
+    spec: _ClientSpec,
+    url: str,
+    token_shown: str,
+    gateway_url: str = "",
+    gateway_token_shown: str = "",
+    gateway_tools: int | None = None,
+) -> str:
     block = spec.block.replace("__URL__", url)
     if spec.token_mode == "literal":
         block = block.replace("__TOKEN__", token_shown)
@@ -266,10 +306,18 @@ def _connection(spec: _ClientSpec, url: str, token_shown: str) -> str:
         block,
         "```",
     ]
+    if gateway_url and spec.gateway_block:
+        lines.append(f"```{spec.lang}")
+        lines.append(spec.gateway_block.replace("__URL__", gateway_url))
+        lines.append("```")
+        if spec.token_mode == "env":
+            lines.append(f"export DEVBOX_GATEWAY_TOKEN={gateway_token_shown}")
+        if gateway_tools is not None:
+            lines.append(f"Проверка: devbox-gateway с {gateway_tools} тулами шлюза")
     if spec.token_mode == "env":
         lines.append(f"export DEVBOX_BRIDGE_TOKEN={token_shown}")
     if spec.verify:
-        lines.append(f"Проверка: {spec.verify}")
+        lines.append(f"Проверка: {spec.verify.format(tools=len(_BRIDGE_TOOLS))}")
     lines.extend(spec.notes)
     lines.append(_FALLBACK.replace("__URL__", url).replace("__TOKEN__", token_shown))
     return "\n".join(lines)
@@ -295,18 +343,29 @@ def compose_prompt(
     full: bool,
     client: str = "universal",
     gateway_port: int | None = None,
+    gateway_mcps: tuple[tuple[str, str, tuple[str, ...]], ...] | None = None,
 ) -> str:
     if client != "universal" and client not in CLIENTS:
         raise ValueError(
             f"unknown client {client!r}; expected universal or one of: "
             f"universal, {', '.join(CLIENTS)}"
         )
+    gateway_tools = sum(len(tools) for _, _, tools in gateway_mcps) if gateway_mcps else None
     if client == "universal":
+        gateway_pointer = ""
+        if gateway_port:
+            gateway_pointer = (
+                f"Шлюз MCP хозяина: {ingress_url}/p/{gateway_port}/mcp, токен GATEWAY_TOKEN"
+                " (env DEVBOX_GATEWAY_TOKEN у клиента); состав и режимы - в manifest exposed_mcps."
+            )
         sections = [
             _PREAMBLE,
             _bootstrap(runner_port),
             "\n".join(_DOCS),
-            _accesses(env_map, ingress_url, full, preview_url, runner_port, self_authed_ports, gateway_port=gateway_port),
+            _accesses(
+                env_map, ingress_url, full, preview_url, runner_port, self_authed_ports,
+                gateway_port=gateway_port, gateway_pointer=gateway_pointer,
+            ),
         ]
         if profile is not None:
             sections.append(_project(profile))
@@ -318,9 +377,19 @@ def compose_prompt(
     bridge = env_map.get("MCP_BEARER_TOKEN", "")
     token_shown = bridge if full else mask(bridge)
     url = f"{ingress_url}/p/8787/mcp"
+    gateway_url = f"{ingress_url}/p/{gateway_port}/mcp" if gateway_port else ""
+    gateway_token_shown = ""
+    if gateway_port:
+        gateway = env_map.get("GATEWAY_TOKEN", "")
+        gateway_token_shown = gateway if full else mask(gateway)
     sections = [
         _MODE_A_PREAMBLE,
-        _connection(CLIENTS[client], url, token_shown),
+        _connection(
+            CLIENTS[client], url, token_shown,
+            gateway_url=gateway_url,
+            gateway_token_shown=gateway_token_shown,
+            gateway_tools=gateway_tools,
+        ),
         "\n".join(("## 2. Правила devbox", *_RULES_BULLETS, _PERMISSION_BULLET)),
         _docs_mode_a(),
         _accesses(
