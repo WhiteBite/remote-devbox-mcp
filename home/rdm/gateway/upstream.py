@@ -101,6 +101,13 @@ class UpstreamChild:
         return self._proc.pid if self._proc is not None else None
 
     @property
+    def inflight_id(self) -> Any:
+        with self._pending_lock:
+            for rpc_id in self._pending:
+                return rpc_id
+        return None
+
+    @property
     def capabilities(self) -> dict[str, Any]:
         return self._capabilities
 
