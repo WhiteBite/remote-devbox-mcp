@@ -28,7 +28,7 @@ def _index_key_lines(lines: list[str]) -> dict[str, int]:
     return key_pos
 
 
-def _restrict_permissions(path: Path) -> None:
+def restrict_permissions(path: Path) -> None:
     if os.name == "nt":
         try:
             user = subprocess.run(
@@ -116,7 +116,7 @@ class EnvFile:
         try:
             with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
                 handle.write(self.render())
-            _restrict_permissions(tmp)
+            restrict_permissions(tmp)
             os.replace(tmp, target)
         finally:
             tmp.unlink(missing_ok=True)
