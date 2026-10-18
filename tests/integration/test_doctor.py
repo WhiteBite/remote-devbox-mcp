@@ -139,6 +139,51 @@ def test_doctor_runner_warn_when_probe_raises(monkeypatch, tmp_path, capsys):
     assert "[FAIL] runner listen 9000" not in out
 
 
+def _exposed_profile(tmp_path, **extra):
+    body = {
+        "exposed_mcps": [{"name": "codegraph", "mode": "readonly", "tool_allow": ["explore"]}],
+    }
+    body.update(extra)
+    return _profile_json(tmp_path, **body)
+
+
+def test_doctor_gateway_fail_when_not_listening(monkeypatch, tmp_path, capsys):
+    _wire(monkeypatch, tmp_path, profile_json=_exposed_profile(tmp_path))
+    monkeypatch.setattr(doctor.netprobe, "can_connect", lambda port: port != ports.DEFAULT_GATEWAY_PORT)
+    assert doctor.run(_env(tmp_path), prober=_prober) == 1
+    out = capsys.readouterr().out
+    assert f"[FAIL] gateway listen {ports.DEFAULT_GATEWAY_PORT}" in out
+    assert "devbox.py use" in out
+
+
+def test_doctor_gateway_pass_when_listening(monkeypatch, tmp_path, capsys):
+    _wire(monkeypatch, tmp_path, profile_json=_exposed_profile(tmp_path, gateway_port=9100))
+    assert doctor.run(_env(tmp_path), prober=_prober) == 0
+    assert "[PASS] gateway listen 9100" in capsys.readouterr().out
+
+
+def test_doctor_gateway_skipped_without_exposed(monkeypatch, tmp_path, capsys):
+    _wire(monkeypatch, tmp_path)
+    monkeypatch.setattr(doctor.netprobe, "can_connect", lambda port: False)
+    assert doctor.run(_env(tmp_path), prober=_prober) == 1
+    assert "gateway listen" not in capsys.readouterr().out
+
+
+def test_doctor_gateway_warn_when_probe_raises(monkeypatch, tmp_path, capsys):
+    _wire(monkeypatch, tmp_path, profile_json=_exposed_profile(tmp_path))
+
+    def probe(port):
+        if port == ports.DEFAULT_GATEWAY_PORT:
+            raise OSError("unreachable")
+        return True
+
+    monkeypatch.setattr(doctor.netprobe, "can_connect", probe)
+    assert doctor.run(_env(tmp_path), prober=_prober) == 0
+    out = capsys.readouterr().out
+    assert f"[WARN] gateway {ports.DEFAULT_GATEWAY_PORT}: проба невозможна" in out
+    assert f"[FAIL] gateway listen {ports.DEFAULT_GATEWAY_PORT}" not in out
+
+
 def test_doctor_ui_port_fail_when_not_allowed(monkeypatch, tmp_path, capsys):
     _wire(monkeypatch, tmp_path, profile_json=_profile_json(tmp_path, ui_port=2))
     assert doctor.run(_env(tmp_path), prober=_prober) == 1

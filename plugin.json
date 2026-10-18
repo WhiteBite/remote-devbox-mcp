@@ -321,7 +321,8 @@
             "watchdog": "Watchdog",
             "hostServices": "Host-сервисы",
             "project": "Проект",
-            "compose": "Compose"
+            "compose": "Compose",
+            "gateway": "Gateway"
           },
           "hint": {
             "profile": "Нет активного профиля — выбери профиль и сделай его активным.",
@@ -329,7 +330,8 @@
             "bridge": "Bridge не отвечает — проверь, что контейнер toolbox запущен.",
             "runner": "Runner не поднят — проверь RunnerPort и host-сервисы профиля.",
             "watchdog": "Watchdog выключен — включи, чтобы стек восстанавливался сам.",
-            "hostServices": "Все host-сервисы лежат — проверь их логи."
+            "hostServices": "Все host-сервисы лежат — проверь их логи.",
+            "gateway": "Шлюз MCP хозяина: спавнит твои MCP-серверы для агента по политике профиля"
           },
           "col": {
             "profile": "Профиль",
@@ -375,7 +377,8 @@
             "watchdog": "Watchdog",
             "hostServices": "Host services",
             "project": "Project",
-            "compose": "Compose"
+            "compose": "Compose",
+            "gateway": "Gateway"
           },
           "hint": {
             "profile": "No active profile — pick a profile and make it active.",
@@ -383,7 +386,8 @@
             "bridge": "Bridge is not responding — check that the toolbox container is running.",
             "runner": "Runner is not up — check the profile's RunnerPort and host services.",
             "watchdog": "Watchdog is off — enable it so the stack self-heals.",
-            "hostServices": "All host services are down — check their logs."
+            "hostServices": "All host services are down — check their logs.",
+            "gateway": "Host MCP gateway: spawns your MCP servers for the agent per the profile policy"
           },
           "col": {
             "profile": "Profile",

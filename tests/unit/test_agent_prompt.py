@@ -98,7 +98,7 @@ def test_agent_prompt_payload_shape(monkeypatch, tmp_path):
     result = service.agent_prompt(task="Сделай X")
 
     assert set(result) == {"prompt", "masked", "ready"}
-    assert set(result["ready"]) == {"profile", "bridge", "ingress", "runner"}
+    assert set(result["ready"]) == {"profile", "bridge", "ingress", "runner", "gateway"}
     assert isinstance(result["prompt"], str)
 
 
@@ -383,7 +383,7 @@ def test_agent_prompt_ready_all_up(monkeypatch, tmp_path):
 
     ready = service.agent_prompt()["ready"]
 
-    assert ready == {"profile": True, "bridge": True, "ingress": True, "runner": True}
+    assert ready == {"profile": True, "bridge": True, "ingress": True, "runner": True, "gateway": False}
 
 
 def test_agent_prompt_ready_flips_with_ports_status(monkeypatch, tmp_path):
@@ -392,7 +392,7 @@ def test_agent_prompt_ready_flips_with_ports_status(monkeypatch, tmp_path):
 
     ready = service.agent_prompt()["ready"]
 
-    assert ready == {"profile": True, "bridge": False, "ingress": True, "runner": False}
+    assert ready == {"profile": True, "bridge": False, "ingress": True, "runner": False, "gateway": False}
 
 
 def test_agent_prompt_ready_ingress_requires_public_url(monkeypatch, tmp_path):

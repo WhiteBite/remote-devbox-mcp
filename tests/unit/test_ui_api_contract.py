@@ -68,8 +68,10 @@ def test_overview_rows_match_frozen_contract(monkeypatch):
     rdm = service._rdm()
     monkeypatch.setattr(rdm.ui.api, "build_status", lambda port: dict(_STATUS_STUB))
 
-    rows = service.overview()
+    payload = service.overview()
+    rows = payload["cards"]
 
+    assert set(payload) == {"cards", "gateway"}
     assert [row["id"] for row in rows] == [
         "profile", "ingress", "bridge", "runner", "watchdog", "host_services",
     ]
@@ -109,7 +111,7 @@ def test_overview_tone_edges(monkeypatch):
     }
     monkeypatch.setattr(rdm.ui.api, "build_status", lambda port: stub)
 
-    by_id = {row["id"]: row for row in service.overview()}
+    by_id = {row["id"]: row for row in service.overview()["cards"]}
 
     assert by_id["profile"]["value"] == "—"
     assert by_id["profile"]["tone"] == "warn"
@@ -131,7 +133,7 @@ def test_overview_host_services_zero_recorded_is_ok(monkeypatch):
     stub = dict(_STATUS_STUB, host_services={"alive": 0, "recorded": 0})
     monkeypatch.setattr(rdm.ui.api, "build_status", lambda port: stub)
 
-    by_id = {row["id"]: row for row in service.overview()}
+    by_id = {row["id"]: row for row in service.overview()["cards"]}
 
     assert by_id["host_services"]["value"] == "0/0"
     assert by_id["host_services"]["tone"] == "ok"
@@ -514,9 +516,145 @@ def test_probe_ports_result_cached_within_ttl(monkeypatch):
     monkeypatch.setattr(netprobe, "can_connect", fake_can_connect)
     api.invalidate_status_cache()
 
-    first = api._probe_ports(0, None)
-    second = api._probe_ports(0, None)
+    first = api._probe_ports(0, None, None)
+    second = api._probe_ports(0, None, None)
 
     assert first == second
     assert len(calls) == 3
     api.invalidate_status_cache()
+
+
+def test_probe_ports_live_probes_gateway_port(monkeypatch):
+    from rdm import netprobe
+    from rdm.ui import api
+
+    probed: list[int] = []
+
+    def fake_can_connect(port: int, timeout: float = 1.0) -> bool:
+        probed.append(port)
+        return True
+
+    monkeypatch.setattr(netprobe, "can_connect", fake_can_connect)
+    api.invalidate_status_cache()
+
+    result = api._probe_ports_live(0, None, 8794)
+
+    assert result["gateway"] is True
+    assert 8794 in probed
+    api.invalidate_status_cache()
+
+
+def test_probe_ports_live_omits_gateway_without_port(monkeypatch):
+    from rdm import netprobe
+    from rdm.ui import api
+
+    monkeypatch.setattr(netprobe, "can_connect", lambda port, timeout=1.0: True)
+    api.invalidate_status_cache()
+
+    result = api._probe_ports_live(0, None, None)
+
+    assert "gateway" not in result
+    api.invalidate_status_cache()
+
+
+def test_probe_ports_cache_key_includes_gateway_port(monkeypatch):
+    from rdm.ui import api
+
+    calls: list[tuple[int, int | None, int | None]] = []
+
+    def fake_live(port: int, runner_port: int | None, gateway_port: int | None) -> dict[str, bool | None]:
+        calls.append((port, runner_port, gateway_port))
+        return {}
+
+    monkeypatch.setattr(api, "_probe_ports_live", fake_live)
+    api.invalidate_status_cache()
+
+    api._probe_ports(0, None, 8794)
+    api._probe_ports(0, None, 8794)
+    api._probe_ports(0, None, None)
+
+    assert calls == [(0, None, 8794), (0, None, None)]
+    api.invalidate_status_cache()
+
+
+def _build_status_env(monkeypatch, tmp_path: Path, profile_body: dict[str, Any]) -> None:
+    rdm = service._rdm()
+    projects = tmp_path / "projects"
+    projects.mkdir(exist_ok=True)
+    (projects / "alpha.json").write_text(json.dumps(profile_body), encoding="utf-8")
+    monkeypatch.setenv("RDM_PROJECTS_DIR", str(projects))
+    env_path = tmp_path / ".env"
+    env_path.write_text("ACTIVE_PROFILE=alpha\n", encoding="utf-8")
+    monkeypatch.setattr(rdm.cli, "ENV_FILE", env_path)
+    monkeypatch.setattr(rdm.cli, "MANIFEST_PATH", tmp_path / "manifest.json")
+
+
+def test_build_status_probes_gateway_for_exposed_profile(monkeypatch, tmp_path):
+    from rdm.ui import api
+
+    _build_status_env(
+        monkeypatch,
+        tmp_path,
+        {
+            "project_dir": str(tmp_path),
+            "git_name": "a",
+            "git_email": "a@b.c",
+            "exposed_mcps": [{"name": "codegraph", "mode": "readonly", "tool_allow": ["explore"]}],
+        },
+    )
+    captured: list[tuple[int, int | None, int | None]] = []
+
+    def fake_probe_ports(port: int, runner_port: int | None, gateway_port: int | None) -> dict[str, bool | None]:
+        captured.append((port, runner_port, gateway_port))
+        return {"cockpit": True, "ingress": True, "bridge": True, "gateway": True}
+
+    monkeypatch.setattr(api, "_probe_ports", fake_probe_ports)
+    monkeypatch.setattr(api, "_compose_ps", lambda compose_file: "")
+    monkeypatch.setattr(api, "_pidfile_alive", lambda path: {"recorded": 0, "alive": 0})
+    monkeypatch.setattr(api, "_watchdog_alive", lambda: False)
+
+    payload = api.build_status(0)
+
+    assert captured == [(0, None, 8794)]
+    assert payload["ports"]["gateway"] is True
+
+
+def test_build_status_skips_gateway_probe_without_exposed(monkeypatch, tmp_path):
+    from rdm.ui import api
+
+    _build_status_env(
+        monkeypatch,
+        tmp_path,
+        {"project_dir": str(tmp_path), "git_name": "a", "git_email": "a@b.c"},
+    )
+    captured: list[tuple[int, int | None, int | None]] = []
+
+    def fake_probe_ports(port: int, runner_port: int | None, gateway_port: int | None) -> dict[str, bool | None]:
+        captured.append((port, runner_port, gateway_port))
+        return {"cockpit": True, "ingress": True, "bridge": True}
+
+    monkeypatch.setattr(api, "_probe_ports", fake_probe_ports)
+    monkeypatch.setattr(api, "_compose_ps", lambda compose_file: "")
+    monkeypatch.setattr(api, "_pidfile_alive", lambda path: {"recorded": 0, "alive": 0})
+    monkeypatch.setattr(api, "_watchdog_alive", lambda: False)
+
+    api.build_status(0)
+
+    assert captured == [(0, None, None)]
+
+
+def test_collect_logs_gateway_source(monkeypatch, tmp_path):
+    from rdm.ui import api
+
+    monkeypatch.setattr(api.hostos, "tempdir", lambda: tmp_path)
+    state = tmp_path / "rdm-gateway"
+    state.mkdir(parents=True)
+    (state / "gateway.err").write_text("boom\n", encoding="utf-8")
+    (state / "proxy.out").write_text("proxy line\n", encoding="utf-8")
+
+    entries = api.collect_logs("gateway", "")
+
+    assert entries == [
+        {"source": "gateway", "file": "gateway.err", "lines": ["boom"]},
+        {"source": "gateway", "file": "proxy.out", "lines": ["proxy line"]},
+    ]

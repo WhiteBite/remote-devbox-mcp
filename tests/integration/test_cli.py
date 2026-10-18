@@ -42,6 +42,7 @@ def _setup(monkeypatch, tmp_path):
     calls: dict[str, list] = {
         "compose": [], "restart": [], "stop": [], "ingress": [],
         "docker_run": [], "gitleaks": [], "watchdog_start": [], "watchdog_stop": [],
+        "gateway_stop": [],
     }
 
     def fake_compose(*args, **kwargs):
@@ -57,6 +58,7 @@ def _setup(monkeypatch, tmp_path):
     monkeypatch.setattr(cli.procman, "start_ingress", lambda *a, **k: calls["ingress"].append("start") or 1)
     monkeypatch.setattr(cli.procman, "start_watchdog", lambda env_map, home_dir: calls["watchdog_start"].append((env_map, home_dir)) or 321)
     monkeypatch.setattr(cli.procman, "stop_watchdog", lambda: calls["watchdog_stop"].append(True))
+    monkeypatch.setattr(cli.procman, "stop_gateway", lambda: calls["gateway_stop"].append(True))
     monkeypatch.setattr(cli, "_start_gitleaks", lambda *a, **k: calls["gitleaks"].append(a))
     return projects, calls
 
@@ -105,6 +107,7 @@ def test_stop_host_calls_procman(monkeypatch, tmp_path):
     cli.ENV_FILE.write_text("ACTIVE_PROFILE=foo\n", encoding="utf-8")
     assert cli.main(["stop-host"]) == 0
     assert calls["stop"] == [("foo",)]
+    assert calls["gateway_stop"] == [True]
 
 
 def test_info_masked_vs_share_full(monkeypatch, tmp_path, capsys):
@@ -198,6 +201,7 @@ def test_down_stops_host_ingress_and_tunnels(monkeypatch, tmp_path):
     assert "stop" in calls["ingress"]
     assert any("cloudflared-ingress" in args for args in calls["compose"])
     assert calls["watchdog_stop"] == [True]
+    assert calls["gateway_stop"] == [True]
 
 
 def test_full_down_stops_watchdog_host_and_composes_down(monkeypatch, tmp_path):
@@ -206,6 +210,7 @@ def test_full_down_stops_watchdog_host_and_composes_down(monkeypatch, tmp_path):
     assert cli.main(["full-down"]) == 0
     assert calls["watchdog_stop"] == [True]
     assert calls["stop"] == [("p1",)]
+    assert calls["gateway_stop"] == [True]
     assert ("--profile", "preview", "down") in calls["compose"]
 
 

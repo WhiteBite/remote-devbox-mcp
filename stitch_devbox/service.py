@@ -162,8 +162,25 @@ def _port_card(card_id: str, state: object) -> tuple[str, str, str, str, str | N
     )
 
 
-def overview() -> list[dict[str, Any]]:
-    """Vitals cards for the frozen overview contract: stable ids, derived tone, next-step hints."""
+def _gateway_block(payload: dict[str, Any]) -> dict[str, Any]:
+    rdm = _rdm()
+    env_map = payload.get("env", {}) or {}
+    ports = payload.get("ports", {}) or {}
+    profile = _load_profile(env_map)
+    exposed = profile.exposed_mcps if profile is not None else ()
+    enabled = bool(exposed)
+    return {
+        "enabled": enabled,
+        "up": enabled and bool(ports.get("gateway")),
+        "port": rdm.tokens.gateway_port_for(profile) if profile is not None else None,
+        "exposed_mcps": [
+            {"name": mcp.name, "mode": mcp.mode, "tools": list(mcp.tool_allow)} for mcp in exposed
+        ],
+    }
+
+
+def overview() -> dict[str, Any]:
+    """Vitals cards plus the gateway block for the frozen overview contract."""
     rdm = _rdm()
     payload = rdm.ui.api.build_status(0)
     env_map = payload.get("env", {}) or {}
@@ -212,7 +229,7 @@ def overview() -> list[dict[str, Any]]:
         if hint is not None:
             row["hint"] = hint
         rows.append(row)
-    return rows
+    return {"cards": rows, "gateway": _gateway_block(payload)}
 
 
 def jobs() -> dict[str, Any]:
@@ -338,6 +355,19 @@ def profile_defaults() -> dict[str, Any]:
     }
 
 
+def _previous_exposed(rdm: Any, path: Path) -> tuple[Any, ...] | None:
+    try:
+        return rdm.profiles.load(path).exposed_mcps
+    except (OSError, ValueError):
+        return None
+
+
+def _refresh_manifest_if_active(rdm: Any, name: str) -> None:
+    env_map = rdm.envfile.EnvFile.load(rdm.cli.ENV_FILE).as_map()
+    if env_map.get("ACTIVE_PROFILE") == name:
+        rdm.cli._refresh_manifest_from_env()
+
+
 def profile_put(name: str, json_text: str) -> dict[str, Any]:
     rdm = _rdm()
     if not name or not rdm.cli._NAME_RE.fullmatch(name):
@@ -356,9 +386,26 @@ def profile_put(name: str, json_text: str) -> dict[str, Any]:
     if not data.get("git_email"):
         data["git_email"] = _git_config_value("user.email") or f"{name}@devbox.local"
     try:
+        new_profile = rdm.profiles._build(rdm.profiles._fields(data, rdm.profiles._TOP_KEYS, "profile"))
+    except ValueError as exc:
+        return {"valid": False, "errors": str(exc).split("; ")}
+    problems = [problem for problem in rdm.profiles.validate(new_profile) if not problem.startswith("WARN")]
+    if problems:
+        return {"valid": False, "errors": problems}
+    exposed_changed = new_profile.exposed_mcps != _previous_exposed(rdm, path)
+    if exposed_changed and new_profile.exposed_mcps:
+        from rdm.gateway import snapshot  # noqa: PLC0415
+
+        try:
+            snapshot.save_snapshot(path, new_profile)
+        except snapshot.GatewaySnapshotError as exc:
+            return {"valid": False, "errors": [str(exc)]}
+    try:
         rdm.profiles.write_raw(path, data)
     except ValueError as exc:
         return {"valid": False, "errors": str(exc).split("; ")}
+    if exposed_changed:
+        _refresh_manifest_if_active(rdm, name)
     return {"valid": True, "errors": []}
 
 
@@ -618,6 +665,7 @@ def agent_prompt(
         # the ingress port probe only sees the local proxy; the agent needs the public tunnel URL
         "ingress": bool(ports.get("ingress")) and bool(ingress_url),
         "runner": bool(ports.get("runner")),
+        "gateway": gateway_port is not None and bool(ports.get("gateway")),
     }
     return {"prompt": prompt_text, "masked": not full, "ready": ready}
 

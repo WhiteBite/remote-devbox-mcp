@@ -260,8 +260,10 @@ def test_overview_rows_carry_id_tone_and_i18n_titles(monkeypatch):
     }
     monkeypatch.setattr(rdm.ui.api, "build_status", lambda port: payload)
 
-    rows = service.overview()
+    result = service.overview()
+    rows = result["cards"]
 
+    assert set(result) == {"cards", "gateway"}
     assert [row["id"] for row in rows] == [
         "profile", "ingress", "bridge", "runner", "watchdog", "host_services",
     ]
@@ -279,6 +281,182 @@ def test_overview_rows_carry_id_tone_and_i18n_titles(monkeypatch):
     assert rows[5]["value"] == "2/3"
     assert [row["tone"] for row in rows] == ["ok", "ok", "down", "down", "warn", "ok"]
     assert rows[2]["hint"] == "stitch-devbox.hint.bridge"
+
+
+def _overview_fixture(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    *,
+    ports: dict[str, Any],
+    profile_body: dict[str, Any] | None,
+) -> None:
+    rdm = service._rdm()
+    projects = tmp_path / "projects"
+    projects.mkdir(exist_ok=True)
+    if profile_body is not None:
+        (projects / "alpha.json").write_text(json.dumps(profile_body), encoding="utf-8")
+    monkeypatch.setenv("RDM_PROJECTS_DIR", str(projects))
+    monkeypatch.setattr(rdm.ui.api, "build_status", lambda port: {
+        "env": {"ACTIVE_PROFILE": "alpha" if profile_body is not None else ""},
+        "ports": dict(ports),
+        "watchdog": False,
+        "host_services": {"alive": 0, "recorded": 0},
+    })
+
+
+def test_overview_gateway_block_shape(monkeypatch, tmp_path):
+    _overview_fixture(
+        monkeypatch,
+        tmp_path,
+        ports={"gateway": True},
+        profile_body={
+            "project_dir": str(tmp_path),
+            "git_name": "a",
+            "git_email": "a@b.c",
+            "exposed_mcps": [
+                {"name": "codegraph", "mode": "readonly", "tool_allow": ["explore", "symbols"]},
+                {"name": "demo", "mode": "full", "tool_allow": ["click"]},
+            ],
+        },
+    )
+
+    gateway = service.overview()["gateway"]
+
+    assert set(gateway) == {"enabled", "up", "port", "exposed_mcps"}
+    assert gateway["enabled"] is True
+    assert gateway["up"] is True
+    assert gateway["port"] == 8794
+    assert gateway["exposed_mcps"] == [
+        {"name": "codegraph", "mode": "readonly", "tools": ["explore", "symbols"]},
+        {"name": "demo", "mode": "full", "tools": ["click"]},
+    ]
+
+
+def test_overview_gateway_block_reports_custom_port(monkeypatch, tmp_path):
+    _overview_fixture(
+        monkeypatch,
+        tmp_path,
+        ports={"gateway": False},
+        profile_body={
+            "project_dir": str(tmp_path),
+            "git_name": "a",
+            "git_email": "a@b.c",
+            "gateway_port": 9100,
+            "exposed_mcps": [{"name": "codegraph", "mode": "readonly", "tool_allow": ["explore"]}],
+        },
+    )
+
+    gateway = service.overview()["gateway"]
+
+    assert gateway["port"] == 9100
+    assert gateway["enabled"] is True
+    assert gateway["up"] is False
+
+
+def test_overview_gateway_block_disabled_without_exposed(monkeypatch, tmp_path):
+    _overview_fixture(
+        monkeypatch,
+        tmp_path,
+        ports={},
+        profile_body={"project_dir": str(tmp_path), "git_name": "a", "git_email": "a@b.c"},
+    )
+
+    assert service.overview()["gateway"] == {
+        "enabled": False,
+        "up": False,
+        "port": None,
+        "exposed_mcps": [],
+    }
+
+
+def test_overview_gateway_block_absent_profile(monkeypatch, tmp_path):
+    _overview_fixture(monkeypatch, tmp_path, ports={"gateway": True}, profile_body=None)
+
+    assert service.overview()["gateway"] == {
+        "enabled": False,
+        "up": False,
+        "port": None,
+        "exposed_mcps": [],
+    }
+
+
+def _prompt_env(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    *,
+    ports: dict[str, Any],
+    profile_body: dict[str, Any],
+) -> None:
+    rdm = service._rdm()
+    projects = tmp_path / "projects"
+    projects.mkdir(exist_ok=True)
+    (projects / "alpha.json").write_text(json.dumps(profile_body), encoding="utf-8")
+    monkeypatch.setenv("RDM_PROJECTS_DIR", str(projects))
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "\n".join(
+            [
+                "ACTIVE_PROFILE=alpha",
+                "MCP_BEARER_TOKEN=" + "b" * 64,
+                "MCP_PUBLIC_TOKEN=" + "c" * 64,
+                "INGRESS_TOKEN=" + "d" * 64,
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(rdm.cli, "ENV_FILE", env_path)
+    monkeypatch.setattr(rdm.netprobe, "ingress_url", lambda env_map, compose_file=None: "https://x.example")
+    monkeypatch.setattr(rdm.ui.api, "build_status", lambda port: {"ports": dict(ports)})
+
+
+def test_agent_prompt_ready_gateway_true_when_up(monkeypatch, tmp_path):
+    _prompt_env(
+        monkeypatch,
+        tmp_path,
+        ports={"gateway": True, "bridge": True, "ingress": True},
+        profile_body={
+            "project_dir": str(tmp_path),
+            "git_name": "a",
+            "git_email": "a@b.c",
+            "exposed_mcps": [{"name": "codegraph", "mode": "readonly", "tool_allow": ["explore"]}],
+        },
+    )
+
+    ready = service.agent_prompt()["ready"]
+
+    assert ready["gateway"] is True
+
+
+def test_agent_prompt_ready_gateway_false_when_port_down(monkeypatch, tmp_path):
+    _prompt_env(
+        monkeypatch,
+        tmp_path,
+        ports={"gateway": False, "bridge": True, "ingress": True},
+        profile_body={
+            "project_dir": str(tmp_path),
+            "git_name": "a",
+            "git_email": "a@b.c",
+            "exposed_mcps": [{"name": "codegraph", "mode": "readonly", "tool_allow": ["explore"]}],
+        },
+    )
+
+    ready = service.agent_prompt()["ready"]
+
+    assert ready["gateway"] is False
+
+
+def test_agent_prompt_ready_gateway_false_when_disabled(monkeypatch, tmp_path):
+    _prompt_env(
+        monkeypatch,
+        tmp_path,
+        ports={"gateway": True, "bridge": True, "ingress": True},
+        profile_body={"project_dir": str(tmp_path), "git_name": "a", "git_email": "a@b.c"},
+    )
+
+    ready = service.agent_prompt()["ready"]
+
+    assert ready["gateway"] is False
 
 
 def test_logs_text_empty_uses_i18n_key(monkeypatch):
@@ -480,8 +658,8 @@ def test_manifest_declares_host_driver_and_contract_commands():
 
 def test_manifest_i18n_resolves_service_keys_in_both_locales():
     strings = _manifest()["contributions"]["i18n"]
-    card_keys = ("profile", "ingress", "bridge", "runner", "watchdog", "hostServices", "project", "compose")
-    hint_keys = ("profile", "ingress", "bridge", "runner", "watchdog", "hostServices")
+    card_keys = ("profile", "ingress", "bridge", "runner", "watchdog", "hostServices", "project", "compose", "gateway")
+    hint_keys = ("profile", "ingress", "bridge", "runner", "watchdog", "hostServices", "gateway")
 
     for locale in ("ru", "en"):
         plugin_strings = strings[locale]["stitch-devbox"]
@@ -570,6 +748,108 @@ def test_profile_put_git_identity_fallback_without_config(monkeypatch, tmp_path)
     assert written["git_email"] == "nogit@devbox.local"
 
 
+def _gateway_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, command: list[str]) -> Path:
+    monkeypatch.setenv("RDM_PROJECTS_DIR", str(tmp_path))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    project = tmp_path / "proj"
+    project.mkdir(exist_ok=True)
+    (project / "opencode.json").write_text(
+        json.dumps({"mcp": {"codegraph": {"type": "local", "command": command}}}),
+        encoding="utf-8",
+    )
+    return project
+
+
+def _exposed_body(project: Path) -> dict[str, Any]:
+    return {
+        "project_dir": str(project),
+        "git_name": "agent",
+        "git_email": "agent@example.test",
+        "mode": "standard",
+        "exposed_mcps": [{"name": "codegraph", "mode": "readonly", "tool_allow": ["explore"]}],
+    }
+
+
+def test_profile_put_rebuilds_gateway_snapshot_on_exposed_change(monkeypatch, tmp_path):
+    project = _gateway_env(monkeypatch, tmp_path, ["npx", "-y", "demo@1.0.0"])
+    (tmp_path / "alpha.json").write_text(
+        json.dumps({**_exposed_body(project), "exposed_mcps": []}), encoding="utf-8"
+    )
+
+    result = service.profile_put("alpha", json.dumps(_exposed_body(project)))
+
+    assert result == {"valid": True, "errors": []}
+    snapshot = json.loads((tmp_path / "alpha.mcpsnap.json").read_text(encoding="utf-8"))
+    assert snapshot["servers"]["codegraph"]["args"] == ["-y", "demo@1.0.0"]
+    written = json.loads((tmp_path / "alpha.json").read_text(encoding="utf-8"))
+    assert written["exposed_mcps"] == _exposed_body(project)["exposed_mcps"]
+
+
+def test_profile_put_snapshot_error_rejects_write(monkeypatch, tmp_path):
+    project = _gateway_env(monkeypatch, tmp_path, ["npx", "-y", "demo"])
+    old = {**_exposed_body(project), "exposed_mcps": []}
+    (tmp_path / "alpha.json").write_text(json.dumps(old), encoding="utf-8")
+
+    result = service.profile_put("alpha", json.dumps(_exposed_body(project)))
+
+    assert result["valid"] is False
+    assert any("unpinned" in problem for problem in result["errors"])
+    assert json.loads((tmp_path / "alpha.json").read_text(encoding="utf-8")) == old
+    assert not (tmp_path / "alpha.mcpsnap.json").exists()
+
+
+def test_profile_put_skips_snapshot_when_exposed_unchanged(monkeypatch, tmp_path):
+    project = _gateway_env(monkeypatch, tmp_path, ["npx", "-y", "demo@1.0.0"])
+    body = _exposed_body(project)
+    (tmp_path / "alpha.json").write_text(json.dumps(body), encoding="utf-8")
+    from rdm.gateway import snapshot
+
+    saved: list[str] = []
+    monkeypatch.setattr(snapshot, "save_snapshot", lambda *args, **kwargs: saved.append("saved"))
+
+    result = service.profile_put("alpha", json.dumps({**body, "git_name": "agent2"}))
+
+    assert result == {"valid": True, "errors": []}
+    assert saved == []
+    assert json.loads((tmp_path / "alpha.json").read_text(encoding="utf-8"))["git_name"] == "agent2"
+
+
+def test_profile_put_refreshes_manifest_for_active_profile(monkeypatch, tmp_path):
+    project = _gateway_env(monkeypatch, tmp_path, ["npx", "-y", "demo@1.0.0"])
+    rdm = service._rdm()
+    env_path = tmp_path / ".env"
+    env_path.write_text("ACTIVE_PROFILE=alpha\n", encoding="utf-8")
+    monkeypatch.setattr(rdm.cli, "ENV_FILE", env_path)
+    refreshed: list[str] = []
+    monkeypatch.setattr(rdm.cli, "_refresh_manifest_from_env", lambda: refreshed.append("called"))
+    (tmp_path / "alpha.json").write_text(
+        json.dumps({**_exposed_body(project), "exposed_mcps": []}), encoding="utf-8"
+    )
+
+    result = service.profile_put("alpha", json.dumps(_exposed_body(project)))
+
+    assert result == {"valid": True, "errors": []}
+    assert refreshed == ["called"]
+
+
+def test_profile_put_skips_manifest_refresh_for_inactive_profile(monkeypatch, tmp_path):
+    project = _gateway_env(monkeypatch, tmp_path, ["npx", "-y", "demo@1.0.0"])
+    rdm = service._rdm()
+    env_path = tmp_path / ".env"
+    env_path.write_text("ACTIVE_PROFILE=beta\n", encoding="utf-8")
+    monkeypatch.setattr(rdm.cli, "ENV_FILE", env_path)
+    refreshed: list[str] = []
+    monkeypatch.setattr(rdm.cli, "_refresh_manifest_from_env", lambda: refreshed.append("called"))
+    (tmp_path / "alpha.json").write_text(
+        json.dumps({**_exposed_body(project), "exposed_mcps": []}), encoding="utf-8"
+    )
+
+    result = service.profile_put("alpha", json.dumps(_exposed_body(project)))
+
+    assert result == {"valid": True, "errors": []}
+    assert refreshed == []
+
+
 def test_folder_check_reports_dir_and_git(monkeypatch, tmp_path):
     monkeypatch.setenv("RDM_PROJECTS_DIR", str(tmp_path))
     plain = tmp_path / "plain"
@@ -619,7 +899,8 @@ def test_poll_batch_matches_individual_commands(monkeypatch, tmp_path):
     def _vitals(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         return [{key: value for key, value in row.items() if key != "updatedAt"} for row in rows]
 
-    assert _vitals(batch["overview"]) == _vitals(service.overview())
+    assert _vitals(batch["overview"]["cards"]) == _vitals(service.overview()["cards"])
+    assert batch["overview"]["gateway"] == service.overview()["gateway"]
     assert batch["action_status"] == service.action_status()
     assert batch["jobs"] == jobcontrol.jobs_live()
     assert batch["permissions"] == jobcontrol.permissions_pending()

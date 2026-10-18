@@ -518,6 +518,7 @@ def _stop_host_side() -> None:
     active = envfile.EnvFile.load(ENV_FILE).get("ACTIVE_PROFILE")
     if active:
         procman.stop_host_services(active)
+    procman.stop_gateway()
     procman.stop_ingress()
     procman.stop_watchdog()
     docker.compose("stop", "cloudflared-ingress", "cloudflared-preview", compose_file=COMPOSE_FILE)

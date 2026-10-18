@@ -64,7 +64,7 @@ def _handle_status(params: dict[str, Any]) -> dict[str, Any]:
     return service.status()
 
 
-def _handle_overview(params: dict[str, Any]) -> list[dict[str, Any]]:
+def _handle_overview(params: dict[str, Any]) -> dict[str, Any]:
     return service.overview()
 
 

@@ -85,6 +85,18 @@ def _runner_check(profile: profiles.Profile, report: _Report) -> None:
     report.check(f"runner listen {port}", listening, "devbox.py start-host, затем devbox.py doctor")
 
 
+def _gateway_check(profile: profiles.Profile, report: _Report) -> None:
+    if not profile.exposed_mcps:
+        return
+    port = profile.gateway_port or ports.DEFAULT_GATEWAY_PORT
+    try:
+        listening = netprobe.can_connect(port)
+    except OSError:
+        print(f"[WARN] gateway {port}: проба невозможна")
+        return
+    report.check(f"gateway listen {port}", listening, "devbox.py use <имя> перезапустит gateway")
+
+
 def _ui_port_check(profile: profiles.Profile, report: _Report) -> None:
     if profile.ui_port is None:
         return
@@ -284,6 +296,7 @@ def run(env_map: dict[str, str], compose_file: str | None = None, prober=None) -
     if profile is not None:
         _runner_check(profile, report)
         _ui_port_check(profile, report)
+        _gateway_check(profile, report)
         registry = _registry_ports(profile.project_dir)
         if registry is not None:
             _drift_warns(profile, registry)

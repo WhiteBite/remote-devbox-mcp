@@ -24,6 +24,12 @@ LOG_SOURCES: dict[str, tuple[str, ...]] = {
     "ingress": ("rdm-ingress/ingress.out", "rdm-ingress/ingress.err"),
     "watchdog": ("rdm-watchdog/watchdog.log",),
     "runner": ("rdm-runner/audit.log",),
+    "gateway": (
+        "rdm-gateway/gateway.out",
+        "rdm-gateway/gateway.err",
+        "rdm-gateway/proxy.out",
+        "rdm-gateway/proxy.err",
+    ),
 }
 _TAIL_LINES = 200
 _EVENTS_TAIL_LINES = 2000
@@ -69,7 +75,7 @@ def _watchdog_alive() -> bool:
 _compose_ps_lock = threading.Lock()
 _compose_ps_cache: tuple[str, str, float] | None = None
 _probe_lock = threading.Lock()
-_probe_cache: tuple[int, int | None, dict[str, bool | None], float] | None = None
+_probe_cache: tuple[int, int | None, int | None, dict[str, bool | None], float] | None = None
 _clock = time.monotonic
 
 
@@ -94,25 +100,32 @@ def _compose_ps(compose_file: str) -> str:
         return value
 
 
-def _probe_ports(port: int, runner_port: int | None) -> dict[str, bool | None]:
+def _probe_ports(port: int, runner_port: int | None, gateway_port: int | None) -> dict[str, bool | None]:
     global _probe_cache
     with _probe_lock:
         now = _clock()
         if _probe_cache is not None:
-            cached_port, cached_runner, value, at = _probe_cache
-            if cached_port == port and cached_runner == runner_port and now - at < PROBE_PORTS_TTL_SECONDS:
+            cached_port, cached_runner, cached_gateway, value, at = _probe_cache
+            if (
+                cached_port == port
+                and cached_runner == runner_port
+                and cached_gateway == gateway_port
+                and now - at < PROBE_PORTS_TTL_SECONDS
+            ):
                 return value
-    value = _probe_ports_live(port, runner_port)
+    value = _probe_ports_live(port, runner_port, gateway_port)
     with _probe_lock:
-        _probe_cache = (port, runner_port, value, _clock())
+        _probe_cache = (port, runner_port, gateway_port, value, _clock())
     return value
 
 
-def _probe_ports_live(port: int, runner_port: int | None) -> dict[str, bool | None]:
+def _probe_ports_live(
+    port: int, runner_port: int | None, gateway_port: int | None
+) -> dict[str, bool | None]:
     def probe(target: int) -> bool:
         return netprobe.can_connect(target, timeout=VITALS_PROBE_TIMEOUT_SECONDS)
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as pool:
         pending: dict[str, concurrent.futures.Future[bool]] = {
             "cockpit": pool.submit(probe, port),
             "ingress": pool.submit(probe, procman.INGRESS_PORT),
@@ -120,6 +133,8 @@ def _probe_ports_live(port: int, runner_port: int | None) -> dict[str, bool | No
         }
         if runner_port:
             pending["runner"] = pool.submit(probe, runner_port)
+        if gateway_port:
+            pending["gateway"] = pool.submit(probe, gateway_port)
         return {name: future.result() for name, future in pending.items()}
 
 
@@ -128,9 +143,10 @@ def build_status(port: int) -> dict[str, object]:
     active = env_map.get("ACTIVE_PROFILE", "")
     profile_path = profiles.find(active) if active else None
     runner_port = cli._runner_port(env_map)
+    gateway_port = cli._gateway_port(env_map)
     return {
         "compose_ps": _compose_ps(cli.COMPOSE_FILE),
-        "ports": _probe_ports(port, runner_port),
+        "ports": _probe_ports(port, runner_port, gateway_port),
         "host_services": _pidfile_alive(hostos.tempdir() / "rdm-host" / f"{active}-pids.txt"),
         "ingress_pids": _pidfile_alive(hostos.tempdir() / "rdm-ingress" / "pids.txt"),
         "watchdog": _watchdog_alive(),
