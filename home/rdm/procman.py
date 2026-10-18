@@ -218,6 +218,10 @@ def stop_ui() -> None:
     path.unlink(missing_ok=True)
 
 
+def action_lock_path() -> pathlib.Path:
+    return hostos.tempdir() / "rdm-host" / "action.lock"
+
+
 def watchdog_pids_path() -> pathlib.Path:
     return hostos.tempdir() / "rdm-watchdog" / "pids.txt"
 

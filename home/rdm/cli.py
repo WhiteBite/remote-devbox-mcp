@@ -33,7 +33,7 @@ _LOCK_LOCAL = threading.local()
 
 
 def _action_lock_path() -> pathlib.Path:
-    return LOG_ROOT / "action.lock"
+    return procman.action_lock_path()
 
 
 def _single_flight(fn: Callable[..., int]) -> Callable[..., int]:
