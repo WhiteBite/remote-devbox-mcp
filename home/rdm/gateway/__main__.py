@@ -1,31 +1,36 @@
-"""MCP gateway entry: /healthz stub on MCP_HTTP_PORT."""
+"""MCP gateway entry: streamable-HTTP server on MCP_HTTP_PORT."""
 
 from __future__ import annotations
 
 import os
+import signal
 import sys
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import threading
 
 from rdm import freeze, ports
+from rdm.gateway import server
 
 
-class _Handler(BaseHTTPRequestHandler):
-    protocol_version = "HTTP/1.1"
+def _manager_factory() -> server.SessionManager:
+    from rdm.gateway import sessions
 
-    def do_GET(self) -> None:
-        path = self.path.split("?", 1)[0]
-        body = b"ok\n" if path == "/healthz" else b""
-        self.send_response(200 if path == "/healthz" else 404)
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
+    return sessions.SessionManager()
 
 
 def main() -> None:
     if freeze.FROZEN:
         sys.exit("gateway not in frozen build (P2)")
     port = int(os.environ.get("MCP_HTTP_PORT", str(ports.DEFAULT_GATEWAY_PORT + 1)))
-    ThreadingHTTPServer(("127.0.0.1", port), _Handler).serve_forever()
+    httpd = server.build_server("127.0.0.1", port, _manager_factory)
+
+    def request_stop(*_args: object) -> None:
+        threading.Thread(target=httpd.stop, daemon=True).start()
+
+    for name in ("SIGTERM", "SIGBREAK"):
+        sig = getattr(signal, name, None)
+        if sig is not None:
+            signal.signal(sig, request_stop)
+    httpd.serve_forever()
 
 
 if __name__ == "__main__":
