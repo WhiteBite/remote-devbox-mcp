@@ -129,12 +129,14 @@ def _cap_content(content: list[Any]) -> tuple[list[Any], bool]:
 
 
 def _call_tool(session: Session, name: str, arguments: dict[str, Any], progress_token: Any, rpc_id: Any) -> CallResult:
+    from rdm.gateway import dispatch
+
     box: list[CallResult] = []
     failure: list[Exception] = []
 
     def run() -> None:
         try:
-            box.append(session.call_tool(name, arguments, progress_token))
+            box.append(dispatch.call(session, session.id, name, arguments, progress_token, rpc_id))
         except Exception as error:
             failure.append(error)
 

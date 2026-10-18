@@ -1,9 +1,9 @@
 """Metadata-only JSONL event sink for the ingress proxy.
 
-Fixed schema, one JSON object per line: ts, kind, session, port, method,
-rpc_method, tool, rpc_id, job_id, status, permission, permission_id, exit,
-latency_ms, bytes, truncated, unparsed, payload. Only these keys are ever
-persisted; free-form payload fields (args, output, tokens, file contents)
+Fixed schema, one JSON object per line: ts, kind, session, server, port,
+method, rpc_method, tool, rpc_id, job_id, status, permission, permission_id,
+exit, latency_ms, bytes, truncated, unparsed, payload. Only these keys are
+ever persisted; free-form payload fields (args, output, tokens, file contents)
 are dropped on emit, and every string value is masked through
 rdm.redact.redact_text before encoding. The payload key carries the action
 result dict, pre-redacted and size-capped by the emitter (rdm.ui.control).
@@ -26,6 +26,7 @@ _FIELDS = frozenset(
         "ts",
         "kind",
         "session",
+        "server",
         "port",
         "method",
         "rpc_method",
