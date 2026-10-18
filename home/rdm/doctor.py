@@ -82,7 +82,7 @@ def _runner_check(profile: profiles.Profile, report: _Report) -> None:
     except OSError:
         print(f"[WARN] runner {port}: проба невозможна")
         return
-    report.check(f"runner listen {port}", listening, "devbox.py start-host, затем devbox.py doctor")
+    report.check(f"runner listen {port}", listening, "devbox.py start, затем devbox.py doctor")
 
 
 def _gateway_check(profile: profiles.Profile, report: _Report) -> None:
