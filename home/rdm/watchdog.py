@@ -95,6 +95,11 @@ def run(
 
                         profile = _cli._with_runner(profiles.load(profile_path), active)
                         procman.restart_host_services(profile, active, _HOME, env_map.get("MCP_PUBLIC_TOKEN", ""))
+                        fresh = _cli.envfile.EnvFile.load(_cli.ENV_FILE).as_map()
+                        if profile.exposed_mcps and fresh.get("GATEWAY_TOKEN"):
+                            procman.start_gateway(profile, fresh["GATEWAY_TOKEN"], _HOME)
+                        else:
+                            procman.stop_gateway()
                 ps = docker.compose_ps(compose_file)
                 if "unhealthy" in ps:
                     _log(log_path, "toolbox unhealthy: recreate")

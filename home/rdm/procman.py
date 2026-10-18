@@ -9,7 +9,7 @@ import sys
 
 from rdm import hostos
 from rdm.freeze import spawn_entry
-from rdm.ports import COCKPIT_PORT
+from rdm.ports import COCKPIT_PORT, DEFAULT_GATEWAY_PORT
 from rdm.profiles import Profile
 from rdm.ui import auth
 
@@ -18,10 +18,24 @@ INGRESS_ARGV = spawn_entry("proxy", "--mode", "ingress")
 INGRESS_PORT = 8799
 UI_ARGV = spawn_entry("ui", "--server")
 WATCHDOG_ARGV = spawn_entry("watch")
+GATEWAY_ARGV = spawn_entry("gateway")
 _PROXY_MARKER = "proxy --mode"
 _UI_MARKER = "ui --server"
 _WATCHDOG_MARKER = " watch"
+_GATEWAY_MARKER = " gateway"
 _RUNNER_MARKER = " runner" if getattr(sys, "frozen", False) else "runner-mcp.py"
+_CHILD_ENV_KEYS = (
+    "PATH",
+    "SYSTEMROOT",
+    "COMSPEC",
+    "PATHEXT",
+    "TEMP",
+    "TMP",
+    "USERPROFILE",
+    "HOME",
+    "JAVA_HOME",
+    "FLUTTER_ROOT",
+)
 
 
 def _pids_path(profile_name: str) -> pathlib.Path:
@@ -71,6 +85,7 @@ def _free_port(port: int) -> None:
         hostos.cmdline_matches(pid, _RUNNER_MARKER)
         or hostos.cmdline_matches(pid, _PROXY_MARKER)
         or hostos.cmdline_matches(pid, _UI_MARKER)
+        or hostos.cmdline_matches(pid, _GATEWAY_MARKER)
     ):
         hostos.kill_tree(pid)
 
@@ -227,5 +242,58 @@ def stop_watchdog() -> None:
     path = watchdog_pids_path()
     for pid, recorded, _ in _read_entries(path):
         if _owned(pid, recorded, _WATCHDOG_MARKER):
+            hostos.kill_tree(pid)
+    path.unlink(missing_ok=True)
+
+
+def gateway_pids_path() -> pathlib.Path:
+    return hostos.tempdir() / "rdm-gateway" / "pids.txt"
+
+
+def start_gateway(profile: Profile, gateway_token: str, host_dir: pathlib.Path) -> int:
+    stop_gateway()
+    gateway_port = profile.gateway_port or DEFAULT_GATEWAY_PORT
+    _free_port(gateway_port)
+    _free_port(gateway_port + 1)
+    state_dir = gateway_pids_path().parent
+    state_dir.mkdir(parents=True, exist_ok=True)
+    child_env = {key: os.environ[key] for key in _CHILD_ENV_KEYS if os.environ.get(key)}
+    child_env["MCP_HTTP_PORT"] = str(gateway_port + 1)
+    child_env["GATEWAY_PORT"] = str(gateway_port)
+    pid = hostos.spawn(
+        GATEWAY_ARGV,
+        cwd=host_dir,
+        stdout_path=state_dir / "gateway.out",
+        stderr_path=state_dir / "gateway.err",
+        env=child_env,
+    )
+    proxy_env = {
+        **os.environ,
+        "MCP_PUBLIC_TOKEN": gateway_token,
+        "PROXY_PORT": str(gateway_port),
+        "TARGET_PORT": str(gateway_port + 1),
+        "TARGET_HOST": "127.0.0.1",
+    }
+    proxy_pid = hostos.spawn(
+        DEFAULT_PROXY_ARGV,
+        cwd=host_dir,
+        stdout_path=state_dir / "proxy.out",
+        stderr_path=state_dir / "proxy.err",
+        env=proxy_env,
+    )
+    _write_entries(
+        gateway_pids_path(),
+        [
+            (pid, hostos.create_time(pid), _GATEWAY_MARKER),
+            (proxy_pid, hostos.create_time(proxy_pid), _GATEWAY_MARKER),
+        ],
+    )
+    return pid
+
+
+def stop_gateway() -> None:
+    path = gateway_pids_path()
+    for pid, recorded, _ in _read_entries(path):
+        if _owned(pid, recorded, _GATEWAY_MARKER):
             hostos.kill_tree(pid)
     path.unlink(missing_ok=True)

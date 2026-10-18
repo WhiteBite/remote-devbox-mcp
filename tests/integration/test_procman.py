@@ -1,15 +1,17 @@
+import http.client
 import pathlib
 import socket
 import sys
 import tempfile
 import time
 
-from rdm import hostos, procman
-from rdm.profiles import HostService, Profile
+from rdm import hostos, netprobe, procman
+from rdm.profiles import ExposedMcp, HostService, Profile
 
 HOME_DIR = pathlib.Path(__file__).resolve().parents[2] / "home"
 SLEEP_60 = "import time; time.sleep(60)"
 FAKE_PROXY_ARGV = [sys.executable, "-c", SLEEP_60]
+GATEWAY_TOKEN = "integration-test-gateway-token"
 
 
 def _isolate_tempdir(monkeypatch, tmp_path: pathlib.Path) -> None:
@@ -24,6 +26,14 @@ def _ephemeral_port() -> int:
 
 def _pids_file(profile_name: str) -> pathlib.Path:
     return hostos.tempdir() / "rdm-host" / f"{profile_name}-pids.txt"
+
+
+def _gateway_pids_file() -> pathlib.Path:
+    return hostos.tempdir() / "rdm-gateway" / "pids.txt"
+
+
+def _gateway_profile(port: int) -> Profile:
+    return Profile(exposed_mcps=(ExposedMcp(name="demo"),), gateway_port=port)
 
 
 def _entries(path: pathlib.Path) -> list[tuple[int, str, str]]:
@@ -56,6 +66,14 @@ def _can_connect(port: int) -> bool:
             return True
     except OSError:
         return False
+
+
+def _probe(port: int, path: str, token: str = "") -> int:
+    # до бинда сервиса loopback-зонт может self-connect'нуться и прочитать собственный запрос
+    try:
+        return netprobe.probe_http(f"http://127.0.0.1:{port}{path}", token or None, timeout=2.0)
+    except http.client.HTTPException:
+        return 0
 
 
 def test_start_stop_service_roundtrip(monkeypatch, tmp_path):
@@ -231,3 +249,81 @@ def test_stop_watchdog_spares_pid_with_foreign_marker(monkeypatch, tmp_path):
         assert not path.exists()
     finally:
         hostos.kill_tree(pid)
+
+
+def test_start_stop_gateway_roundtrip(monkeypatch, tmp_path):
+    _isolate_tempdir(monkeypatch, tmp_path)
+    port = _ephemeral_port()
+    profile = _gateway_profile(port)
+    pid = procman.start_gateway(profile, GATEWAY_TOKEN, HOME_DIR)
+    path = _gateway_pids_file()
+    recorded = _entries(path)
+    assert len(recorded) == 2
+    assert recorded[0][0] == pid
+    assert all(marker == procman._GATEWAY_MARKER for _, _, marker in recorded)
+    assert all(_alive(p) for p, _, _ in recorded)
+    assert _wait_until(lambda: _probe(port + 1, "/healthz") == 200)
+    assert _wait_until(lambda: _probe(port, "/healthz", GATEWAY_TOKEN) == 200)
+    assert _probe(port, "/healthz", "wrong-token") == 401
+
+    procman.stop_gateway()
+
+    assert not path.exists()
+    assert all(_wait_until(lambda p=p: not _alive(p)) for p, _, _ in recorded)
+
+
+def test_start_gateway_replaces_previous(monkeypatch, tmp_path):
+    _isolate_tempdir(monkeypatch, tmp_path)
+    port = _ephemeral_port()
+    profile = _gateway_profile(port)
+    procman.start_gateway(profile, GATEWAY_TOKEN, HOME_DIR)
+    first = _entries(_gateway_pids_file())
+    assert len(first) == 2
+
+    second_pid = procman.start_gateway(profile, GATEWAY_TOKEN, HOME_DIR)
+
+    assert all(
+        _wait_until(lambda p=pid, c=float(ct): hostos.create_time(p) != c)
+        for pid, ct, _ in first
+    )
+    second = _entries(_gateway_pids_file())
+    assert len(second) == 2
+    assert second[0][0] == second_pid
+    assert all(_alive(p) for p, _, _ in second)
+    procman.stop_gateway()
+
+
+def test_stop_gateway_spares_pid_with_foreign_marker(monkeypatch, tmp_path):
+    _isolate_tempdir(monkeypatch, tmp_path)
+    pid = hostos.spawn([sys.executable, "-c", SLEEP_60])
+    try:
+        path = _gateway_pids_file()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            f"{pid}|{hostos.create_time(pid) + 99999.0}|not-our-marker\n", encoding="utf-8"
+        )
+        procman.stop_gateway()
+        assert _alive(pid)
+        assert not path.exists()
+    finally:
+        hostos.kill_tree(pid)
+
+
+def test_start_gateway_frees_port_held_by_orphan_gateway(monkeypatch, tmp_path):
+    _isolate_tempdir(monkeypatch, tmp_path)
+    port = _ephemeral_port()
+    orphan_code = (
+        "import socket,time;s=socket.socket();"
+        "s.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1);"
+        f"s.bind(('127.0.0.1',{port + 1}));s.listen();time.sleep(60)"
+    )
+    orphan = hostos.spawn([sys.executable, "-c", orphan_code, "gateway"])
+    try:
+        assert _wait_until(lambda: hostos.find_pid_by_port(port + 1) == orphan)
+        profile = _gateway_profile(port)
+        procman.start_gateway(profile, GATEWAY_TOKEN, HOME_DIR)
+        assert _wait_until(lambda: not _alive(orphan))
+        assert _wait_until(lambda: _probe(port + 1, "/healthz") == 200)
+        procman.stop_gateway()
+    finally:
+        hostos.kill_tree(orphan)

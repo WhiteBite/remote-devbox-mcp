@@ -288,6 +288,10 @@ def apply_use(name: str) -> int:
     env_map = env.as_map()
     _write_manifest(base_profile, name, env_map)
     procman.restart_host_services(profile, name, HOME_DIR, env_map.get("MCP_PUBLIC_TOKEN", ""))
+    if profile.exposed_mcps and env_map.get("GATEWAY_TOKEN"):
+        procman.start_gateway(profile, env_map["GATEWAY_TOKEN"], HOME_DIR)
+    else:
+        procman.stop_gateway()
     procman.stop_ingress()
     procman.start_ingress(_ingress_env(env_map), HOME_DIR)
     up = docker.compose("up", "-d", "--force-recreate", "toolbox", compose_file=COMPOSE_FILE)
@@ -322,6 +326,7 @@ def _stop_host() -> int:
         procman.stop_host_services(active)
     else:
         print("ACTIVE_PROFILE не задан")
+    procman.stop_gateway()
     return 0
 
 
@@ -431,6 +436,10 @@ def _issue_tokens() -> int:
                 print(f"profile error: {error}", file=sys.stderr)
             else:
                 procman.restart_host_services(profile, active, HOME_DIR, env_map.get("MCP_PUBLIC_TOKEN", ""))
+                if profile.exposed_mcps:
+                    procman.start_gateway(profile, env_map.get("GATEWAY_TOKEN", ""), HOME_DIR)
+                else:
+                    procman.stop_gateway()
     procman.stop_ingress()
     procman.start_ingress(_ingress_env(env_map), HOME_DIR)
     _refresh_manifest_from_env()
@@ -650,6 +659,12 @@ def _embedded(argv: list[str]) -> int:
 
         ui_main()
         return 0
+    if argv[0] == "gateway":
+        sys.argv = ["rdm.gateway", *argv[1:]]
+        from rdm.gateway.__main__ import main as gateway_main
+
+        gateway_main()
+        return 0
     from rdm.runner.__main__ import main as runner_main
 
     runner_main()
@@ -664,8 +679,8 @@ def main(argv: list[str] | None = None) -> int:
         except (AttributeError, ValueError):
             pass
     argv = sys.argv[1:] if argv is None else list(argv)
-    # скрытые подкоманды: spawn_entry запускает proxy/runner/ui через этот же CLI
-    if argv and argv[0] in ("proxy", "runner", "ui"):
+    # скрытые подкоманды: spawn_entry запускает proxy/runner/ui/gateway через этот же CLI
+    if argv and argv[0] in ("proxy", "runner", "ui", "gateway"):
         return _embedded(argv)
     parser = argparse.ArgumentParser(prog="devbox")
     sub = parser.add_subparsers(dest="command")
