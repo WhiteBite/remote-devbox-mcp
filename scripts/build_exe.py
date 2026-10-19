@@ -57,6 +57,7 @@ def _pyinstaller(entry: Path, name: str, *, console: bool) -> None:
         "--hidden-import", "rdm.proxy.__main__",
         "--hidden-import", "rdm.runner.__main__",
         "--hidden-import", "rdm.ui.__main__",
+        "--hidden-import", "rdm.gateway.__main__",
         # idna импортируется лениво из socket.getaddrinfo — без него LookupError в рантайме
         "--hidden-import", "encodings.idna",
         # sentry_sdk в графе транзитивный и его pyinstaller-хук падает — рантайму не нужен
