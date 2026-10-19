@@ -2,7 +2,7 @@
   "schema": "stitch.plugin/v2",
   "id": "stitch-devbox",
   "name": "Stitch Devbox",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "service": "devbox",
   "kind": "service",
   "engine": {
@@ -50,6 +50,13 @@
     }
   ],
   "changelog": [
+    {
+      "version": "0.3.1",
+      "date": "2026-10-20",
+      "changes": [
+        "gateway runs in frozen exe builds; overview gateway block reports call and error counters; nameless start applies the active profile; watchdog no longer races in-flight cli actions nor spams toolbox log lines"
+      ]
+    },
     {
       "version": "0.3.0",
       "date": "2026-10-19",
