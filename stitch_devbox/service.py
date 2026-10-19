@@ -169,10 +169,13 @@ def _gateway_block(payload: dict[str, Any]) -> dict[str, Any]:
     profile = _load_profile(env_map)
     exposed = profile.exposed_mcps if profile is not None else ()
     enabled = bool(exposed)
+    gateway_events = [event for event in rdm.ui.api.read_events() if event.get("kind") == "gateway"]
     return {
         "enabled": enabled,
         "up": enabled and bool(ports.get("gateway")),
         "port": rdm.tokens.gateway_port_for(profile) if profile is not None else None,
+        "calls": len(gateway_events),
+        "errors": sum(1 for event in gateway_events if event.get("status") == "error"),
         "exposed_mcps": [
             {"name": mcp.name, "mode": mcp.mode, "tools": list(mcp.tool_allow)} for mcp in exposed
         ],

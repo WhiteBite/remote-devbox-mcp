@@ -296,6 +296,7 @@ def _overview_fixture(
     if profile_body is not None:
         (projects / "alpha.json").write_text(json.dumps(profile_body), encoding="utf-8")
     monkeypatch.setenv("RDM_PROJECTS_DIR", str(projects))
+    monkeypatch.setenv("RDM_EVENTS_PATH", str(tmp_path / "events.jsonl"))
     monkeypatch.setattr(rdm.ui.api, "build_status", lambda port: {
         "env": {"ACTIVE_PROFILE": "alpha" if profile_body is not None else ""},
         "ports": dict(ports),
@@ -322,7 +323,7 @@ def test_overview_gateway_block_shape(monkeypatch, tmp_path):
 
     gateway = service.overview()["gateway"]
 
-    assert set(gateway) == {"enabled", "up", "port", "exposed_mcps"}
+    assert set(gateway) == {"enabled", "up", "port", "calls", "errors", "exposed_mcps"}
     assert gateway["enabled"] is True
     assert gateway["up"] is True
     assert gateway["port"] == 8794
@@ -365,6 +366,8 @@ def test_overview_gateway_block_disabled_without_exposed(monkeypatch, tmp_path):
         "enabled": False,
         "up": False,
         "port": None,
+        "calls": 0,
+        "errors": 0,
         "exposed_mcps": [],
     }
 
@@ -376,6 +379,8 @@ def test_overview_gateway_block_absent_profile(monkeypatch, tmp_path):
         "enabled": False,
         "up": False,
         "port": None,
+        "calls": 0,
+        "errors": 0,
         "exposed_mcps": [],
     }
 
@@ -947,3 +952,20 @@ def test_failed_action_completion_invalidates_status_cache(monkeypatch, tmp_path
 
     assert service.ingress_control("up")["accepted"] is True
     assert invalidated.wait(5)
+
+
+def test_gateway_block_counts_calls_and_errors(monkeypatch, tmp_path):
+    events = tmp_path / "events.jsonl"
+    rows = [
+        {"kind": "gateway", "status": "ok"},
+        {"kind": "gateway", "status": "denied"},
+        {"kind": "gateway", "status": "error"},
+        {"kind": "tool_call", "status": "ok"},
+    ]
+    events.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+    monkeypatch.setenv("RDM_EVENTS_PATH", str(events))
+
+    block = service._gateway_block({"env": {}, "ports": {}})
+
+    assert block["calls"] == 3
+    assert block["errors"] == 1
