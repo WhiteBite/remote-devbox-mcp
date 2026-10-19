@@ -372,13 +372,19 @@ def _start(name: str | None, with_preview: bool, with_watchdog: bool = True) -> 
         if rc:
             return rc
     else:
-        up = docker.compose("up", "-d", compose_file=COMPOSE_FILE)
-        if up.returncode != 0:
-            print(f"docker compose up не удался (rc={up.returncode}): {up.stderr.strip()[:200]}", file=sys.stderr)
-            return 1
-        env_map = envfile.EnvFile.load(ENV_FILE).as_map()
-        procman.stop_ingress()
-        procman.start_ingress(_ingress_env(env_map), HOME_DIR)
+        active = envfile.EnvFile.load(ENV_FILE).get("ACTIVE_PROFILE")
+        if active:
+            rc = apply_use(active)
+            if rc:
+                return rc
+        else:
+            up = docker.compose("up", "-d", compose_file=COMPOSE_FILE)
+            if up.returncode != 0:
+                print(f"docker compose up не удался (rc={up.returncode}): {up.stderr.strip()[:200]}", file=sys.stderr)
+                return 1
+            env_map = envfile.EnvFile.load(ENV_FILE).as_map()
+            procman.stop_ingress()
+            procman.start_ingress(_ingress_env(env_map), HOME_DIR)
     env_map = envfile.EnvFile.load(ENV_FILE).as_map()
     if not env_map.get("PUBLIC_PREVIEW_URL") and with_preview:
         docker.compose("--profile", "preview", "up", "-d", compose_file=COMPOSE_FILE)

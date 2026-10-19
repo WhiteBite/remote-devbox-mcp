@@ -16,6 +16,19 @@ START_DELAY = 15.0
 RECREATE_DELAY = 30.0
 
 
+def _host_services_stale(name: str) -> bool:
+    if procman.host_services_dead(name):
+        return True
+    if procman.host_services_recorded(name):
+        return False
+    path = profiles.find(name)
+    if path is None:
+        return False
+    from rdm import cli as _cli
+
+    return bool(_cli._with_runner(profiles.load(path), name).host_services)
+
+
 def _cli_action_in_flight() -> bool:
     try:
         with hostos.action_lock(procman.action_lock_path(), timeout=0.0):
@@ -98,7 +111,7 @@ def run(
                     fails = 0
                     if iterations is None:
                         time.sleep(RECREATE_DELAY)
-                if active and procman.host_services_dead(active):
+                if active and _host_services_stale(active):
                     if _cli_action_in_flight():
                         _log(log_path, "host services dead: cli action in flight, skip restart")
                     else:

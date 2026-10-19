@@ -106,6 +106,10 @@ def host_services_dead(profile_name: str) -> bool:
     return False
 
 
+def host_services_recorded(profile_name: str) -> bool:
+    return bool(_read_entries(_pids_path(profile_name)))
+
+
 def restart_host_services(
     profile: Profile,
     profile_name: str,
