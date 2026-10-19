@@ -81,6 +81,7 @@ def run(
         active = env_map.get("ACTIVE_PROFILE", "")
         fails = 0
         count = 0
+        toolbox_state = ""
         if iterations is None:
             time.sleep(START_DELAY)
         while iterations is None or count < iterations:
@@ -128,11 +129,15 @@ def run(
                             else:
                                 procman.stop_gateway()
                 ps = docker.compose_ps(compose_file)
-                if "unhealthy" in ps:
-                    _log(log_path, "toolbox unhealthy: recreate")
+                toolbox_state_now = (
+                    "unhealthy" if "unhealthy" in ps else ("missing" if "toolbox" not in ps else "ok")
+                )
+                if toolbox_state_now != toolbox_state:
+                    _log(log_path, f"toolbox state: {toolbox_state_now}")
+                    toolbox_state = toolbox_state_now
+                if toolbox_state_now == "unhealthy":
                     docker.compose("up", "-d", "--force-recreate", "toolbox", compose_file=compose_file)
-                elif "toolbox" not in ps:
-                    _log(log_path, "toolbox отсутствует: up -d")
+                elif toolbox_state_now == "missing":
                     docker.compose("up", "-d", "toolbox", compose_file=compose_file)
             except (OSError, ValueError) as error:
                 _log(log_path, f"watchdog error: {error}")
