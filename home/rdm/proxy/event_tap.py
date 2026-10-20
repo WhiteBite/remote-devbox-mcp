@@ -9,6 +9,7 @@ bytes to the client.
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable
 from typing import Any
 
@@ -106,6 +107,7 @@ def _response_meta(tee: TeeSocket) -> dict[str, Any] | None:
 
 
 def _emit(event: dict[str, Any]) -> None:
+    event.setdefault("ts", time.time())
     try:
         sink.emit(event)
     except Exception:

@@ -72,6 +72,7 @@ def test_bridge_tools_call_emits_request_and_response_events(tmp_path, monkeypat
         events = _events(events_path)
         assert [event["kind"] for event in events] == ["mcp_request", "mcp_response"]
         request_event = events[0]
+        assert isinstance(request_event["ts"], float)
         assert request_event["rpc_method"] == "tools/call"
         assert request_event["tool"] == "bash"
         assert request_event["rpc_id"] == 7
