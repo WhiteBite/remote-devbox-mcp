@@ -45,8 +45,9 @@ tcp_alive() { nc -z -w 3 "$1" "$2" >/dev/null 2>&1; }
 
 # $1 = смещение в списке. Пишет CONF, печатает "idx host port". 1 = никто не жив.
 probe_and_write() {
-  total=$(wc -l < "$LINKS")
-  i=$1; cnt=0
+  total=$(wc -l < "$LINKS" 2>/dev/null | tr -dc '0-9')
+  [ -n "$total" ] && [ "$total" -gt 0 ] || return 1
+  i=${1:-0}; cnt=0
   while [ "$cnt" -lt "$total" ]; do
     i=$(( i % total + 1 )); cnt=$((cnt + 1))
     link=$(sed -n "${i}p" "$LINKS")
