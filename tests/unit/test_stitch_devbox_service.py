@@ -969,16 +969,3 @@ def test_gateway_block_counts_calls_and_errors(monkeypatch, tmp_path):
 
     assert block["calls"] == 3
     assert block["errors"] == 1
-
-
-def test_cockpit_open_launches_the_browser(monkeypatch):
-    rdm = service._rdm()
-    monkeypatch.setattr(rdm.netprobe, "can_connect", lambda port: True)
-    monkeypatch.setattr(rdm.procman, "start_ui", lambda env_map, home_dir: 1)
-    monkeypatch.setattr(rdm.ui.auth, "write_bootstrap", lambda: "tok")
-    opened: list = []
-    monkeypatch.setattr(service.webbrowser, "open", lambda url: opened.append(url))
-
-    result = service.cockpit_open()
-
-    assert opened == [result["url"]]

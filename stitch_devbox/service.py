@@ -15,7 +15,6 @@ import os
 import subprocess
 import sys
 import time
-import webbrowser
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -547,9 +546,7 @@ def cockpit_open() -> dict[str, Any]:
             )
         time.sleep(0.2)
     token = auth.write_bootstrap()
-    url = f"http://127.0.0.1:{rdm.ports.COCKPIT_PORT}/?t={token}"
-    webbrowser.open(url)
-    return {"url": url}
+    return {"url": f"http://127.0.0.1:{rdm.ports.COCKPIT_PORT}/?t={token}"}
 
 
 def ingress_control(action: str = "up") -> dict[str, Any]:
