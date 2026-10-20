@@ -105,10 +105,11 @@ def permissions_pending() -> dict[str, Any]:
             bridge = "down"
         except BridgeError:
             bridge = "down"
-    known = {row["id"] for row in rows}
-    for row in _tap_permission_rows():
-        if row["id"] not in known:
-            rows.append(row)
+    if bridge != "up":
+        known = {row["id"] for row in rows}
+        for row in _tap_permission_rows():
+            if row["id"] not in known:
+                rows.append(row)
     return {"rows": rows, "bridge": bridge}
 
 

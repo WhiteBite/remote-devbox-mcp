@@ -116,7 +116,7 @@ def test_jobs_live_denied_propagates(bridge, monkeypatch):
         jobcontrol.jobs_live()
 
 
-def test_permissions_pending_unions_bridge_and_tap(events_path, bridge):
+def test_permissions_pending_bridge_up_drops_stale_tap(events_path, bridge):
     bridge.jobs = [
         {
             "job_id": "job-2",
@@ -164,18 +164,12 @@ def test_permissions_pending_unions_bridge_and_tap(events_path, bridge):
     payload = jobcontrol.permissions_pending()
 
     rows = {row["id"]: row for row in payload["rows"]}
-    assert set(rows) == {"perm-2", "perm-7"}
+    assert set(rows) == {"perm-2"}
     assert rows["perm-2"] == {
         "id": "perm-2",
         "tool": "edit",
         "summary": "edit: src/**",
         "startedAt": "2026-10-09T10:00:00Z",
-    }
-    assert rows["perm-7"] == {
-        "id": "perm-7",
-        "tool": "bash",
-        "summary": "bash",
-        "startedAt": _iso(now - 119),
     }
 
 
