@@ -16,6 +16,7 @@ import json
 import os
 import pathlib
 import tempfile
+import time
 from typing import Any
 
 from rdm.proxy import access_log
@@ -54,6 +55,7 @@ def default_events_path() -> pathlib.Path:
 
 
 def emit(event: dict[str, Any]) -> None:
+    event.setdefault("ts", time.time())
     try:
         clean = {
             key: redact_text(value) if isinstance(value, str) else value
