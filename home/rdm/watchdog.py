@@ -14,6 +14,8 @@ _HOME = app_dir()
 _DEFAULT_COMPOSE = str(_HOME / "docker-compose.yml")
 START_DELAY = 15.0
 RECREATE_DELAY = 30.0
+UNHEALTHY_RUNS_BEFORE_RECREATE = 3
+TOOLBOX_RECREATE_COOLDOWN_SECONDS = 120.0
 
 
 def _host_services_stale(name: str) -> bool:
@@ -82,6 +84,8 @@ def run(
         fails = 0
         count = 0
         toolbox_state = ""
+        unhealthy_runs = 0
+        last_toolbox_recreate = 0.0
         if iterations is None:
             time.sleep(START_DELAY)
         while iterations is None or count < iterations:
@@ -136,9 +140,17 @@ def run(
                     _log(log_path, f"toolbox state: {toolbox_state_now}")
                     toolbox_state = toolbox_state_now
                 if toolbox_state_now == "unhealthy":
-                    docker.compose("up", "-d", "--force-recreate", "toolbox", compose_file=compose_file)
+                    unhealthy_runs += 1
+                    cooled = time.monotonic() - last_toolbox_recreate > TOOLBOX_RECREATE_COOLDOWN_SECONDS
+                    if unhealthy_runs >= UNHEALTHY_RUNS_BEFORE_RECREATE and cooled:
+                        _log(log_path, "toolbox unhealthy: recreate")
+                        docker.compose("up", "-d", "--force-recreate", "toolbox", compose_file=compose_file)
+                        unhealthy_runs = 0
+                        last_toolbox_recreate = time.monotonic()
                 elif toolbox_state_now == "missing":
                     docker.compose("up", "-d", "toolbox", compose_file=compose_file)
+                else:
+                    unhealthy_runs = 0
             except (OSError, ValueError) as error:
                 _log(log_path, f"watchdog error: {error}")
             if iterations is None:
