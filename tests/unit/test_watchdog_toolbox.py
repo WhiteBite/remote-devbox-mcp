@@ -63,7 +63,8 @@ def test_toolbox_unhealthy_below_threshold_not_recreated(monkeypatch, tmp_path):
 
 def test_toolbox_unhealthy_recreated_after_threshold_with_cooldown(monkeypatch, tmp_path):
     calls = _arm_unhealthy(monkeypatch, tmp_path)
-    monkeypatch.setattr(watchdog, "TOOLBOX_RECREATE_COOLDOWN_SECONDS", 0.0)
+    # negative cooldown stays "cooled" even when monotonic does not tick between mock cycles
+    monkeypatch.setattr(watchdog, "TOOLBOX_RECREATE_COOLDOWN_SECONDS", -1.0)
 
     watchdog.run(
         {"ACTIVE_PROFILE": ""},
