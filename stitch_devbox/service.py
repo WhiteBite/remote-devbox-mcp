@@ -680,6 +680,85 @@ def agent_prompt(
     return {"prompt": prompt_text, "masked": not full, "ready": ready, "connection": connection}
 
 
+def connection_check() -> dict[str, Any]:
+    """Probe the public bridge endpoint end-to-end: initialize + tools/list."""
+    rdm = _rdm()
+    env_map = rdm.envfile.EnvFile.load(rdm.cli.ENV_FILE).as_map()
+    ingress_url = rdm.netprobe.ingress_url(env_map, rdm.cli.COMPOSE_FILE)
+    if not ingress_url:
+        return {"ok": False, "error": "ingress URL unknown"}
+    url = f"{ingress_url}/p/8787/mcp"
+    token = env_map.get("MCP_BEARER_TOKEN", "")
+    if not token:
+        return {"ok": False, "url": url, "error": "MCP_BEARER_TOKEN empty"}
+    return _probe_bridge(url, token)
+
+
+def _probe_bridge(url: str, token: str) -> dict[str, Any]:
+    import urllib.error
+    import urllib.request
+
+    started = time.monotonic()
+
+    def post(payload: dict[str, Any], session: str | None) -> dict[str, Any]:
+        data = json.dumps(payload).encode()
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream",
+            "Authorization": f"Bearer {token}",
+        }
+        if session:
+            headers["Mcp-Session-Id"] = session
+        request = urllib.request.Request(url, data=data, headers=headers, method="POST")
+        with urllib.request.urlopen(request, timeout=20) as response:
+            new_session = response.headers.get("Mcp-Session-Id")
+            if new_session:
+                headers["Mcp-Session-Id"] = new_session
+            body = response.read().decode("utf-8", "replace")
+        message = json.loads(body) if body.strip() else {}
+        if not isinstance(message, dict) or "error" in message:
+            return {"ok": False, "url": url, "error": f"bad response: {str(message)[:120]}"}
+        return {"ok": True, "session": new_session, "result": message.get("result", {})}
+
+    try:
+        init = post(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-06-18",
+                    "capabilities": {},
+                    "clientInfo": {"name": "stitch-connection-check", "version": "1.0"},
+                },
+            },
+            None,
+        )
+        if not init.get("ok"):
+            return init
+        session = init.get("session")
+        tools = post(
+            {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+            session,
+        )
+        if not tools.get("ok"):
+            return tools
+        tool_count = len(tools.get("result", {}).get("tools", []))
+        server_info = init.get("result", {}).get("serverInfo", {})
+        latency_ms = int((time.monotonic() - started) * 1000)
+        return {
+            "ok": True,
+            "url": url,
+            "tools": tool_count,
+            "server": str(server_info.get("name", "")),
+            "latency_ms": latency_ms,
+        }
+    except urllib.error.HTTPError as exc:
+        return {"ok": False, "url": url, "error": f"HTTP {exc.code}"}
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        return {"ok": False, "url": url, "error": str(exc)[:120]}
+
+
 def poll() -> dict[str, Any]:
     """Batch the five page-refresh reads into one RPC round-trip.
 

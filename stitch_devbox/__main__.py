@@ -214,6 +214,10 @@ def _handle_poll(params: dict[str, Any]) -> dict[str, Any]:
     return service.poll()
 
 
+def _handle_connection_check(params: dict[str, Any]) -> dict[str, Any]:
+    return service.connection_check()
+
+
 def _build_server() -> RpcPluginServer:
     server = RpcPluginServer()
     server.set_init_handler(_handle_init)
@@ -253,6 +257,7 @@ def _build_server() -> RpcPluginServer:
     server.register("handoff_block", _handle_handoff_block)
     server.register("agent_prompt", _handle_agent_prompt)
     server.register("poll", _handle_poll)
+    server.register("connection_check", _handle_connection_check)
     return server
 
 

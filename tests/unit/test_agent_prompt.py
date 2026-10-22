@@ -123,6 +123,33 @@ def test_agent_prompt_connection_masks_and_reveals(monkeypatch, tmp_path):
     assert len(revealed) == 64
 
 
+def test_connection_check_reports_tools(monkeypatch, tmp_path):
+    _fixture_env(monkeypatch, tmp_path, ingress_url="https://tunnel.example.com")
+
+    def fake_probe(url: str, token: str):
+        return {"ok": True, "url": url, "tools": 16, "server": "opencode-mcp-bridge", "latency_ms": 42}
+
+    monkeypatch.setattr(service, "_probe_bridge", fake_probe)
+
+    result = service.connection_check()
+
+    assert result == {
+        "ok": True,
+        "url": "https://tunnel.example.com/p/8787/mcp",
+        "tools": 16,
+        "server": "opencode-mcp-bridge",
+        "latency_ms": 42,
+    }
+
+
+def test_connection_check_without_ingress(monkeypatch, tmp_path):
+    _fixture_env(monkeypatch, tmp_path, ingress_url="")
+
+    result = service.connection_check()
+
+    assert result == {"ok": False, "error": "ingress URL unknown"}
+
+
 def test_agent_prompt_section_order_with_profile(monkeypatch, tmp_path):
     _fixture_env(monkeypatch, tmp_path, active_profile="demo")
     _fixture_profile(monkeypatch, tmp_path)
