@@ -97,9 +97,30 @@ def test_agent_prompt_payload_shape(monkeypatch, tmp_path):
 
     result = service.agent_prompt(task="Сделай X")
 
-    assert set(result) == {"prompt", "masked", "ready"}
+    assert set(result) == {"prompt", "masked", "ready", "connection"}
     assert set(result["ready"]) == {"profile", "bridge", "ingress", "runner", "gateway"}
     assert isinstance(result["prompt"], str)
+    connection = result["connection"]
+    assert set(connection) == {"endpoints", "auth", "ingress_url"}
+    assert connection["auth"] == {
+        "mode": "bearer",
+        "header": "Authorization",
+        "scheme": "Bearer",
+        "oauth": False,
+    }
+    assert [e["id"] for e in connection["endpoints"]] == ["bridge", "runner"]
+    assert connection["endpoints"][0]["url"].endswith("/p/8787/mcp")
+    assert connection["endpoints"][0]["token"] == "bbbb...bbbb"
+
+
+def test_agent_prompt_connection_masks_and_reveals(monkeypatch, tmp_path):
+    _fixture_env(monkeypatch, tmp_path)
+
+    masked = service.agent_prompt()["connection"]["endpoints"][0]["token"]
+    revealed = service.agent_prompt(reveal=True)["connection"]["endpoints"][0]["token"]
+
+    assert masked != revealed
+    assert len(revealed) == 64
 
 
 def test_agent_prompt_section_order_with_profile(monkeypatch, tmp_path):

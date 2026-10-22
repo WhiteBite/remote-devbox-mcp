@@ -670,7 +670,14 @@ def agent_prompt(
         "runner": bool(ports.get("runner")),
         "gateway": gateway_port is not None and bool(ports.get("gateway")),
     }
-    return {"prompt": prompt_text, "masked": not full, "ready": ready}
+    connection = rdm.prompt.connection_payload(
+        env_map,
+        ingress_url,
+        full,
+        runner_port=rdm.cli._runner_port(env_map),
+        gateway_port=gateway_port,
+    )
+    return {"prompt": prompt_text, "masked": not full, "ready": ready, "connection": connection}
 
 
 def poll() -> dict[str, Any]:

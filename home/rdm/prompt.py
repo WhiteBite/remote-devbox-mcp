@@ -4,6 +4,54 @@ from dataclasses import dataclass
 
 from .tokens import _REPO_URL, chat_block, mask
 
+
+def connection_payload(
+    env_map: dict[str, str],
+    ingress_url: str,
+    full: bool,
+    runner_port: int | None = None,
+    gateway_port: int | None = None,
+) -> dict[str, object]:
+    bridge_token = env_map.get("MCP_BEARER_TOKEN", "")
+    endpoints: list[dict[str, object]] = [
+        {
+            "id": "bridge",
+            "url": f"{ingress_url}/p/8787/mcp",
+            "token": bridge_token if full else mask(bridge_token),
+            "note": "project tools: read/edit/write/bash",
+        }
+    ]
+    if runner_port:
+        host_token = env_map.get("MCP_PUBLIC_TOKEN", "")
+        endpoints.append(
+            {
+                "id": "runner",
+                "url": f"{ingress_url}/p/{runner_port}/mcp",
+                "token": host_token if full else mask(host_token),
+                "note": "host commands: build/test/dev",
+            }
+        )
+    if gateway_port:
+        gateway_token = env_map.get("GATEWAY_TOKEN", "")
+        endpoints.append(
+            {
+                "id": "gateway",
+                "url": f"{ingress_url}/p/{gateway_port}/mcp",
+                "token": gateway_token if full else mask(gateway_token),
+                "note": "owner MCP servers via gateway",
+            }
+        )
+    return {
+        "endpoints": endpoints,
+        "auth": {
+            "mode": "bearer",
+            "header": "Authorization",
+            "scheme": "Bearer",
+            "oauth": False,
+        },
+        "ingress_url": ingress_url,
+    }
+
 _MODE_HUMAN = {
     "readonly": "readonly - только чтение и диагностика",
     "standard": "standard - мутации уходят на одобрение",
