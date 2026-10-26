@@ -152,6 +152,8 @@ def _iso(ts: object) -> str:
 
 
 def _port_card(card_id: str, state: object) -> tuple[str, str, str, str, str | None]:
+    if state is None:
+        return (card_id, card_id, "off", "warn", None)
     up = bool(state)
     return (
         card_id,
@@ -448,7 +450,7 @@ def _queue_submit(fn_name: str, *args: Any, payload_key: str = "") -> dict[str, 
         # cli entry points print human output; keep the RPC stdout clean.
         buffer = io.StringIO()
         try:
-            with contextlib.redirect_stdout(buffer):
+            with contextlib.redirect_stdout(buffer), contextlib.redirect_stderr(buffer):
                 rc = int(fn(*args))
         finally:
             # actions mutate host state; the TTL caches must not keep serving

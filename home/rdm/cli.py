@@ -26,7 +26,7 @@ LOG_ROOT = hostos.tempdir() / "rdm-host"
 MANIFEST_PATH = LOG_ROOT / "rdm-manifest.json"
 BRIDGE_PORT = ports.BRIDGE_PORT
 INGRESS_PORT = 8799
-_NAME_RE = re.compile(r"[A-Za-z0-9._\-]+")
+_NAME_RE = re.compile(r"[\w.\-]+")
 _COCKPIT_WAIT_SECONDS = 5.0
 _LOCK_WAIT_SECONDS = 10.0
 _LOCK_LOCAL = threading.local()
@@ -193,7 +193,7 @@ def _emit_agent_artifacts(profile: profiles.Profile, name: str, allowed: str) ->
             input=profile.toolchain + "\n",
         )
         if result.returncode != 0:
-            print(f"refs тулчейнов не записаны (rc={result.returncode}): {result.stderr.strip()[:200]}", file=sys.stderr)
+            print(f"refs тулчейнов не записаны (rc={result.returncode}): {result.stderr.strip()}", file=sys.stderr)
             return False
     agents = render.render_agents_md(
         profile, name, profile.toolchain, profile.mode, allowed, profiles.available()
@@ -203,7 +203,7 @@ def _emit_agent_artifacts(profile: profiles.Profile, name: str, allowed: str) ->
         input=agents,
     )
     if result.returncode != 0:
-        print(f"/agent/AGENTS.md не записан (rc={result.returncode}): {result.stderr.strip()[:200]}", file=sys.stderr)
+        print(f"/agent/AGENTS.md не записан (rc={result.returncode}): {result.stderr.strip()}", file=sys.stderr)
         return False
     workspace = profile.project_dir.replace("\\", "/")
     result = docker.run(
@@ -212,7 +212,7 @@ def _emit_agent_artifacts(profile: profiles.Profile, name: str, allowed: str) ->
         input=agents,
     )
     if result.returncode != 0:
-        print(f"/workspace/.devbox/AGENTS.md не записан (rc={result.returncode}): {result.stderr.strip()[:200]}", file=sys.stderr)
+        print(f"/workspace/.devbox/AGENTS.md не записан (rc={result.returncode}): {result.stderr.strip()}", file=sys.stderr)
     return True
 
 
@@ -249,7 +249,7 @@ def apply_use(name: str) -> int:
         print(f"нет профиля {name}", file=sys.stderr)
         return 1
     if not _NAME_RE.fullmatch(name):
-        print(f"имя профиля {name!r}: допустимы только [A-Za-z0-9._-]", file=sys.stderr)
+        print(f"имя профиля {name!r}: допустимы только буквы, цифры, точка, дефис, подчёркивание", file=sys.stderr)
         return 1
     try:
         profile = profiles.load(path)
@@ -296,7 +296,7 @@ def apply_use(name: str) -> int:
     procman.start_ingress(_ingress_env(env_map), HOME_DIR)
     up = docker.compose("up", "-d", "--force-recreate", "toolbox", compose_file=COMPOSE_FILE)
     if up.returncode != 0:
-        print(f"docker compose up не удался (rc={up.returncode}): {up.stderr.strip()[:200]}", file=sys.stderr)
+        print(f"docker compose up не удался (rc={up.returncode}): {up.stderr.strip()}", file=sys.stderr)
         return 1
     if not _emit_agent_artifacts(profile, name, allowed_text):
         return 1
@@ -380,7 +380,7 @@ def _start(name: str | None, with_preview: bool, with_watchdog: bool = True) -> 
         else:
             up = docker.compose("up", "-d", compose_file=COMPOSE_FILE)
             if up.returncode != 0:
-                print(f"docker compose up не удался (rc={up.returncode}): {up.stderr.strip()[:200]}", file=sys.stderr)
+                print(f"docker compose up не удался (rc={up.returncode}): {up.stderr.strip()}", file=sys.stderr)
                 return 1
             env_map = envfile.EnvFile.load(ENV_FILE).as_map()
             procman.stop_ingress()
@@ -415,7 +415,7 @@ def _preview(origin: str | None) -> int:
         return 1
     up = docker.compose("--profile", "preview", "up", "-d", "--force-recreate", "cloudflared-preview", compose_file=COMPOSE_FILE)
     if up.returncode != 0:
-        print(f"preview-туннель не поднялся (rc={up.returncode}): {up.stderr.strip()[:200]}", file=sys.stderr)
+        print(f"preview-туннель не поднялся (rc={up.returncode}): {up.stderr.strip()}", file=sys.stderr)
         return 1
     url = _preview_url(env_map)
     print(f"PREVIEW={url}" if url else "preview поднимается; повтори `devbox.py preview` через пару секунд")
@@ -429,7 +429,7 @@ def _issue_tokens() -> int:
     env.write(ENV_FILE)
     up = docker.compose("up", "-d", "--force-recreate", "toolbox", compose_file=COMPOSE_FILE)
     if up.returncode != 0:
-        print(f"docker compose up не удался (rc={up.returncode}): {up.stderr.strip()[:200]}", file=sys.stderr)
+        print(f"docker compose up не удался (rc={up.returncode}): {up.stderr.strip()}", file=sys.stderr)
         return 1
     env_map = env.as_map()
     active = env_map.get("ACTIVE_PROFILE")
@@ -554,7 +554,7 @@ def _full_down() -> int:
     _stop_host_side()
     result = docker.compose("--profile", "preview", "down", compose_file=COMPOSE_FILE)
     if result.returncode != 0:
-        print(f"docker compose down не удался (rc={result.returncode}): {result.stderr.strip()[:200]}", file=sys.stderr)
+        print(f"docker compose down не удался (rc={result.returncode}): {result.stderr.strip()}", file=sys.stderr)
         return 1
     print("стек снят: docker compose down (включая профиль preview)")
     return 0

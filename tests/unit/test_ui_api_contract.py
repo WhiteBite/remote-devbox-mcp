@@ -91,8 +91,9 @@ def test_overview_rows_match_frozen_contract(monkeypatch):
     assert by_id["bridge"]["value"] == "down"
     assert by_id["bridge"]["tone"] == "down"
     assert by_id["bridge"]["hint"] == "stitch-devbox.hint.bridge"
-    assert by_id["runner"]["tone"] == "down"
-    assert by_id["runner"]["hint"] == "stitch-devbox.hint.runner"
+    assert by_id["runner"]["value"] == "off"
+    assert by_id["runner"]["tone"] == "warn"
+    assert "hint" not in by_id["runner"]
     assert by_id["watchdog"]["value"] == "off"
     assert by_id["watchdog"]["tone"] == "warn"
     assert by_id["watchdog"]["hint"] == "stitch-devbox.hint.watchdog"

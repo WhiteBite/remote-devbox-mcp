@@ -279,7 +279,7 @@ def test_overview_rows_carry_id_tone_and_i18n_titles(monkeypatch):
     assert rows[1]["value"] == "up"
     assert rows[2]["value"] == "down"
     assert rows[5]["value"] == "2/3"
-    assert [row["tone"] for row in rows] == ["ok", "ok", "down", "down", "warn", "ok"]
+    assert [row["tone"] for row in rows] == ["ok", "ok", "down", "warn", "warn", "ok"]
     assert rows[2]["hint"] == "stitch-devbox.hint.bridge"
 
 
