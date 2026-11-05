@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -7,6 +8,7 @@ import pytest
 from rdm.prompt import CLIENTS
 
 _REGISTRY_PATH = Path(__file__).resolve().parents[1] / "data" / "harness-kit-registry.json"
+_LOCK_PATH = _REGISTRY_PATH.parent / "harness-kit.lock"
 
 _CLIENT_TO_HARNESS = {
     "claude-code": "claude",
@@ -30,6 +32,12 @@ def _mcp_block(client: str) -> dict:
     mcp = harness.get("mcp")
     assert mcp is not None, f"{client}: registry row has no mcp block"
     return mcp
+
+
+def test_vendored_registry_matches_the_lock():
+    lock = json.loads(_LOCK_PATH.read_text(encoding="utf-8"))
+    data = _REGISTRY_PATH.read_bytes().replace(b"\r\n", b"\n")
+    assert hashlib.sha256(data).hexdigest() == lock["files"]["registry/harnesses.json"]
 
 
 def test_every_client_has_a_registry_mapping():
