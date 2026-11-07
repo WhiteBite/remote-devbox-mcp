@@ -1,12 +1,13 @@
 # _vendored_from: autoreg/plugin/rpc.py — do not edit; regenerate via stitch_plugin_tools dev-install
 
 from __future__ import annotations
-_VENDOR_SOURCE_SHA256 = "c81012eb1018862413b9c44b0ec9d4d00a87c1fa30a95e9fbdfe8f16b9c43dff"
+_VENDOR_SOURCE_SHA256 = "1a0bd06eaf3e9e5c1aedd29ca59e9237d921e34fc3c2f887157c505db7262b69"
 
 import json
 import sys
 import threading
 import time
+import traceback
 from typing import Any
 
 
@@ -42,6 +43,14 @@ class RpcCallError(RpcError):
         super().__init__(f"[{code}] {message}")
 
 
+class PluginInputError(Exception):
+    """Raised by a plugin handler when caller-supplied params are invalid.
+
+    The server classifies it as ``kind="validation"`` in the JSON-RPC
+    error ``data`` envelope, distinct from an unexpected ``plugin_bug``.
+    """
+
+
 class RpcPluginServer:
     """Stdio JSON-RPC 2.0 server for service-plugin entry points.
 
@@ -61,6 +70,8 @@ class RpcPluginServer:
     names return a JSON-RPC error (code -32601, method not found).
     Handler exceptions are caught and returned as JSON-RPC error
     responses (code -32603, internal error) — the server never crashes.
+    The error ``data`` carries ``{"kind", "traceback"}``: ``validation``
+    for :class:`PluginInputError`, ``plugin_bug`` for anything else.
 
     Reverse RPC: plugin→host requests are sent via ``call_host(method,
     params)`` from inside a handler.  The server writes a JSON-RPC
@@ -571,8 +582,18 @@ class RpcPluginServer:
                     return _error(-32601, f"method not found: {name}")
                 return handler(args)
             return _error(-32601, f"unknown method: {method}")
+        except PluginInputError as exc:
+            return _error(
+                _ERR_INTERNAL,
+                str(exc),
+                {"kind": "validation", "traceback": traceback.format_exc()},
+            )
         except Exception as exc:  # noqa: BLE001 — server never crashes
-            return _error(_ERR_INTERNAL, str(exc))
+            return _error(
+                _ERR_INTERNAL,
+                str(exc),
+                {"kind": "plugin_bug", "traceback": traceback.format_exc()},
+            )
 
     def _send_response(self, rid: Any, result: Any) -> None:
         """Write one JSON-RPC response line to the pinned output stream.
