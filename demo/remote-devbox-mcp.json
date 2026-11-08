@@ -1,0 +1,33 @@
+{
+  "theme": "shell",
+  "windowTitle": "agent bash via bridge",
+  "takeaway": "No JDK in the sandbox: the bridge runs the build on your machine",
+
+  "before": {
+    "caption": "without devbox",
+    "sessionTitle": "# run the project's tests",
+    "blocks": [
+      { "type": "user", "text": "run the project's tests" },
+      { "type": "prose", "text": "I'll run the test suite." },
+      { "type": "diff", "lines": [
+        { "type": "del", "text": "bash: ./gradlew: No such file or directory" },
+        { "type": "del", "text": "no JDK or Gradle in this sandbox" }
+      ] },
+      { "type": "status", "text": "the build can't run here" }
+    ]
+  },
+
+  "after": {
+    "caption": "with devbox",
+    "sessionTitle": "# run the project's tests",
+    "blocks": [
+      { "type": "user", "text": "run the project's tests" },
+      { "type": "prose", "text": "I'll run the tests on the devbox." },
+      { "type": "diff", "lines": [
+        { "type": "add", "text": "BUILD SUCCESSFUL in 42s" },
+        { "type": "add", "text": "18 tests passed, 0 failed" }
+      ] },
+      { "type": "done", "text": "tests green on the devbox" }
+    ]
+  }
+}
