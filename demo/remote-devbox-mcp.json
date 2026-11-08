@@ -1,6 +1,6 @@
 {
-  "theme": "opencode",
-  "windowTitle": "run the project's tests",
+  "theme": "shell",
+  "windowTitle": "agent bash via bridge",
   "takeaway": "No JDK in the sandbox: the bridge runs the build on your machine",
 
   "before": {
