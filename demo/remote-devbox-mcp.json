@@ -1,41 +1,32 @@
 {
   "theme": "opencode",
   "windowTitle": "run the project's tests",
-  "arrowCaption": "remote-devbox-mcp bridge",
-  "statusLeft": "esc interrupt",
-  "statusRight": "ctrl+t variants  tab agents  ctrl+p commands",
+  "takeaway": "No JDK in the sandbox: the bridge runs the build on your machine",
+
   "before": {
     "caption": "without devbox",
     "sessionTitle": "# run the project's tests",
-    "usage": "8.2k  14%  ($0.11)",
-    "agentName": "Build",
-    "agentModel": "· claude-opus-4-5",
-    "inputAgent": "Build",
-    "inputModel": "Claude Opus 4.5",
-    "inputProvider": "OpenCode Zen",
     "blocks": [
       { "type": "user", "text": "run the project's tests" },
       { "type": "prose", "text": "I'll run the test suite." },
-      { "type": "tool", "kind": "call", "text": "bash ./gradlew test" },
-      { "type": "status", "text": "bash: ./gradlew: No such file or directory" },
-      { "type": "prose", "text": "No JDK or Gradle in this sandbox — the project can't be built here." }
+      { "type": "diff", "lines": [
+        { "type": "del", "text": "bash: ./gradlew: No such file or directory" },
+        { "type": "del", "text": "no JDK or Gradle in this sandbox" }
+      ] },
+      { "type": "status", "text": "the build can't run here" }
     ]
   },
+
   "after": {
     "caption": "with devbox",
     "sessionTitle": "# run the project's tests",
-    "usage": "9.1k  16%  ($0.13)",
-    "agentName": "Build",
-    "agentModel": "· claude-opus-4-5",
-    "inputAgent": "Build",
-    "inputModel": "Claude Opus 4.5",
-    "inputProvider": "OpenCode Zen",
     "blocks": [
       { "type": "user", "text": "run the project's tests" },
-      { "type": "prose", "text": "I'll run the test suite on the devbox." },
-      { "type": "tool", "kind": "call", "text": "bash {\"command\":\"./gradlew test\"}" },
-      { "type": "status", "text": "job 4f2a · awaiting_permission → once" },
-      { "type": "prose", "text": "BUILD SUCCESSFUL in 42s — 18 tests passed, 0 failed." },
+      { "type": "prose", "text": "I'll run the tests on the devbox." },
+      { "type": "diff", "lines": [
+        { "type": "add", "text": "BUILD SUCCESSFUL in 42s" },
+        { "type": "add", "text": "18 tests passed, 0 failed" }
+      ] },
       { "type": "done", "text": "tests green on the devbox" }
     ]
   }
