@@ -10,10 +10,9 @@
       { "type": "user", "text": "run the project's tests" },
       { "type": "prose", "text": "I'll run the test suite." },
       { "type": "diff", "lines": [
-        { "type": "del", "text": "bash: ./gradlew: No such file or directory" },
-        { "type": "del", "text": "no JDK or Gradle in this sandbox" }
+        { "type": "del", "text": "bash: ./gradlew: No such file or directory" }
       ] },
-      { "type": "status", "text": "the build can't run here" }
+      { "type": "status", "text": "no JDK or Gradle in this sandbox - can't build" }
     ]
   },
 
@@ -24,10 +23,11 @@
       { "type": "user", "text": "run the project's tests" },
       { "type": "prose", "text": "I'll run the tests on the devbox." },
       { "type": "diff", "lines": [
-        { "type": "add", "text": "BUILD SUCCESSFUL in 42s" },
-        { "type": "add", "text": "18 tests passed, 0 failed" }
+        { "type": "add", "text": "> Task :test" },
+        { "type": "add", "text": "BUILD SUCCESSFUL in 42s" }
       ] },
-      { "type": "done", "text": "tests green on the devbox" }
+      { "type": "status", "text": "tests green on the devbox" },
+      { "type": "done", "text": "exit 0" }
     ]
   }
 }
