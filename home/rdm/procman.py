@@ -5,12 +5,13 @@ from __future__ import annotations
 import os
 import pathlib
 import shlex
+import shutil
 import sys
 
 from rdm import hostos
 from rdm.freeze import spawn_entry
 from rdm.ports import COCKPIT_PORT, DEFAULT_GATEWAY_PORT
-from rdm.profiles import Profile
+from rdm.profiles import HostService, Profile
 from rdm.ui import auth
 
 DEFAULT_PROXY_ARGV = spawn_entry("proxy", "--mode", "target")
@@ -45,6 +46,28 @@ def _pids_path(profile_name: str) -> pathlib.Path:
 def _argv(cmd: str) -> list[str]:
     # posix=False: бэкслеши Windows-путей выживают, кавычки срезаем после сплита
     return [token.strip('"') for token in shlex.split(cmd, posix=False)]
+
+
+def _service_argv(svc: HostService) -> list[str]:
+    """Run a service that declares deps in its own cached env via uv.
+
+    Keeps a tool pinned to a different dependency major (e.g. mcp<2) off the
+    shared interpreter, so an app-side bump cannot break it.
+    """
+    argv = _argv(svc.cmd)
+    if not (svc.deps or svc.requirements):
+        return argv
+    uv = shutil.which("uv")
+    if uv is None:
+        raise OSError("uv not found on PATH (host_service declares deps)")
+    wrapped = [uv, "run", "--no-project"]
+    if svc.python:
+        wrapped += ["--python", svc.python]
+    for dep in svc.deps:
+        wrapped += ["--with", dep]
+    if svc.requirements:
+        wrapped += ["--with-requirements", svc.requirements]
+    return [*wrapped, *argv]
 
 
 def _write_entries(path: pathlib.Path, entries: list[tuple[int, float | None, str]]) -> None:
@@ -123,7 +146,11 @@ def restart_host_services(
     entries: list[tuple[int, float | None, str]] = []
     report: list[str] = []
     for svc in profile.host_services:
-        argv = _argv(svc.cmd)
+        try:
+            argv = _service_argv(svc)
+        except OSError as error:
+            report.append(f"host :{svc.port} FAILED: {error}")
+            continue
         marker = " ".join(argv)
         bearer = svc.auth == "bearer"
         for busy_port in ([svc.port, svc.port + 1] if bearer else [svc.port]):

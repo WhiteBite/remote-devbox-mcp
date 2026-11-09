@@ -5,6 +5,7 @@ import sys
 import tempfile
 import time
 
+import pytest
 from rdm import hostos, netprobe, procman
 from rdm.profiles import ExposedMcp, HostService, Profile
 
@@ -327,3 +328,40 @@ def test_start_gateway_frees_port_held_by_orphan_gateway(monkeypatch, tmp_path):
         procman.stop_gateway()
     finally:
         hostos.kill_tree(orphan)
+
+
+def test_service_argv_passthrough_without_deps():
+    svc = HostService(port=8792, cmd="python tools/x/server.py")
+    assert procman._service_argv(svc) == ["python", "tools/x/server.py"]
+
+
+def test_service_argv_wraps_deps_with_uv(monkeypatch):
+    monkeypatch.setattr(procman.shutil, "which", lambda name: "C:/tools/uv.exe")
+    svc = HostService(
+        port=8792,
+        auth="bearer",
+        cwd="C:/proj",
+        cmd="python tools/x/server.py",
+        deps=("mcp<2", "websockets"),
+        python="3.12",
+    )
+    assert procman._service_argv(svc) == [
+        "C:/tools/uv.exe",
+        "run",
+        "--no-project",
+        "--python",
+        "3.12",
+        "--with",
+        "mcp<2",
+        "--with",
+        "websockets",
+        "python",
+        "tools/x/server.py",
+    ]
+
+
+def test_service_argv_requires_uv(monkeypatch):
+    monkeypatch.setattr(procman.shutil, "which", lambda name: None)
+    svc = HostService(port=8792, cmd="python x.py", deps=("mcp<2",))
+    with pytest.raises(OSError):
+        procman._service_argv(svc)

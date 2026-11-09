@@ -74,6 +74,9 @@ class HostService:
     auth: str = ""
     cwd: str = ""
     cmd: str = ""
+    deps: tuple[str, ...] = ()
+    requirements: str = ""
+    python: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -156,7 +159,15 @@ _TOP_KEYS = {
     "gatewayport": "gateway_port",
     "exposedmcps": "exposed_mcps",
 }
-_HOST_KEYS = {"port": "port", "auth": "auth", "cwd": "cwd", "cmd": "cmd"}
+_HOST_KEYS = {
+    "port": "port",
+    "auth": "auth",
+    "cwd": "cwd",
+    "cmd": "cmd",
+    "deps": "deps",
+    "requirements": "requirements",
+    "python": "python",
+}
 _RUNNER_KEYS = {
     "name": "name",
     "cmd": "cmd",
@@ -237,6 +248,9 @@ def _host_service(raw: object) -> HostService:
         auth=_str(values, "auth"),
         cwd=_str(values, "cwd"),
         cmd=_str(values, "cmd"),
+        deps=tuple(str(item) for item in _seq(values, "deps")),
+        requirements=_str(values, "requirements"),
+        python=_str(values, "python"),
     )
 
 

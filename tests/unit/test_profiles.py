@@ -378,3 +378,31 @@ def test_gateway_data_tables_locked():
     assert not (NETWORK_EGRESS_SERVERS & SECRET_TOUCHING_SERVERS)
     assert DEFAULT_DENY_SERVERS <= SECRET_TOUCHING_SERVERS
     assert ARG_CONSTRAINTS["codegraph"]["projectPath"] == "project_dir"
+
+
+def test_load_host_service_isolated_deps(tmp_path):
+    path = tmp_path / "profile.json"
+    path.write_text(
+        json.dumps(
+            {
+                "project_dir": "d:/work/x",
+                "host_services": [
+                    {
+                        "port": 8792,
+                        "auth": "bearer",
+                        "cwd": "d:/work/x",
+                        "cmd": "python tools/supervisor/server.py",
+                        "deps": ["mcp<2", "websockets"],
+                        "python": "3.12",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    service = load(path).host_services[0]
+
+    assert service.deps == ("mcp<2", "websockets")
+    assert service.python == "3.12"
+    assert service.requirements == ""
