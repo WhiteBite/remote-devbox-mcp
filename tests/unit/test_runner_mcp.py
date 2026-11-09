@@ -256,6 +256,33 @@ def test_main_registers_kill_tool_for_background_script(monkeypatch, tmp_path):
     assert "run_script_shots_kill" in registered
 
 
+def test_main_builds_real_mcp_server(monkeypatch, tmp_path):
+    main = _main()
+    cfg = tmp_path / "runner.json"
+    cfg.write_text(
+        json.dumps({
+            "profile": "p",
+            "cwd": str(tmp_path),
+            "commands": [],
+            "scripts": [{"name": "shots", "cmd": ["python", "x.py"]}],
+        }),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("RUNNER_CONFIG", str(cfg))
+    monkeypatch.setenv("TEMP", str(tmp_path))
+    monkeypatch.setenv("MCP_HTTP_PORT", "8797")
+    captured = {}
+
+    def fake_run(self, transport="stdio", **kwargs):
+        captured["transport"] = transport
+        captured["host"] = kwargs.get("host")
+        captured["port"] = kwargs.get("port")
+
+    monkeypatch.setattr(main.MCPServer, "run", fake_run)
+    main.main()
+    assert captured == {"transport": "streamable-http", "host": "127.0.0.1", "port": 8797}
+
+
 def test_audit_chain_serializes_concurrent_writers(tmp_path):
     def worker():
         for _ in range(20):

@@ -24,9 +24,9 @@ import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
-try:
+try:  # mcp 1.x
     from mcp.server.fastmcp import FastMCP as MCPServer
-except ImportError:  # mcp <1.2 layout
+except ImportError:  # mcp 2.x
     from mcp.server.mcpserver import MCPServer
 
 from rdm import childproc, hostos
@@ -222,11 +222,7 @@ def main() -> None:
         default_timeout=int(cfg.get("timeout", 900)),
     )
     ctx.run_dir.mkdir(parents=True, exist_ok=True)
-    mcp = MCPServer(
-        f"devbox-runner-{ctx.profile}",
-        host="127.0.0.1",
-        port=int(os.environ.get("MCP_HTTP_PORT", "8797")),
-    )
+    mcp = MCPServer(f"devbox-runner-{ctx.profile}")
 
     @mcp.tool()
     def runner_list() -> str:
@@ -250,7 +246,11 @@ def main() -> None:
             _kill_fn = _make_kill_tool("script:" + _sc["name"], ctx)
             mcp.add_tool(_kill_fn, name=_kill_fn.__name__)
 
-    mcp.run(transport="streamable-http")
+    mcp.run(
+        transport="streamable-http",
+        host="127.0.0.1",
+        port=int(os.environ.get("MCP_HTTP_PORT", "8797")),
+    )
 
 
 if __name__ == "__main__":
