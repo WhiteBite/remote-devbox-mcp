@@ -58,15 +58,16 @@ def test_adopt_real_home_restores_temp_and_home_vars(monkeypatch):
 
 
 @pytest.mark.skipif(os.name != "nt", reason="registry-backed env adoption is Windows-only")
-def test_adopt_real_home_skips_when_host_driver(monkeypatch):
+def test_adopt_real_home_runs_despite_host_driver(monkeypatch):
     monkeypatch.setattr(service, "_real_user_env", lambda: dict(_REAL_ENV), raising=False)
     monkeypatch.setattr(service, "_host_capabilities", frozenset({"host_driver"}), raising=False)
     _sandbox_env(monkeypatch)
 
     service._adopt_real_home()
 
-    assert os.environ["TEMP"] == r"C:\sandbox\temp"
-    assert os.environ["USERPROFILE"] == r"C:\sandbox\home"
+    assert os.environ["HOME"] == r"C:\Users\real"
+    assert os.environ["USERPROFILE"] == r"C:\Users\real"
+    assert os.environ["TEMP"] == r"C:\Users\real\AppData\Local\Temp"
 
 
 def test_set_host_capabilities_stores_supported(monkeypatch):

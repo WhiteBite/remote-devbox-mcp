@@ -79,12 +79,10 @@ def _adopt_real_home() -> None:
     (``~/.devbox/projects``) relative to ``Path.home()`` and events, pidfiles
     and log sources relative to the scoped temp, so under the sandbox the
     real stack is invisible and stop actions are no-ops.  Recover the real
-    values from the OS (registry on Windows, passwd on POSIX).  Hosts that
-    advertise the ``host_driver`` capability in the init handshake do not
-    scope this plugin's environment; the shim is skipped for them.
+    values from the OS (registry on Windows, passwd on POSIX).  The host
+    scopes HOME/USERPROFILE for every plugin; ``host_driver`` opens only the
+    real TEMP/TMP, never the profile, so this recovery always runs.
     """
-    if "host_driver" in _host_capabilities:
-        return
     real = _real_user_env()
     profile = real.get("USERPROFILE") or real.get("HOME")
     if not profile or Path(profile) == Path.home():
