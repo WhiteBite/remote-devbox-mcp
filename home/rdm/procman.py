@@ -7,6 +7,7 @@ import pathlib
 import shlex
 import shutil
 import sys
+import time
 
 from rdm import hostos
 from rdm.freeze import spawn_entry
@@ -68,6 +69,32 @@ def _service_argv(svc: HostService) -> list[str]:
     if svc.requirements:
         wrapped += ["--with-requirements", svc.requirements]
     return [*wrapped, *argv]
+
+
+_START_GRACE_SECONDS = 1.5
+_TAIL_LINES = 6
+
+
+def _stderr_tail(path: pathlib.Path, lines: int = _TAIL_LINES) -> str:
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+    return " | ".join(text.splitlines()[-lines:])
+
+
+def _startup_failures(spawned: list[tuple[int, float | None, str, pathlib.Path]]) -> list[str]:
+    """Report services that died right after spawn, with their stderr, instead of skipping silently."""
+    if not spawned:
+        return []
+    time.sleep(_START_GRACE_SECONDS)
+    problems: list[str] = []
+    for pid, created, marker, err_path in spawned:
+        if _owned(pid, created, marker):
+            continue
+        tail = _stderr_tail(err_path)
+        problems.append(f"FAILED (exited): {marker[:80]}" + (f" - {tail[:400]}" if tail else ""))
+    return problems
 
 
 def _write_entries(path: pathlib.Path, entries: list[tuple[int, float | None, str]]) -> None:
@@ -144,6 +171,7 @@ def restart_host_services(
     log_dir = _pids_path(profile_name).parent
     log_dir.mkdir(parents=True, exist_ok=True)
     entries: list[tuple[int, float | None, str]] = []
+    spawned: list[tuple[int, float | None, str, pathlib.Path]] = []
     report: list[str] = []
     for svc in profile.host_services:
         try:
@@ -167,7 +195,9 @@ def restart_host_services(
         except OSError as error:
             report.append(f"host :{svc.port} FAILED: {error}")
             continue
-        entries.append((pid, hostos.create_time(pid), marker))
+        created = hostos.create_time(pid)
+        entries.append((pid, created, marker))
+        spawned.append((pid, created, marker, log_dir / f"{profile_name}-svc{svc.port}.err"))
         if bearer:
             proxy = proxy_argv if proxy_argv is not None else DEFAULT_PROXY_ARGV
             proxy_env = {
@@ -188,11 +218,14 @@ def restart_host_services(
             except OSError as error:
                 report.append(f"host :{svc.port} pid {pid} proxy FAILED: {error}")
                 continue
-            entries.append((proxy_pid, hostos.create_time(proxy_pid), " ".join(proxy)))
+            proxy_created = hostos.create_time(proxy_pid)
+            entries.append((proxy_pid, proxy_created, " ".join(proxy)))
+            spawned.append((proxy_pid, proxy_created, " ".join(proxy), log_dir / f"{profile_name}-pxy{svc.port}.err"))
             report.append(f"host :{svc.port} pid {pid} proxy pid {proxy_pid}")
         else:
             report.append(f"host :{svc.port} pid {pid}")
     _write_entries(_pids_path(profile_name), entries)
+    report.extend(_startup_failures(spawned))
     return report
 
 

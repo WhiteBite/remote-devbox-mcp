@@ -365,3 +365,22 @@ def test_service_argv_requires_uv(monkeypatch):
     svc = HostService(port=8792, cmd="python x.py", deps=("mcp<2",))
     with pytest.raises(OSError):
         procman._service_argv(svc)
+
+
+def test_startup_failures_reports_dead_with_stderr(monkeypatch, tmp_path):
+    monkeypatch.setattr(procman, "_START_GRACE_SECONDS", 0)
+    err = tmp_path / "svc.err"
+    err.write_text("ModuleNotFoundError: boom\n", encoding="utf-8")
+    report = procman._startup_failures([(999999, None, "python gone.py", err)])
+    assert any("FAILED (exited)" in line and "boom" in line for line in report)
+
+
+def test_startup_failures_silent_for_live(monkeypatch, tmp_path):
+    monkeypatch.setattr(procman, "_START_GRACE_SECONDS", 0)
+    alive = hostos.spawn([sys.executable, "-c", SLEEP_60, "svc-marker"])
+    try:
+        err = tmp_path / "svc.err"
+        err.write_text("", encoding="utf-8")
+        assert procman._startup_failures([(alive, hostos.create_time(alive), "svc-marker", err)]) == []
+    finally:
+        hostos.kill_tree(alive)
