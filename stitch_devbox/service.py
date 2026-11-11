@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 import subprocess
 import sys
 import time
@@ -162,6 +163,14 @@ def _port_card(card_id: str, state: object) -> tuple[str, str, str, str, str | N
     )
 
 
+def _runner_card(ports: dict[str, Any], runner_port: int | None) -> tuple[str, str, str, str, str | None]:
+    if runner_port is None:
+        return ("runner", "runner", "off", "ok", None)
+    if ports.get("runner"):
+        return ("runner", "runner", "up", "ok", None)
+    return ("runner", "runner", "down", "down", "stitch-devbox.hint.runner")
+
+
 def _gateway_block(payload: dict[str, Any]) -> dict[str, Any]:
     rdm = _rdm()
     env_map = payload.get("env", {}) or {}
@@ -204,7 +213,7 @@ def overview() -> dict[str, Any]:
         ),
         _port_card("ingress", ports.get("ingress")),
         _port_card("bridge", ports.get("bridge")),
-        _port_card("runner", ports.get("runner")),
+        _runner_card(ports, rdm.cli._runner_port(env_map)),
         (
             "watchdog",
             "watchdog",
@@ -332,10 +341,18 @@ def profile_get(name: str) -> dict[str, Any]:
     return {"json": json_text, "valid": not problems, "errors": problems}
 
 
-def _git_config_value(key: str) -> str:
+def _git_config_value(key: str, project_dir: str = "", scope: str = "") -> str:
+    args = ["git"]
+    target = Path(project_dir).expanduser() if project_dir else None
+    if target is not None and target.is_dir():
+        args += ["-C", str(target)]
+    args.append("config")
+    if scope:
+        args.append(f"--{scope}")
+    args += ["--get", key]
     try:
         result = subprocess.run(
-            ["git", "config", "--get", key],
+            args,
             capture_output=True,
             text=True,
             timeout=5,
@@ -346,16 +363,178 @@ def _git_config_value(key: str) -> str:
     return result.stdout.strip() if result.returncode == 0 else ""
 
 
+def _git_identity(project_dir: str = "") -> tuple[str, str, str]:
+    for scope in ("local", "global"):
+        name = _git_config_value("user.name", project_dir, scope)
+        email = _git_config_value("user.email", project_dir, scope)
+        if name and email:
+            return name, email, scope
+    return "", "", "none"
+
+
 def folder_check(path: str) -> dict[str, Any]:
     target = Path(path).expanduser()
     return {"exists": target.is_dir(), "is_git": (target / ".git").exists()}
 
 
-def profile_defaults() -> dict[str, Any]:
-    return {
-        "git_name": _git_config_value("user.name"),
-        "git_email": _git_config_value("user.email"),
+def profile_defaults(project_dir: str = "") -> dict[str, Any]:
+    name, email, source = _git_identity(project_dir)
+    return {"git_name": name, "git_email": email, "git_source": source}
+
+
+_DETECT_CHILD_LIMIT = 20
+_DETECT_STACK_LIMIT = 8
+_SKIP_DIRS = ("node_modules", "dist", "build", "target", "vendor", ".git")
+
+
+def _normalize_dir(path: str) -> str:
+    target = Path(path).expanduser()
+    try:
+        resolved = target.resolve(strict=False)
+    except OSError:
+        resolved = target
+    return str(resolved).replace("\\", "/")
+
+
+def _read_json_file(path: Path) -> dict[str, Any]:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _node_stack(root: Path) -> dict[str, Any] | None:
+    manifest = root / "package.json"
+    if not manifest.exists():
+        return None
+    package = _read_json_file(manifest)
+    deps: dict[str, Any] = {}
+    for key in ("dependencies", "devDependencies"):
+        block = package.get(key)
+        if isinstance(block, dict):
+            deps.update(block)
+    markers = ["package.json"]
+    if "vite" in deps or (root / "vite.config.ts").exists() or (root / "vite.config.js").exists():
+        return {"id": "vite", "markers": markers, "port": 5173, "toolchain": ""}
+    if "next" in deps:
+        return {"id": "next", "markers": markers, "port": 3000, "toolchain": ""}
+    if "@angular/core" in deps:
+        return {"id": "angular", "markers": markers, "port": 4200, "toolchain": ""}
+    if "react-scripts" in deps:
+        return {"id": "cra", "markers": markers, "port": 3000, "toolchain": ""}
+    return {"id": "node", "markers": markers, "port": 3000, "toolchain": ""}
+
+
+def _stack_candidates(root: Path) -> list[dict[str, Any]]:
+    stacks: list[dict[str, Any]] = []
+    node = _node_stack(root)
+    if node is not None:
+        stacks.append(node)
+    java_markers = [
+        name for name in ("pom.xml", "build.gradle", "build.gradle.kts", "gradlew") if (root / name).exists()
+    ]
+    if java_markers:
+        stacks.append({"id": "java", "markers": java_markers[:1], "port": 8080, "toolchain": "java21"})
+    if (root / "pubspec.yaml").exists():
+        stacks.append({"id": "flutter", "markers": ["pubspec.yaml"], "port": 8080, "toolchain": "flutter"})
+    python_markers = [name for name in ("pyproject.toml", "requirements.txt") if (root / name).exists()]
+    if python_markers:
+        stacks.append({"id": "python", "markers": python_markers[:1], "port": 8000, "toolchain": ""})
+    if (root / "go.mod").exists():
+        stacks.append({"id": "go", "markers": ["go.mod"], "port": 8080, "toolchain": ""})
+    return stacks
+
+
+def _child_dirs(root: Path) -> list[Path]:
+    try:
+        entries = sorted(root.iterdir(), key=lambda item: item.name)
+    except OSError:
+        return []
+    dirs: list[Path] = []
+    for entry in entries:
+        if len(dirs) >= _DETECT_CHILD_LIMIT:
+            break
+        if entry.name.startswith(".") or entry.name in _SKIP_DIRS:
+            continue
+        try:
+            if entry.is_dir():
+                dirs.append(entry)
+        except OSError:
+            continue
+    return dirs
+
+
+def _port_in_use(port: int) -> bool:
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=0.2):
+            return True
+    except OSError:
+        return False
+
+
+def profile_detect(path: str = "") -> dict[str, Any]:
+    raw = str(path or "").strip()
+    normalized = _normalize_dir(raw) if raw else ""
+    target = Path(normalized) if normalized else None
+    exists = bool(target is not None and target.is_dir())
+    is_git = bool(target is not None and (target / ".git").exists())
+    result: dict[str, Any] = {
+        "path": normalized,
+        "exists": exists,
+        "is_git": is_git,
+        "name": target.name if target is not None else "",
+        "stacks": [],
+        "suggested": None,
+        "provenance": {},
+        "warnings": [],
+        "port_conflicts": [],
+        "requires_choice": False,
     }
+    if not exists:
+        result["warnings"].append({"code": "missing"})
+        return result
+    stacks = list(_stack_candidates(target))
+    for child in _child_dirs(target):
+        for stack in _stack_candidates(child):
+            stacks.append({**stack, "subdir": child.name})
+    result["stacks"] = stacks[:_DETECT_STACK_LIMIT]
+    result["requires_choice"] = len(stacks) > 1
+    primary = next((stack for stack in stacks if not stack.get("subdir")), stacks[0] if stacks else None)
+    git_name, git_email, git_source = _git_identity(normalized)
+    suggested: dict[str, Any] = {"project_dir": normalized, "mode": "standard"}
+    if git_name:
+        suggested["git_name"] = git_name
+    if git_email:
+        suggested["git_email"] = git_email
+    if primary is not None:
+        if primary["toolchain"]:
+            suggested["toolchain"] = primary["toolchain"]
+        suggested["ui_port"] = primary["port"]
+        suggested["allowed_ports"] = [primary["port"]]
+    result["suggested"] = suggested
+    result["provenance"] = {
+        "git": git_source,
+        "toolchain": "detected" if primary is not None and primary["toolchain"] else "none",
+        "ui_port": "detected" if primary is not None else "none",
+    }
+    if len(stacks) > 1:
+        result["warnings"].append(
+            {
+                "code": "monorepo",
+                "stacks": [
+                    f"{stack['subdir']}/{stack['id']}" if stack.get("subdir") else stack["id"]
+                    for stack in stacks
+                ],
+            }
+        )
+    if not stacks:
+        result["warnings"].append({"code": "no_stack"})
+    if not is_git:
+        result["warnings"].append({"code": "not_git"})
+    if primary is not None and _port_in_use(primary["port"]):
+        result["port_conflicts"].append({"port": primary["port"]})
+    return result
 
 
 def _previous_exposed(rdm: Any, path: Path) -> tuple[Any, ...] | None:
@@ -384,10 +563,12 @@ def profile_put(name: str, json_text: str) -> dict[str, Any]:
         return {"valid": False, "errors": [f"json: {exc}"]}
     if not isinstance(data, dict):
         return {"valid": False, "errors": ["json: expected an object"]}
-    if not data.get("git_name"):
-        data["git_name"] = _git_config_value("user.name") or name
-    if not data.get("git_email"):
-        data["git_email"] = _git_config_value("user.email") or f"{name}@devbox.local"
+    if not data.get("git_name") or not data.get("git_email"):
+        fallback_name, fallback_email, _ = _git_identity(str(data.get("project_dir") or ""))
+        if not data.get("git_name"):
+            data["git_name"] = fallback_name or name
+        if not data.get("git_email"):
+            data["git_email"] = fallback_email or f"{name}@devbox.local"
     try:
         new_profile = rdm.profiles._build(rdm.profiles._fields(data, rdm.profiles._TOP_KEYS, "profile"))
     except ValueError as exc:
@@ -662,12 +843,13 @@ def agent_prompt(
         gateway_mcps=_gateway_mcps(env_map, gateway_port),
     )
     ports = rdm.ui.api.build_status(0).get("ports", {}) or {}
+    runner_port = rdm.cli._runner_port(env_map)
     ready = {
         "profile": bool(env_map.get("ACTIVE_PROFILE", "")),
         "bridge": bool(ports.get("bridge")),
         # the ingress port probe only sees the local proxy; the agent needs the public tunnel URL
         "ingress": bool(ports.get("ingress")) and bool(ingress_url),
-        "runner": bool(ports.get("runner")),
+        "runner": "off" if runner_port is None else ("up" if ports.get("runner") else "down"),
         "gateway": gateway_port is not None and bool(ports.get("gateway")),
     }
     connection = rdm.prompt.connection_payload(

@@ -280,8 +280,44 @@ def test_overview_rows_carry_id_tone_and_i18n_titles(monkeypatch):
     assert rows[1]["value"] == "up"
     assert rows[2]["value"] == "down"
     assert rows[5]["value"] == "2/3"
-    assert [row["tone"] for row in rows] == ["ok", "ok", "down", "warn", "warn", "ok"]
+    assert [row["tone"] for row in rows] == ["ok", "ok", "down", "ok", "warn", "ok"]
     assert rows[2]["hint"] == "stitch-devbox.hint.bridge"
+    assert rows[3]["value"] == "off"
+
+
+def test_overview_runner_off_is_ok_when_profile_has_no_runner(monkeypatch, tmp_path):
+    _overview_fixture(
+        monkeypatch,
+        tmp_path,
+        ports={"ingress": True, "bridge": True},
+        profile_body={"project_dir": str(tmp_path), "git_name": "a", "git_email": "a@b.c"},
+    )
+
+    rows = {row["id"]: row for row in service.overview()["cards"]}
+
+    assert rows["runner"]["value"] == "off"
+    assert rows["runner"]["tone"] == "ok"
+    assert "hint" not in rows["runner"]
+
+
+def test_overview_runner_down_when_configured_and_closed(monkeypatch, tmp_path):
+    _overview_fixture(
+        monkeypatch,
+        tmp_path,
+        ports={"ingress": True, "bridge": True, "runner": False},
+        profile_body={
+            "project_dir": str(tmp_path),
+            "git_name": "a",
+            "git_email": "a@b.c",
+            "runner_commands": [{"name": "build", "cmd": ["echo", "hi"]}],
+        },
+    )
+
+    rows = {row["id"]: row for row in service.overview()["cards"]}
+
+    assert rows["runner"]["value"] == "down"
+    assert rows["runner"]["tone"] == "down"
+    assert rows["runner"]["hint"] == "stitch-devbox.hint.runner"
 
 
 def _overview_fixture(
@@ -463,6 +499,85 @@ def test_agent_prompt_ready_gateway_false_when_disabled(monkeypatch, tmp_path):
     ready = service.agent_prompt()["ready"]
 
     assert ready["gateway"] is False
+
+
+def test_agent_prompt_runner_off_without_runner_commands(monkeypatch, tmp_path):
+    _prompt_env(
+        monkeypatch,
+        tmp_path,
+        ports={"bridge": True, "ingress": True},
+        profile_body={"project_dir": str(tmp_path), "git_name": "a", "git_email": "a@b.c"},
+    )
+
+    assert service.agent_prompt()["ready"]["runner"] == "off"
+
+
+def test_agent_prompt_runner_up_when_configured_and_probed(monkeypatch, tmp_path):
+    _prompt_env(
+        monkeypatch,
+        tmp_path,
+        ports={"bridge": True, "ingress": True, "runner": True},
+        profile_body={
+            "project_dir": str(tmp_path),
+            "git_name": "a",
+            "git_email": "a@b.c",
+            "runner_commands": [{"name": "build", "cmd": ["echo", "hi"]}],
+        },
+    )
+
+    assert service.agent_prompt()["ready"]["runner"] == "up"
+
+
+def test_agent_prompt_runner_down_when_configured_and_closed(monkeypatch, tmp_path):
+    _prompt_env(
+        monkeypatch,
+        tmp_path,
+        ports={"bridge": True, "ingress": True, "runner": False},
+        profile_body={
+            "project_dir": str(tmp_path),
+            "git_name": "a",
+            "git_email": "a@b.c",
+            "runner_commands": [{"name": "build", "cmd": ["echo", "hi"]}],
+        },
+    )
+
+    assert service.agent_prompt()["ready"]["runner"] == "down"
+
+
+def test_profile_detect_missing_path(tmp_path):
+    result = service.profile_detect(str(tmp_path / "nope"))
+
+    assert result["exists"] is False
+    assert result["suggested"] is None
+    assert {"code": "missing"} in result["warnings"]
+
+
+def test_profile_detect_vite_suggests_port_and_stack(tmp_path):
+    (tmp_path / "package.json").write_text(
+        json.dumps({"devDependencies": {"vite": "^5"}}), encoding="utf-8"
+    )
+
+    result = service.profile_detect(str(tmp_path))
+
+    assert result["exists"] is True
+    assert [stack["id"] for stack in result["stacks"]] == ["vite"]
+    assert result["suggested"]["project_dir"] == str(tmp_path).replace("\\", "/")
+    assert result["suggested"]["ui_port"] == 5173
+    assert result["suggested"]["allowed_ports"] == [5173]
+    assert result["requires_choice"] is False
+
+
+def test_profile_detect_monorepo_requires_choice(tmp_path):
+    (tmp_path / "package.json").write_text("{}", encoding="utf-8")
+    server = tmp_path / "server"
+    server.mkdir()
+    (server / "build.gradle").write_text("", encoding="utf-8")
+
+    result = service.profile_detect(str(tmp_path))
+
+    assert result["requires_choice"] is True
+    monorepo = next(warning for warning in result["warnings"] if warning["code"] == "monorepo")
+    assert "server/java" in monorepo["stacks"]
 
 
 def test_logs_text_empty_uses_i18n_key(monkeypatch):
@@ -722,9 +837,13 @@ def test_profile_delete_removes_and_rejects_missing(monkeypatch, tmp_path):
 
 def test_profile_put_git_identity_from_host_config(monkeypatch, tmp_path):
     monkeypatch.setenv("RDM_PROJECTS_DIR", str(tmp_path))
-    monkeypatch.setattr(
-        service, "_git_config_value", lambda key: {"user.name": "Host User", "user.email": "h@x.dev"}[key]
-    )
+    seen: list[str] = []
+
+    def fake_config(key: str, project_dir: str = "", scope: str = "") -> str:
+        seen.append(project_dir)
+        return {"user.name": "Host User", "user.email": "h@x.dev"}.get(key, "")
+
+    monkeypatch.setattr(service, "_git_config_value", fake_config)
     project = tmp_path / "proj"
     project.mkdir()
 
@@ -736,11 +855,12 @@ def test_profile_put_git_identity_from_host_config(monkeypatch, tmp_path):
     written = json.loads((tmp_path / "hostgit.json").read_text(encoding="utf-8"))
     assert written["git_name"] == "Host User"
     assert written["git_email"] == "h@x.dev"
+    assert seen and all(path == str(project) for path in seen)
 
 
 def test_profile_put_git_identity_fallback_without_config(monkeypatch, tmp_path):
     monkeypatch.setenv("RDM_PROJECTS_DIR", str(tmp_path))
-    monkeypatch.setattr(service, "_git_config_value", lambda key: "")
+    monkeypatch.setattr(service, "_git_config_value", lambda key, project_dir="", scope="": "")
     project = tmp_path / "proj"
     project.mkdir()
 
@@ -868,12 +988,23 @@ def test_folder_check_reports_dir_and_git(monkeypatch, tmp_path):
     assert service.folder_check(str(tmp_path / "ghost")) == {"exists": False, "is_git": False}
 
 
-def test_profile_defaults_exposes_host_git_identity(monkeypatch):
+def test_profile_defaults_exposes_host_git_identity(monkeypatch, tmp_path):
     monkeypatch.setattr(
-        service, "_git_config_value", lambda key: {"user.name": "Host User", "user.email": "h@x.dev"}[key]
+        service,
+        "_git_config_value",
+        lambda key, project_dir="", scope="": {
+            "user.name": "Host User",
+            "user.email": "h@x.dev",
+        }[key],
     )
+    project = tmp_path / "proj"
+    project.mkdir()
 
-    assert service.profile_defaults() == {"git_name": "Host User", "git_email": "h@x.dev"}
+    assert service.profile_defaults(str(project)) == {
+        "git_name": "Host User",
+        "git_email": "h@x.dev",
+        "git_source": "local",
+    }
 
 
 def test_poll_batch_matches_individual_commands(monkeypatch, tmp_path):

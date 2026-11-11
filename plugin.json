@@ -230,6 +230,10 @@
         "readonly": true
       },
       {
+        "name": "profile_detect",
+        "readonly": true
+      },
+      {
         "name": "cockpit_open",
         "readonly": false
       },

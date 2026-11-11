@@ -431,7 +431,7 @@ def test_agent_prompt_ready_all_up(monkeypatch, tmp_path):
 
     ready = service.agent_prompt()["ready"]
 
-    assert ready == {"profile": True, "bridge": True, "ingress": True, "runner": True, "gateway": False}
+    assert ready == {"profile": True, "bridge": True, "ingress": True, "runner": "up", "gateway": False}
 
 
 def test_agent_prompt_ready_flips_with_ports_status(monkeypatch, tmp_path):
@@ -440,7 +440,7 @@ def test_agent_prompt_ready_flips_with_ports_status(monkeypatch, tmp_path):
 
     ready = service.agent_prompt()["ready"]
 
-    assert ready == {"profile": True, "bridge": False, "ingress": True, "runner": False, "gateway": False}
+    assert ready == {"profile": True, "bridge": False, "ingress": True, "runner": "down", "gateway": False}
 
 
 def test_agent_prompt_ready_ingress_requires_public_url(monkeypatch, tmp_path):
