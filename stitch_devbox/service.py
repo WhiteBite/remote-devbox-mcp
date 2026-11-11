@@ -200,6 +200,7 @@ def overview() -> dict[str, Any]:
     host_services = payload.get("host_services") or {}
     updated_at = datetime.now(timezone.utc).isoformat()
     profile = env_map.get("ACTIVE_PROFILE", "")
+    profile_loaded = _load_profile(env_map)
     alive = int(host_services.get("alive", 0))
     recorded = int(host_services.get("recorded", 0))
     services_down = recorded > 0 and alive == 0
@@ -208,8 +209,8 @@ def overview() -> dict[str, Any]:
             "profile",
             "profile",
             profile or "—",
-            "ok" if profile else "warn",
-            None if profile else "stitch-devbox.hint.profile",
+            "ok" if profile_loaded is not None else "warn",
+            None if profile_loaded is not None else "stitch-devbox.hint.profile",
         ),
         _port_card("ingress", ports.get("ingress")),
         _port_card("bridge", ports.get("bridge")),
@@ -384,7 +385,9 @@ def profile_defaults(project_dir: str = "") -> dict[str, Any]:
 
 _DETECT_CHILD_LIMIT = 20
 _DETECT_STACK_LIMIT = 8
+_MAX_JSON_BYTES = 2 * 1024 * 1024
 _SKIP_DIRS = ("node_modules", "dist", "build", "target", "vendor", ".git")
+_WORKSPACE_DIRS = ("packages", "apps", "services", "modules", "crates")
 
 
 def _normalize_dir(path: str) -> str:
@@ -398,10 +401,28 @@ def _normalize_dir(path: str) -> str:
 
 def _read_json_file(path: Path) -> dict[str, Any]:
     try:
+        if path.stat().st_size > _MAX_JSON_BYTES:
+            return {}
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
     return data if isinstance(data, dict) else {}
+
+
+def _is_git_repo(target: Path) -> bool:
+    if (target / ".git").exists():
+        return True
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(target), "rev-parse", "--is-inside-work-tree"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except OSError:
+        return False
+    return result.returncode == 0 and result.stdout.strip() == "true"
 
 
 def _node_stack(root: Path) -> dict[str, Any] | None:
@@ -443,6 +464,12 @@ def _stack_candidates(root: Path) -> list[dict[str, Any]]:
         stacks.append({"id": "python", "markers": python_markers[:1], "port": 8000, "toolchain": ""})
     if (root / "go.mod").exists():
         stacks.append({"id": "go", "markers": ["go.mod"], "port": 8080, "toolchain": ""})
+    if (root / "Cargo.toml").exists():
+        stacks.append({"id": "rust", "markers": ["Cargo.toml"], "port": 0, "toolchain": ""})
+    if (root / "composer.json").exists():
+        stacks.append({"id": "php", "markers": ["composer.json"], "port": 8000, "toolchain": ""})
+    if any(root.glob("*.csproj")) or any(root.glob("*.sln")):
+        stacks.append({"id": "dotnet", "markers": ["*.csproj"], "port": 5000, "toolchain": ""})
     return stacks
 
 
@@ -475,10 +502,15 @@ def _port_in_use(port: int) -> bool:
 
 def profile_detect(path: str = "") -> dict[str, Any]:
     raw = str(path or "").strip()
-    normalized = _normalize_dir(raw) if raw else ""
+    requested = Path(raw).expanduser() if raw else None
+    relative = requested is not None and not requested.is_absolute()
+    normalized = _normalize_dir(raw) if raw and not relative else ""
     target = Path(normalized) if normalized else None
-    exists = bool(target is not None and target.is_dir())
-    is_git = bool(target is not None and (target / ".git").exists())
+    root_like = bool(
+        target is not None and (target == Path(target.anchor) or len(target.parts) < 2)
+    )
+    exists = bool(target is not None and not root_like and target.is_dir())
+    is_git = bool(exists and target is not None and _is_git_repo(target))
     result: dict[str, Any] = {
         "path": normalized,
         "exists": exists,
@@ -491,13 +523,17 @@ def profile_detect(path: str = "") -> dict[str, Any]:
         "port_conflicts": [],
         "requires_choice": False,
     }
-    if not exists:
-        result["warnings"].append({"code": "missing"})
+    if target is None or not exists:
+        result["warnings"].append({"code": "not_absolute" if relative else "missing"})
         return result
     stacks = list(_stack_candidates(target))
     for child in _child_dirs(target):
         for stack in _stack_candidates(child):
             stacks.append({**stack, "subdir": child.name})
+        if child.name in _WORKSPACE_DIRS:
+            for nested in _child_dirs(child):
+                for stack in _stack_candidates(nested):
+                    stacks.append({**stack, "subdir": f"{child.name}/{nested.name}"})
     result["stacks"] = stacks[:_DETECT_STACK_LIMIT]
     result["requires_choice"] = len(stacks) > 1
     primary = next((stack for stack in stacks if not stack.get("subdir")), stacks[0] if stacks else None)
@@ -510,13 +546,14 @@ def profile_detect(path: str = "") -> dict[str, Any]:
     if primary is not None:
         if primary["toolchain"]:
             suggested["toolchain"] = primary["toolchain"]
-        suggested["ui_port"] = primary["port"]
-        suggested["allowed_ports"] = [primary["port"]]
+        if primary["port"]:
+            suggested["ui_port"] = primary["port"]
+            suggested["allowed_ports"] = [primary["port"]]
     result["suggested"] = suggested
     result["provenance"] = {
         "git": git_source,
         "toolchain": "detected" if primary is not None and primary["toolchain"] else "none",
-        "ui_port": "detected" if primary is not None else "none",
+        "ui_port": "detected" if primary is not None and primary["port"] else "none",
     }
     if len(stacks) > 1:
         result["warnings"].append(
@@ -532,7 +569,7 @@ def profile_detect(path: str = "") -> dict[str, Any]:
         result["warnings"].append({"code": "no_stack"})
     if not is_git:
         result["warnings"].append({"code": "not_git"})
-    if primary is not None and _port_in_use(primary["port"]):
+    if primary is not None and primary["port"] and _port_in_use(primary["port"]):
         result["port_conflicts"].append({"port": primary["port"]})
     return result
 
@@ -845,7 +882,7 @@ def agent_prompt(
     ports = rdm.ui.api.build_status(0).get("ports", {}) or {}
     runner_port = rdm.cli._runner_port(env_map)
     ready = {
-        "profile": bool(env_map.get("ACTIVE_PROFILE", "")),
+        "profile": _load_profile(env_map) is not None,
         "bridge": bool(ports.get("bridge")),
         # the ingress port probe only sees the local proxy; the agent needs the public tunnel URL
         "ingress": bool(ports.get("ingress")) and bool(ingress_url),
@@ -869,7 +906,7 @@ def connection_check() -> dict[str, Any]:
     ingress_url = rdm.netprobe.ingress_url(env_map, rdm.cli.COMPOSE_FILE)
     if not ingress_url:
         return {"ok": False, "error": "ingress URL unknown"}
-    url = f"{ingress_url}/p/8787/mcp"
+    url = f"{ingress_url}/p/{rdm.profiles.BRIDGE_PORT}/mcp"
     token = env_map.get("MCP_BEARER_TOKEN", "")
     if not token:
         return {"ok": False, "url": url, "error": "MCP_BEARER_TOKEN empty"}

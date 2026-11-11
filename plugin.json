@@ -2,7 +2,7 @@
   "schema": "stitch.plugin/v2",
   "id": "stitch-devbox",
   "name": "Stitch Devbox",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "service": "devbox",
   "kind": "service",
   "engine": {
@@ -50,6 +50,15 @@
     }
   ],
   "changelog": [
+    {
+      "version": "0.4.0",
+      "date": "2026-11-11",
+      "changes": [
+        "profile_detect detects the project stack, ports and project-local git identity for the create form",
+        "runner state is off/up/down, so a profile without runner commands no longer raises a down alarm",
+        "overview marks a missing active profile as a warning; agent_prompt recovers after lifecycle actions"
+      ]
+    },
     {
       "version": "0.3.1",
       "date": "2026-10-20",
@@ -299,6 +308,10 @@
       },
       {
         "name": "agent_prompt",
+        "readonly": true
+      },
+      {
+        "name": "connection_check",
         "readonly": true
       },
       {

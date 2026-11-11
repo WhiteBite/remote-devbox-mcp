@@ -280,7 +280,8 @@ def test_overview_rows_carry_id_tone_and_i18n_titles(monkeypatch):
     assert rows[1]["value"] == "up"
     assert rows[2]["value"] == "down"
     assert rows[5]["value"] == "2/3"
-    assert [row["tone"] for row in rows] == ["ok", "ok", "down", "ok", "warn", "ok"]
+    assert [row["tone"] for row in rows] == ["warn", "ok", "down", "ok", "warn", "ok"]
+    assert rows[0]["hint"] == "stitch-devbox.hint.profile"
     assert rows[2]["hint"] == "stitch-devbox.hint.bridge"
     assert rows[3]["value"] == "off"
 
@@ -544,6 +545,20 @@ def test_agent_prompt_runner_down_when_configured_and_closed(monkeypatch, tmp_pa
     assert service.agent_prompt()["ready"]["runner"] == "down"
 
 
+def test_agent_prompt_ready_profile_false_when_profile_file_missing(monkeypatch, tmp_path):
+    _prompt_env(
+        monkeypatch,
+        tmp_path,
+        ports={"bridge": True, "ingress": True},
+        profile_body={"project_dir": str(tmp_path), "git_name": "a", "git_email": "a@b.c"},
+    )
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    monkeypatch.setenv("RDM_PROJECTS_DIR", str(empty))
+
+    assert service.agent_prompt()["ready"]["profile"] is False
+
+
 def test_profile_detect_missing_path(tmp_path):
     result = service.profile_detect(str(tmp_path / "nope"))
 
@@ -578,6 +593,30 @@ def test_profile_detect_monorepo_requires_choice(tmp_path):
     assert result["requires_choice"] is True
     monorepo = next(warning for warning in result["warnings"] if warning["code"] == "monorepo")
     assert "server/java" in monorepo["stacks"]
+
+
+def test_profile_detect_rejects_relative_path():
+    result = service.profile_detect("relative/project")
+
+    assert result["exists"] is False
+    assert result["suggested"] is None
+    assert {"code": "not_absolute"} in result["warnings"]
+
+
+def test_profile_detect_scans_workspace_children(tmp_path):
+    web = tmp_path / "packages" / "web"
+    web.mkdir(parents=True)
+    (web / "package.json").write_text(
+        json.dumps({"dependencies": {"vite": "^5"}}), encoding="utf-8"
+    )
+
+    result = service.profile_detect(str(tmp_path))
+
+    assert any(
+        stack["id"] == "vite" and stack.get("subdir") == "packages/web"
+        for stack in result["stacks"]
+    )
+    assert result["suggested"]["ui_port"] == 5173
 
 
 def test_logs_text_empty_uses_i18n_key(monkeypatch):

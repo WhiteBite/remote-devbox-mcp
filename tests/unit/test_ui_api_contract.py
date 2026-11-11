@@ -84,8 +84,8 @@ def test_overview_rows_match_frozen_contract(monkeypatch):
     assert len({row["updatedAt"] for row in rows}) == 1
     by_id = {row["id"]: row for row in rows}
     assert by_id["profile"]["value"] == "alpha"
-    assert by_id["profile"]["tone"] == "ok"
-    assert "hint" not in by_id["profile"]
+    assert by_id["profile"]["tone"] == "warn"
+    assert by_id["profile"]["hint"] == "stitch-devbox.hint.profile"
     assert by_id["ingress"]["value"] == "up"
     assert by_id["ingress"]["tone"] == "ok"
     assert by_id["bridge"]["value"] == "down"
