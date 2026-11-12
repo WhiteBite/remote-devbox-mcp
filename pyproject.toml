@@ -10,6 +10,7 @@ pythonpath = ["home"]
 testpaths = ["tests"]
 addopts = "-q"
 timeout = 60
+timeout_method = "thread"
 
 [tool.ruff]
 line-length = 110

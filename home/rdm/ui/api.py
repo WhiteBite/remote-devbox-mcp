@@ -167,11 +167,19 @@ def _tail(path: pathlib.Path, needle: str) -> list[str]:
     return [redact.redact_text(line) for line in lines]
 
 
+def _active_profile() -> str:
+    return envfile.EnvFile.load(cli.ENV_FILE).as_map().get("ACTIVE_PROFILE", "")
+
+
 def collect_logs(source: str, needle: str) -> list[dict[str, object]]:
     temp = hostos.tempdir()
+    active = _active_profile()
     logs: list[dict[str, object]] = []
     for name in (source,) if source else tuple(LOG_SOURCES):
         files = sorted(path for pattern in LOG_SOURCES[name] for path in temp.glob(pattern))
+        if name == "host" and active:
+            prefix = f"{active}-"
+            files = [path for path in files if path.name.startswith(prefix)]
         for path in files:
             lines = _tail(path, needle)
             if lines:

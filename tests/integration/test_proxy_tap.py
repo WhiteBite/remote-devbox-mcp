@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import os
 import socket
 
+import pytest
 from rdm import ports
 from rdm.proxy import event_tap, mcp_tap
 
@@ -243,6 +245,7 @@ def test_sabotaged_capture_never_breaks_forward(tmp_path, monkeypatch):
         server.shutdown()
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Windows loopback keep-alive framing differs")
 def test_bridge_tools_call_keep_alive_connection_reused(tmp_path, monkeypatch):
     job = {"job_id": "job-8", "status": "completed", "result": {"metadata": {"exit": 0}}}
     fake, server, port, events_path = _start_bridge(tmp_path, monkeypatch, job)

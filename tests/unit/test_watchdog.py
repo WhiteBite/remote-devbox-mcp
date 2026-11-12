@@ -17,6 +17,7 @@ def _wire(monkeypatch, tmp_path, dead=False, ingress_up=True, ps="rdm-toolbox he
     (projects / "p1.json").write_text(json.dumps({"project_dir": str(tmp_path), "git_name": "a", "git_email": "a@b"}), encoding="utf-8")
     calls: dict[str, list] = {"compose": [], "restart": [], "ingress_start": []}
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    monkeypatch.setattr(watchdog.procman, "watchdog_pids_path", lambda: tmp_path / "watchdog.pids")
     monkeypatch.setenv("RDM_PROJECTS_DIR", str(projects))
     monkeypatch.setattr("rdm.cli.ENV_FILE", tmp_path / ".env")
     monkeypatch.setattr(watchdog, "_log", lambda path, message: None)
@@ -69,7 +70,7 @@ def test_watchdog_restarts_dead_ingress_origin(monkeypatch, tmp_path):
 
 def test_watchdog_recreates_unhealthy_toolbox(monkeypatch, tmp_path):
     calls = _wire(monkeypatch, tmp_path, ps="rdm-toolbox Up (unhealthy)")
-    watchdog.run(_env(), iterations=1, prober=lambda url, token, timeout=10.0: 200)
+    watchdog.run(_env(), iterations=3, prober=lambda url, token, timeout=10.0: 200)
     toolbox = [c for c in calls["compose"] if "toolbox" in c]
     assert len(toolbox) == 1
     assert "--force-recreate" in toolbox[0]
@@ -148,7 +149,7 @@ def test_watchdog_guard_treats_venv_launcher_pid_as_self(monkeypatch, tmp_path):
     parent = os.getppid()
     path.write_text(f"{parent}|{hostos.create_time(parent)}| watch\n", encoding="utf-8")
 
-    watchdog.run(_env(), iterations=1, prober=lambda url, token, timeout=10.0: 200)
+    watchdog.run(_env(), iterations=3, prober=lambda url, token, timeout=10.0: 200)
 
     assert calls["compose"] != []
 
@@ -158,7 +159,7 @@ def test_watchdog_guard_passes_on_stale_pidfile(monkeypatch, tmp_path):
     path = procman.watchdog_pids_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("2147483647|| watch\n", encoding="utf-8")
-    watchdog.run(_env(), iterations=1, prober=lambda url, token, timeout=10.0: 200)
+    watchdog.run(_env(), iterations=3, prober=lambda url, token, timeout=10.0: 200)
     assert calls["compose"] != []
     assert not path.exists()
 
@@ -168,6 +169,6 @@ def test_watchdog_guard_passes_on_own_pid(monkeypatch, tmp_path):
     path = procman.watchdog_pids_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(f"{os.getpid()}|{hostos.create_time(os.getpid())}| watch\n", encoding="utf-8")
-    watchdog.run(_env(), iterations=1, prober=lambda url, token, timeout=10.0: 200)
+    watchdog.run(_env(), iterations=3, prober=lambda url, token, timeout=10.0: 200)
     assert calls["compose"] != []
     assert not path.exists()

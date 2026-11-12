@@ -275,12 +275,18 @@ def events_tail(limit: int = 50) -> list[dict[str, Any]]:
 def logs(source: str = "", filter: str = "", limit: int = 80) -> dict[str, Any]:  # noqa: A002
     entries = _rdm().ui.api.collect_logs(source, filter.lower())
     grouped: dict[str, list[str]] = {}
+    files: dict[str, list[str]] = {}
     for entry in entries:
-        grouped.setdefault(str(entry["source"]), []).extend(str(line) for line in entry["lines"])
+        name = str(entry["source"])
+        grouped.setdefault(name, []).extend(str(line) for line in entry["lines"])
+        file = str(entry.get("file", ""))
+        if file and file not in files.setdefault(name, []):
+            files[name].append(file)
     bounded = max(1, min(int(limit), 500))
     return {
         "sources": [
-            {"name": name, "lines": lines[-bounded:]} for name, lines in grouped.items()
+            {"name": name, "files": files.get(name, []), "lines": lines[-bounded:]}
+            for name, lines in grouped.items()
         ]
     }
 
@@ -302,7 +308,13 @@ def profiles_list() -> list[dict[str, Any]]:
     active = rdm.envfile.EnvFile.load(rdm.cli.ENV_FILE).as_map().get("ACTIVE_PROFILE", "")
     rows = []
     for name in rdm.profiles.available():
-        row: dict[str, Any] = {"name": name, "mode": "?", "project_dir": "", "active": name == active}
+        row: dict[str, Any] = {
+            "name": name,
+            "mode": "?",
+            "project_dir": "",
+            "active": name == active,
+            "git_placeholder": False,
+        }
         path = rdm.profiles.find(name)
         if path is not None:
             try:
@@ -312,6 +324,7 @@ def profiles_list() -> list[dict[str, Any]]:
             else:
                 row["mode"] = profile.mode
                 row["project_dir"] = profile.project_dir
+                row["git_placeholder"] = profile.git_email.endswith("@devbox.local")
         rows.append(row)
     return rows
 
@@ -328,9 +341,22 @@ def profile_get(name: str) -> dict[str, Any]:
     try:
         data = json.loads(json_text)
     except ValueError as exc:
-        return {"json": json_text, "valid": False, "errors": [f"json: {exc}"]}
+        return {
+            "json": json_text,
+            "valid": False,
+            "errors": [f"json: {exc}"],
+            "git_placeholder": False,
+        }
     if not isinstance(data, dict):
-        return {"json": json_text, "valid": False, "errors": ["json: expected an object"]}
+        return {
+            "json": json_text,
+            "valid": False,
+            "errors": ["json: expected an object"],
+            "git_placeholder": False,
+        }
+    git_placeholder = isinstance(data.get("git_email"), str) and data["git_email"].endswith(
+        "@devbox.local"
+    )
     try:
         problems = [
             problem
@@ -338,8 +364,44 @@ def profile_get(name: str) -> dict[str, Any]:
             if not problem.startswith("WARN")
         ]
     except ValueError as exc:
-        return {"json": json_text, "valid": False, "errors": [str(exc)]}
-    return {"json": json_text, "valid": not problems, "errors": problems}
+        return {
+            "json": json_text,
+            "valid": False,
+            "errors": [str(exc)],
+            "git_placeholder": git_placeholder,
+        }
+    return {
+        "json": json_text,
+        "valid": not problems,
+        "errors": problems,
+        "git_placeholder": git_placeholder,
+    }
+
+
+def mcp_candidates(name: str = "") -> dict[str, Any]:
+    rdm = _rdm()
+    target = str(name or "").strip()
+    if target:
+        path = rdm.profiles.find(target)
+        if path is None:
+            return {"profile": target, "candidates": [], "error": "profile not found"}
+        try:
+            profile = rdm.profiles.load(path)
+        except (ValueError, OSError) as exc:
+            return {"profile": target, "candidates": [], "error": str(exc)}
+    else:
+        env_map = rdm.envfile.EnvFile.load(rdm.cli.ENV_FILE).as_map()
+        target = str(env_map.get("ACTIVE_PROFILE", ""))
+        profile = _load_profile(env_map)
+        if profile is None:
+            return {"profile": target, "candidates": [], "error": "no active profile"}
+    from rdm.gateway import snapshot  # noqa: PLC0415
+
+    try:
+        rows = snapshot.candidates(profile)
+    except snapshot.GatewaySnapshotError as exc:
+        return {"profile": target, "candidates": [], "error": str(exc)}
+    return {"profile": target, "candidates": list(rows), "error": None}
 
 
 def _git_config_value(key: str, project_dir: str = "", scope: str = "") -> str:
@@ -604,8 +666,8 @@ def profile_put(name: str, json_text: str) -> dict[str, Any]:
         fallback_name, fallback_email, _ = _git_identity(str(data.get("project_dir") or ""))
         if not data.get("git_name"):
             data["git_name"] = fallback_name or name
-        if not data.get("git_email"):
-            data["git_email"] = fallback_email or f"{name}@devbox.local"
+        if not data.get("git_email") and fallback_email:
+            data["git_email"] = fallback_email
     try:
         new_profile = rdm.profiles._build(rdm.profiles._fields(data, rdm.profiles._TOP_KEYS, "profile"))
     except ValueError as exc:

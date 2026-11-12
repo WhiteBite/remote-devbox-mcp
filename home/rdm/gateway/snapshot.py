@@ -172,6 +172,32 @@ def build(profile: Profile, global_config: Path | None = None) -> Snapshot:
     return Snapshot(servers=tuple(servers))
 
 
+def candidates(profile: Profile, global_config: Path | None = None) -> tuple[dict[str, object], ...]:
+    layers = _layer_paths(profile, global_config)
+    merged = _merged_layers(layers)
+    rows: list[dict[str, object]] = []
+    for name, (entry, layer) in sorted(merged.items()):
+        row: dict[str, object] = {
+            "name": name,
+            "type": str(entry.get("type", "")) if isinstance(entry, dict) else "",
+            "enabled": not (isinstance(entry, dict) and entry.get("enabled") is False),
+            "source": str(layer),
+            "valid": False,
+            "error": None,
+        }
+        if isinstance(entry, dict) and isinstance(entry.get("url"), str):
+            row["url"] = entry["url"]
+        try:
+            server = _server_snapshot(name, entry, layer)
+        except GatewaySnapshotError as exc:
+            row["error"] = str(exc)
+        else:
+            row["valid"] = True
+            row["command"] = [server.command, *server.args]
+        rows.append(row)
+    return tuple(rows)
+
+
 def _snapshot_json(snapshot: Snapshot) -> dict:
     return {
         "servers": {

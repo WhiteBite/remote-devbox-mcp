@@ -35,7 +35,19 @@ def restrict_permissions(path: Path) -> None:
                 ["whoami"], capture_output=True, text=True, check=True
             ).stdout.strip()
             subprocess.run(
-                ["icacls", str(path), "/inheritance:r", "/grant:r", f"{user}:F"],
+                [
+                    "icacls",
+                    str(path),
+                    "/inheritance:r",
+                    "/remove:g",
+                    "*S-1-5-18",
+                    "*S-1-5-32-544",
+                    "*S-1-5-32-545",
+                    "*S-1-5-11",
+                    "*S-1-1-0",
+                    "/grant:r",
+                    f"{user}:F",
+                ],
                 capture_output=True, check=True,
             )
         except (OSError, subprocess.SubprocessError):

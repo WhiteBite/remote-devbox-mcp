@@ -243,6 +243,10 @@
         "readonly": true
       },
       {
+        "name": "mcp_candidates",
+        "readonly": true
+      },
+      {
         "name": "cockpit_open",
         "readonly": false
       },

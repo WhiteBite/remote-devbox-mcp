@@ -6,6 +6,7 @@ import subprocess
 import sys
 import time
 
+import pytest
 from rdm import cli, hostos, ports, procman
 
 
@@ -148,6 +149,7 @@ def test_issue_tokens_rotates_three(monkeypatch, tmp_path):
 
 def test_start_prints_handoff_block(monkeypatch, tmp_path, capsys):
     projects, calls = _setup(monkeypatch, tmp_path)
+    monkeypatch.setattr(cli.netprobe, "ingress_url", lambda *args, **kwargs: "https://devbox.example.test")
     (projects / "p1.json").write_text(_profile_json(tmp_path), encoding="utf-8")
     assert cli.main(["start", "p1"]) == 0
     out = capsys.readouterr().out
@@ -256,6 +258,7 @@ def test_watchdog_control_start_stop(monkeypatch, tmp_path, capsys):
     assert calls["watchdog_stop"] == [True]
 
 
+@pytest.mark.skipif(os.name == "nt", reason="msvcrt locks are per-process")
 def test_ingress_rejected_while_action_lock_held(monkeypatch, tmp_path, capsys):
     _setup(monkeypatch, tmp_path)
     monkeypatch.setattr(cli, "_LOCK_WAIT_SECONDS", 0.0)

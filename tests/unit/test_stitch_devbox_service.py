@@ -638,13 +638,64 @@ def test_profiles_list_rows_always_full_keys(monkeypatch, tmp_path):
     by_name = {row["name"]: row for row in rows}
     assert {"good", "broken"} <= set(by_name)
     for row in rows:
-        assert set(row) == {"name", "mode", "project_dir", "active"}
+        assert set(row) == {"name", "mode", "project_dir", "active", "git_placeholder"}
         assert isinstance(row["active"], bool)
+        assert isinstance(row["git_placeholder"], bool)
     assert by_name["good"]["mode"] == "standard"
     assert by_name["good"]["project_dir"] == str(tmp_path)
     assert by_name["good"]["active"] is False
+    assert by_name["good"]["git_placeholder"] is False
     assert by_name["broken"]["mode"] == "?"
     assert by_name["broken"]["project_dir"] == ""
+    assert by_name["broken"]["git_placeholder"] is False
+
+
+def test_profiles_flags_fabricated_git_identity(monkeypatch, tmp_path):
+    monkeypatch.setenv("RDM_PROJECTS_DIR", str(tmp_path))
+    rdm = service._rdm()
+    monkeypatch.setattr(rdm.cli, "ENV_FILE", tmp_path / "missing.env")
+    data = _profile_data(tmp_path) | {"git_email": "alpha@devbox.local"}
+    (tmp_path / "alpha.json").write_text(json.dumps(data), encoding="utf-8")
+
+    row = next(item for item in service.profiles_list() if item["name"] == "alpha")
+    info = service.profile_get("alpha")
+
+    assert row["git_placeholder"] is True
+    assert info["git_placeholder"] is True
+
+
+def test_mcp_candidates_lists_config_servers(monkeypatch, tmp_path):
+    monkeypatch.setenv("RDM_PROJECTS_DIR", str(tmp_path))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "opencode.json").write_text(
+        json.dumps(
+            {
+                "mcp": {
+                    "codegraph": {
+                        "type": "local",
+                        "command": ["python", "-m", "codegraph"],
+                    },
+                    "remote-demo": {
+                        "type": "remote",
+                        "url": "https://example.test/mcp",
+                    },
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / "alpha.json").write_text(json.dumps(_profile_data(project)), encoding="utf-8")
+
+    result = service.mcp_candidates("alpha")
+
+    assert result["error"] is None
+    by_name = {row["name"]: row for row in result["candidates"]}
+    assert by_name["codegraph"]["valid"] is True
+    assert by_name["codegraph"]["command"] == ["python", "-m", "codegraph"]
+    assert by_name["remote-demo"]["valid"] is False
+    assert "remote" in by_name["remote-demo"]["error"]
 
 
 def test_jobs_payload_surfaces_stall_alarm(monkeypatch, tmp_path):
@@ -682,8 +733,8 @@ def test_logs_groups_lines_per_source(monkeypatch):
     assert calls == [("ingress", "err")]
     assert result == {
         "sources": [
-            {"name": "ingress", "lines": ["b", "c"]},
-            {"name": "host", "lines": ["d"]},
+            {"name": "ingress", "files": ["ingress.out", "ingress.err"], "lines": ["b", "c"]},
+            {"name": "host", "files": ["svc.out"], "lines": ["d"]},
         ]
     }
 
@@ -897,7 +948,7 @@ def test_profile_put_git_identity_from_host_config(monkeypatch, tmp_path):
     assert seen and all(path == str(project) for path in seen)
 
 
-def test_profile_put_git_identity_fallback_without_config(monkeypatch, tmp_path):
+def test_profile_put_requires_real_git_identity_without_config(monkeypatch, tmp_path):
     monkeypatch.setenv("RDM_PROJECTS_DIR", str(tmp_path))
     monkeypatch.setattr(service, "_git_config_value", lambda key, project_dir="", scope="": "")
     project = tmp_path / "proj"
@@ -907,10 +958,9 @@ def test_profile_put_git_identity_fallback_without_config(monkeypatch, tmp_path)
         "nogit", json.dumps({"project_dir": str(project), "mode": "readonly"})
     )
 
-    assert result == {"valid": True, "errors": []}
-    written = json.loads((tmp_path / "nogit.json").read_text(encoding="utf-8"))
-    assert written["git_name"] == "nogit"
-    assert written["git_email"] == "nogit@devbox.local"
+    assert result["valid"] is False
+    assert any(problem.startswith("R5") for problem in result["errors"])
+    assert not (tmp_path / "nogit.json").exists()
 
 
 def _gateway_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, command: list[str]) -> Path:

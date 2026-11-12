@@ -128,7 +128,9 @@ def test_logs_mask_seeded_token_line(cockpit, tmp_path):
     secret = "0123456789abcdef" * 4
     host_dir = tmp_path / "rdm-host"
     host_dir.mkdir()
-    (host_dir / "seed.out").write_text(f"boot ok\ntoken={secret}\n", encoding="utf-8")
+    active = envfile.EnvFile.load(HOME_DIR / ".env").as_map().get("ACTIVE_PROFILE", "")
+    log_name = f"{active}-seed.out" if active else "seed.out"
+    (host_dir / log_name).write_text(f"boot ok\ntoken={secret}\n", encoding="utf-8")
 
     session = _session(_bootstrap_cookie(port))
     with _get(port, "/api/logs?source=host", session) as response:
@@ -141,7 +143,7 @@ def test_logs_mask_seeded_token_line(cockpit, tmp_path):
 
     with _get(port, "/api/logs?source=host&filter=boot", session) as response:
         filtered = json.load(response)
-    entries = [entry for entry in filtered["logs"] if entry["file"] == "seed.out"]
+    entries = [entry for entry in filtered["logs"] if entry["file"] == log_name]
     assert entries and entries[0]["lines"] == ["boot ok"]
 
 

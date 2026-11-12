@@ -152,8 +152,9 @@ def test_profiles_list_rows_always_full_keys(monkeypatch, tmp_path):
 
     assert {"good", "broken"} <= {row["name"] for row in rows}
     for row in rows:
-        assert set(row) == {"name", "mode", "project_dir", "active"}
+        assert set(row) == {"name", "mode", "project_dir", "active", "git_placeholder"}
         assert isinstance(row["active"], bool)
+        assert isinstance(row["git_placeholder"], bool)
 
 
 def test_logs_payload_groups_lines_per_source(monkeypatch):
@@ -168,8 +169,9 @@ def test_logs_payload_groups_lines_per_source(monkeypatch):
 
     assert set(payload) == {"sources"}
     for group in payload["sources"]:
-        assert set(group) == {"name", "lines"}
+        assert set(group) == {"name", "files", "lines"}
         assert isinstance(group["name"], str)
+        assert isinstance(group["files"], list)
         assert isinstance(group["lines"], list)
         assert all(isinstance(line, str) for line in group["lines"])
 
@@ -185,6 +187,23 @@ def test_collect_logs_entry_shape(monkeypatch, tmp_path):
     entries = api.collect_logs("ingress", "")
 
     assert entries == [{"source": "ingress", "file": "ingress.out", "lines": ["line one", "line two"]}]
+
+
+def test_collect_logs_host_scoped_to_active_profile(monkeypatch, tmp_path):
+    from rdm.ui import api
+
+    monkeypatch.setattr(api.hostos, "tempdir", lambda: tmp_path)
+    monkeypatch.setattr(api, "_active_profile", lambda: "alpha")
+    host = tmp_path / "rdm-host"
+    host.mkdir()
+    (host / "alpha-svc8080.out").write_text("alpha line\n", encoding="utf-8")
+    (host / "beta-svc8080.out").write_text("beta line\n", encoding="utf-8")
+
+    entries = api.collect_logs("host", "")
+
+    assert entries == [
+        {"source": "host", "file": "alpha-svc8080.out", "lines": ["alpha line"]}
+    ]
 
 
 def test_jobs_payload_carries_stalled(monkeypatch, tmp_path):
@@ -392,7 +411,7 @@ def test_profile_get_returns_frozen_shape(monkeypatch, tmp_path):
 
     result = service.profile_get("alpha")
 
-    assert set(result) == {"json", "valid", "errors"}
+    assert set(result) == {"json", "valid", "errors", "git_placeholder"}
     assert json.loads(result["json"])["git_name"] == "agent"
     assert result["valid"] is True
     assert result["errors"] == []
@@ -404,7 +423,7 @@ def test_profile_get_broken_json_is_invalid(monkeypatch, tmp_path):
 
     result = service.profile_get("broken")
 
-    assert set(result) == {"json", "valid", "errors"}
+    assert set(result) == {"json", "valid", "errors", "git_placeholder"}
     assert result["json"] == "{oops"
     assert result["valid"] is False
     assert len(result["errors"]) == 1

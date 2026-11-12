@@ -135,6 +135,10 @@ def _handle_profile_detect(params: dict[str, Any]) -> dict[str, Any]:
     return service.profile_detect(str(params.get("path", "")))
 
 
+def _handle_mcp_candidates(params: dict[str, Any]) -> dict[str, Any]:
+    return service.mcp_candidates(str(params.get("name", "")))
+
+
 def _handle_cockpit_open(params: dict[str, Any]) -> dict[str, Any]:
     return service.cockpit_open()
 
@@ -244,6 +248,7 @@ def _build_server() -> RpcPluginServer:
     server.register("folder_check", _handle_folder_check)
     server.register("profile_defaults", _handle_profile_defaults)
     server.register("profile_detect", _handle_profile_detect)
+    server.register("mcp_candidates", _handle_mcp_candidates)
     server.register("cockpit_open", _handle_cockpit_open)
     server.register("action_status", _handle_action_status)
     server.register("stack_start", _handle_stack_start)
