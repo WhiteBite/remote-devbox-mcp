@@ -191,6 +191,14 @@
         "readonly": true
       },
       {
+        "name": "env_get",
+        "readonly": true
+      },
+      {
+        "name": "env_set",
+        "readonly": false
+      },
+      {
         "name": "exposure",
         "readonly": true
       },

@@ -72,6 +72,17 @@ def _handle_jobs(params: dict[str, Any]) -> dict[str, Any]:
     return service.jobs()
 
 
+def _handle_env_get(params: dict[str, Any]) -> dict[str, Any]:
+    return service.env_get()
+
+
+def _handle_env_set(params: dict[str, Any]) -> dict[str, Any]:
+    patch = params.get("patch")
+    if not isinstance(patch, dict):
+        raise ValueError("patch must be a JSON object")
+    return service.env_set(patch)
+
+
 def _handle_permissions(params: dict[str, Any]) -> dict[str, Any]:
     return service.permissions()
 
@@ -235,6 +246,8 @@ def _build_server() -> RpcPluginServer:
     server.register("overview", _handle_overview)
     server.register("jobs", _handle_jobs)
     server.register("permissions", _handle_permissions)
+    server.register("env_get", _handle_env_get)
+    server.register("env_set", _handle_env_set)
     server.register("exposure", _handle_exposure)
     server.register("diff", _handle_diff)
     server.register("manifest", _handle_manifest)

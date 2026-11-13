@@ -13,7 +13,7 @@ import subprocess
 import threading
 import time
 
-from rdm import cli, docker, envfile, hostos, netprobe, procman, profiles, redact, tokens
+from rdm import cli, docker, envfile, envschema, hostos, netprobe, procman, profiles, redact, tokens
 from rdm.events import jobs, sink
 
 COMPOSE_PS_TTL_SECONDS = 15.0
@@ -263,6 +263,24 @@ def jobs_payload() -> dict[str, object]:
         "jobs": jobs.correlate(events)["jobs"],
         "stalled": jobs.stall_alarm(events, time.time()),
     }
+
+
+def env_entries_payload() -> dict[str, object]:
+    env_map = envfile.EnvFile.load(cli.ENV_FILE).as_map()
+    return {"entries": envschema.entries(env_map)}
+
+
+def env_apply_patch(patch: dict[str, object]) -> dict[str, object]:
+    env = envfile.EnvFile.load(cli.ENV_FILE)
+    env_map = env.as_map()
+    new_map, errors, restart = envschema.apply_patch(env_map, patch)
+    if errors:
+        return {"valid": False, "errors": errors, "restart": []}
+    for key, value in new_map.items():
+        if env_map.get(key, "") != value:
+            env.set(key, value)
+    env.write(cli.ENV_FILE)
+    return {"valid": True, "errors": [], "restart": restart}
 
 
 def permissions_payload() -> dict[str, object]:

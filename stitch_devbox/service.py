@@ -249,6 +249,14 @@ def jobs() -> dict[str, Any]:
     return _rdm().ui.api.jobs_payload()
 
 
+def env_get() -> dict[str, Any]:
+    return _rdm().ui.api.env_entries_payload()
+
+
+def env_set(patch: dict[str, Any]) -> dict[str, Any]:
+    return _rdm().ui.api.env_apply_patch(patch)
+
+
 def permissions() -> dict[str, Any]:
     return _rdm().ui.api.permissions_payload()
 

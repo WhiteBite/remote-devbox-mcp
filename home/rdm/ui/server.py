@@ -18,6 +18,8 @@ from rdm.ui.api import (
     build_status,
     collect_logs,
     diff_payload,
+    env_apply_patch,
+    env_entries_payload,
     exposure_payload,
     invalidate_status_cache,
     jobs_payload,
@@ -200,6 +202,8 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(200, jobs_payload())
         elif path == "/api/permissions":
             self._json(200, permissions_payload())
+        elif path == "/api/env":
+            self._json(200, env_entries_payload())
         elif path.startswith(_PROFILE_PREFIX):
             self._api_profile_get(path)
         else:
@@ -238,8 +242,29 @@ class _Handler(BaseHTTPRequestHandler):
             return
         if split.path.startswith(_ACTION_PREFIX):
             self._api_action(split.path)
+        elif split.path == "/api/env":
+            self._api_env()
         else:
             self._json(404, {"error": "not found"})
+
+    def _api_env(self) -> None:
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            data = json.loads(self.rfile.read(length)) if length > 0 else None
+        except ValueError:
+            self._json(400, {"error": "body must be valid JSON"})
+            return
+        body = {} if data is None else data
+        if not isinstance(body, dict):
+            self._json(400, {"error": "body must be a JSON object"})
+            return
+        patch = body.get("patch")
+        if not isinstance(patch, dict):
+            self._json(400, {"error": "patch must be a JSON object"})
+            return
+        result = env_apply_patch(patch)
+        self.server.invalidate_status()
+        self._json(200 if result["valid"] else 400, result)
 
     def _profile_target(self, path: str) -> tuple[str, pathlib.Path] | None:
         name = path[len(_PROFILE_PREFIX):]

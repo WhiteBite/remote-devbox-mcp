@@ -208,6 +208,21 @@
           <div class="editor-msg idle" id="editor-msg" role="status" aria-live="polite">in-memory header token (X-RDM-Token) &mdash; never stored, never in a URL.</div>
         </div>
       </section>
+      <section class="panel" id="section-settings">
+        <div class="panel-head">
+          <span class="panel-icon"><svg aria-hidden="true"><use href="#i-sliders"/></svg></span>
+          <span class="panel-title">settings</span>
+          <span class="panel-meta" id="settings-meta">&mdash;</span>
+          <div class="panel-actions">
+            <button class="btn" id="btn-settings-load"><svg aria-hidden="true"><use href="#i-refresh"/></svg><span>Reload</span></button>
+            <button class="btn btn-accent" id="btn-settings-save"><svg aria-hidden="true"><use href="#i-save"/></svg><span>Save</span></button>
+          </div>
+        </div>
+        <div class="panel-body">
+          <div class="settings-grid" id="settings-body"></div>
+          <div class="editor-msg idle" id="settings-msg" role="status" aria-live="polite">secrets stay masked until you type a new value</div>
+        </div>
+      </section>
     </div>
   </section>
 

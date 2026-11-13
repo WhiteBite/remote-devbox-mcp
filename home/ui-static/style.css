@@ -1848,3 +1848,36 @@ section[id], article[id] {
     box-shadow: 0 0 0 3px var(--ok-soft);
   }
 }
+
+.settings-grid {
+  display: grid;
+  gap: 14px;
+}
+.settings-group {
+  display: grid;
+  gap: 8px;
+}
+.settings-group-title {
+  font-size: 11px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--fg-dim, #7d93a6);
+}
+.settings-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
+}
+.settings-field {
+  display: grid;
+  gap: 4px;
+}
+.settings-key {
+  font-size: 11px;
+  color: var(--fg-dim, #7d93a6);
+  font-family: var(--mono, monospace);
+}
+.settings-field .field[disabled] {
+  opacity: .55;
+  cursor: not-allowed;
+}

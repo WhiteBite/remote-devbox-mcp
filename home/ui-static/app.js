@@ -27,6 +27,8 @@ const state = {
   editorName: "",
   editorPath: "",
   editorDirty: false,
+  envEntries: [],
+  envDraft: {},
 };
 
 let sessionToken = null;
@@ -880,6 +882,8 @@ function cacheDom() {
     useName: "use-name", allowPort: "allow-port", allowUi: "allow-ui", startName: "start-name", startPreview: "start-preview",
     editorNameInput: "editor-name", editorSource: "editor-source", editorArea: "editor-area", editorMsg: "editor-msg", editorMeta: "editor-meta",
     btnEditorLoad: "btn-editor-load", btnEditorSave: "btn-editor-save",
+    settingsBody: "settings-body", settingsMsg: "settings-msg", settingsMeta: "settings-meta",
+    btnSettingsLoad: "btn-settings-load", btnSettingsSave: "btn-settings-save",
     btnRefresh: "btn-refresh", btnPalette: "btn-palette",
     paletteOverlay: "palette-overlay", paletteInput: "palette-input", paletteList: "palette-list",
   };
@@ -891,6 +895,92 @@ function setManifestView(view) {
   el.tabStructured.setAttribute("aria-selected", String(view === "structured"));
   el.tabRaw.setAttribute("aria-selected", String(view === "raw"));
   renderManifest();
+}
+
+function setSettingsMsg(kind, text) {
+  el.settingsMsg.className = "editor-msg " + kind;
+  el.settingsMsg.textContent = text;
+}
+
+async function loadSettings() {
+  const res = await api("/api/env");
+  if (!res.ok || !res.data || !Array.isArray(res.data.entries)) {
+    setSettingsMsg("err", "settings load failed (" + res.status + ")");
+    return;
+  }
+  state.envEntries = res.data.entries;
+  state.envDraft = {};
+  for (const entry of state.envEntries) state.envDraft[entry.key] = entry.value;
+  el.settingsMeta.textContent = state.envEntries.length + " keys";
+  renderSettings();
+  setSettingsMsg("idle", "loaded - secrets stay masked");
+}
+
+function renderSettings() {
+  el.settingsBody.textContent = "";
+  const groups = new Map();
+  for (const entry of state.envEntries) {
+    if (!groups.has(entry.section)) groups.set(entry.section, []);
+    groups.get(entry.section).push(entry);
+  }
+  for (const [section, entries] of groups) {
+    const group = h("div", "settings-group");
+    group.appendChild(h("div", "settings-group-title", section));
+    const fields = h("div", "settings-fields");
+    for (const entry of entries) {
+      const wrap = h("label", "settings-field");
+      wrap.appendChild(h("span", "settings-key", entry.key + (entry.secret ? " (secret)" : "")));
+      const input = document.createElement("input");
+      input.className = "field";
+      input.type = entry.secret ? "password" : "text";
+      input.value = state.envDraft[entry.key] ?? "";
+      input.disabled = Boolean(entry.readonly);
+      input.autocomplete = "off";
+      input.spellcheck = false;
+      input.addEventListener("input", () => { state.envDraft[entry.key] = input.value; });
+      wrap.appendChild(input);
+      fields.appendChild(wrap);
+    }
+    group.appendChild(fields);
+    el.settingsBody.appendChild(group);
+  }
+}
+
+async function saveSettings() {
+  const patch = {};
+  for (const entry of state.envEntries) {
+    if (entry.readonly) continue;
+    const current = state.envDraft[entry.key] ?? "";
+    if (current !== entry.value) patch[entry.key] = current;
+  }
+  if (Object.keys(patch).length === 0) {
+    setSettingsMsg("idle", "no changes");
+    return;
+  }
+  const token = await ensureSessionToken();
+  if (!token) {
+    setSettingsMsg("err", "no session token - reload the cockpit");
+    return;
+  }
+  el.btnSettingsSave.disabled = true;
+  setSettingsMsg("idle", "saving " + Object.keys(patch).join(", "));
+  try {
+    const res = await api("/api/env", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-RDM-Token": token },
+      body: JSON.stringify({ patch }),
+    });
+    if (res.data && res.data.valid) {
+      const restart = Array.isArray(res.data.restart) ? res.data.restart : [];
+      await loadSettings();
+      setSettingsMsg("ok", "saved" + (restart.length ? " - restart: " + restart.join(", ") : ""));
+    } else {
+      const errors = res.data && Array.isArray(res.data.errors) ? res.data.errors : [];
+      setSettingsMsg("err", errors.length ? errors.join("; ") : "save failed (" + res.status + ")");
+    }
+  } finally {
+    el.btnSettingsSave.disabled = false;
+  }
 }
 
 function wireEvents() {
@@ -914,6 +1004,8 @@ function wireEvents() {
   }
   el.btnEditorLoad.addEventListener("click", loadProfile);
   el.btnEditorSave.addEventListener("click", saveProfile);
+  el.btnSettingsLoad.addEventListener("click", loadSettings);
+  el.btnSettingsSave.addEventListener("click", saveSettings);
   el.editorArea.addEventListener("input", () => { state.editorDirty = true; });
   el.editorNameInput.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); loadProfile(); } });
 
@@ -946,6 +1038,7 @@ function boot() {
   setActionStatus("idle", "idle — no action running");
   loadHandoffMasked();
   connectEvents();
+  loadSettings();
   tick();
   startPoller();
 }
