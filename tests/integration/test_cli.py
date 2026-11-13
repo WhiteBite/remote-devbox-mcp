@@ -213,7 +213,7 @@ def test_full_down_stops_watchdog_host_and_composes_down(monkeypatch, tmp_path):
     assert calls["watchdog_stop"] == [True]
     assert calls["stop"] == [("p1",)]
     assert calls["gateway_stop"] == [True]
-    assert ("--profile", "preview", "down") in calls["compose"]
+    assert ("--profile", "preview", "--profile", "cloudflare", "--profile", "relay", "down") in calls["compose"]
 
 
 def test_full_down_fails_when_compose_down_fails(monkeypatch, tmp_path):
@@ -282,7 +282,7 @@ def test_start_preview_skipped_with_named_preview(monkeypatch, tmp_path):
     cli.ENV_FILE.write_text("PUBLIC_PREVIEW_URL=https://preview.example.test\n", encoding="utf-8")
     (projects / "p1.json").write_text(_profile_json(tmp_path), encoding="utf-8")
     assert cli.main(["start", "p1", "--preview"]) == 0
-    assert not any("--profile" in args for args in calls["compose"])
+    assert not any("preview" in args for args in calls["compose"] if "--profile" in args)
 
 
 def test_allow_opens_port_and_sets_ui(monkeypatch, tmp_path):

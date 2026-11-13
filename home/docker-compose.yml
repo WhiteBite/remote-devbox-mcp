@@ -71,6 +71,7 @@ services:
     image: remote-devbox-vpn:local
     container_name: rdm-vpn
     restart: unless-stopped
+    profiles: ["vless"]
     cap_add:
       - NET_ADMIN
     devices:
@@ -87,6 +88,41 @@ services:
       retries: 5
       start_period: 40s
 
+  # WARP-сайдкар: cloudflared в его netns, чтобы DPI не видел край Cloudflare (issue #1456).
+  egress:
+    build:
+      context: ./docker
+      dockerfile: egress.Dockerfile
+    image: remote-devbox-egress:local
+    container_name: rdm-egress
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun
+    volumes:
+      - rdm-egress-state:/var/lib/cloudflare-warp
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -m 6 https://www.cloudflare.com/cdn-cgi/trace | grep -q 'warp=on'"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Вход без Cloudflare: localtunnel к ingress-proxy хоста, без регистрации и аккаунта.
+  relay:
+    build:
+      context: ./docker
+      dockerfile: relay.Dockerfile
+    image: remote-devbox-relay:local
+    container_name: rdm-relay
+    restart: unless-stopped
+    profiles: ["relay"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      RELAY_SUBDOMAIN: "${RELAY_SUBDOMAIN:-}"
+
   # Preview для агента: выделенный туннель на порт 8788 (виджетбук / flutter
   # web-server / bootRun). Нужен ТОЛЬКО для flutter-web с абсолютными путями
   # ассетов, которые ломаются под префиксом ingress /p/<port>/; всё остальное
@@ -100,11 +136,11 @@ services:
     container_name: rdm-tunnel-preview
     restart: unless-stopped
     profiles: ["preview"]
-    network_mode: container:rdm-vpn
+    network_mode: container:${EGRESS_CONTAINER:-rdm-egress}
     depends_on:
       toolbox:
         condition: service_started
-      vpn:
+      egress:
         condition: service_started
     command: tunnel --no-autoupdate --protocol http2 --url ${PREVIEW_ORIGIN:-http://toolbox:8788}
 
@@ -119,9 +155,10 @@ services:
     image: cloudflare/cloudflared@sha256:ff69a2225ad7c6f85ed84fbd5f3087df46202426b2388ec60214098e0adf05e9
     container_name: rdm-tunnel-ingress
     restart: unless-stopped
-    network_mode: container:rdm-vpn
+    profiles: ["cloudflare"]
+    network_mode: container:${EGRESS_CONTAINER:-rdm-egress}
     depends_on:
-      vpn:
+      egress:
         condition: service_started
     # TUNNEL_TAIL рендерит devbox.ps1 из TUNNEL_TOKEN:
     #   именованный: "run --token <TOKEN>"   (URL стабилен, от IP не зависит)
@@ -133,3 +170,4 @@ volumes:
   rdm-tools:
   rdm-agent:
   rdm-vpn-cache:
+  rdm-egress-state:

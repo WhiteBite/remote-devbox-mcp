@@ -34,12 +34,27 @@ def can_connect(port: int, timeout: float = 1.0) -> bool:
 
 
 def ingress_url(env_map: dict[str, str], compose_file: str | None = None) -> str:
+    kwargs = {"compose_file": compose_file} if compose_file else {}
+    if env_map.get("INGRESS_MODE", "").strip().lower() == "relay":
+        try:
+            relay_logs = docker.compose("logs", "--tail", "200", "relay", **kwargs).stdout
+        except OSError:
+            relay_logs = ""
+        published = tunnels.from_relay_logs(relay_logs)
+        if published:
+            return published
     public = env_map.get("PUBLIC_URL")
     if public:
         return public
-    kwargs = {"compose_file": compose_file} if compose_file else {}
     try:
         logs = docker.compose("logs", "--tail", "200", "cloudflared-ingress", **kwargs).stdout
     except OSError:
         return ""
-    return tunnels.from_logs(logs)
+    published = tunnels.from_logs(logs)
+    if published:
+        return published
+    try:
+        relay_logs = docker.compose("logs", "--tail", "200", "relay", **kwargs).stdout
+    except OSError:
+        return ""
+    return tunnels.from_relay_logs(relay_logs)

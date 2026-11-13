@@ -248,9 +248,9 @@ def run(env_map: dict[str, str], compose_file: str | None = None, prober=None) -
     report.check("override yml", (_HOME / "docker-compose.override.yml").exists(), "devbox.py use <имя>")
     toolbox = docker.compose("ps", "toolbox", "--format", "{{.Status}}", compose_file=compose_file).stdout
     report.check("toolbox healthy", "healthy" in toolbox, "docker compose up -d toolbox")
-    if env_map.get("VLESS_SUB_URL"):
-        vpn = docker.compose("ps", "vpn", "--format", "{{.Status}}", compose_file=compose_file).stdout
-        report.check("vpn healthy", "healthy" in vpn, "docker compose logs vpn")
+    egress_service = "vpn" if env_map.get("EGRESS_CONTAINER") == "rdm-vpn" else "egress"
+    egress = docker.compose("ps", egress_service, "--format", "{{.Status}}", compose_file=compose_file).stdout
+    report.check(f"egress {egress_service} healthy", "healthy" in egress, f"docker compose logs {egress_service}")
     ingress_entry = _first_entry(hostos.tempdir() / "rdm-ingress" / "pids.txt")
     report.check(
         "ingress pid",

@@ -6,6 +6,7 @@ import re
 
 _RESERVED = r"(?!api\.|www\.|update\.|developers\.|blog\.|cloudflared\.)"
 _URL = re.compile(rf"https://{_RESERVED}[a-z0-9][a-z0-9-]*\.trycloudflare\.com")
+_RELAY_URL = re.compile(r"https://[a-z0-9][a-z0-9-]*\.loca\.lt")
 
 
 def from_logs(logs: str | None) -> str:
@@ -16,4 +17,9 @@ def from_logs(logs: str | None) -> str:
             if match:
                 return match.group(0)
     matches = _URL.findall(text)
+    return matches[-1] if matches else ""
+
+
+def from_relay_logs(logs: str | None) -> str:
+    matches = _RELAY_URL.findall(logs or "")
     return matches[-1] if matches else ""
