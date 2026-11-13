@@ -248,9 +248,13 @@ def run(env_map: dict[str, str], compose_file: str | None = None, prober=None) -
     report.check("override yml", (_HOME / "docker-compose.override.yml").exists(), "devbox.py use <имя>")
     toolbox = docker.compose("ps", "toolbox", "--format", "{{.Status}}", compose_file=compose_file).stdout
     report.check("toolbox healthy", "healthy" in toolbox, "docker compose up -d toolbox")
-    egress_service = "vpn" if env_map.get("EGRESS_CONTAINER") == "rdm-vpn" else "egress"
-    egress = docker.compose("ps", egress_service, "--format", "{{.Status}}", compose_file=compose_file).stdout
-    report.check(f"egress {egress_service} healthy", "healthy" in egress, f"docker compose logs {egress_service}")
+    if env_map.get("INGRESS_MODE", "").strip().lower() == "relay":
+        relay = docker.compose("ps", "relay", "--format", "{{.Status}}", compose_file=compose_file).stdout
+        report.check("relay up", "Up" in relay, "docker compose --profile relay up -d relay")
+    else:
+        egress_service = "vpn" if env_map.get("EGRESS_CONTAINER") == "rdm-vpn" else "egress"
+        egress = docker.compose("ps", egress_service, "--format", "{{.Status}}", compose_file=compose_file).stdout
+        report.check(f"egress {egress_service} healthy", "healthy" in egress, f"docker compose logs {egress_service}")
     ingress_entry = _first_entry(hostos.tempdir() / "rdm-ingress" / "pids.txt")
     report.check(
         "ingress pid",
