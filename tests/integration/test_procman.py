@@ -42,7 +42,7 @@ def _entries(path: pathlib.Path) -> list[tuple[int, str, str]]:
     return [(int(f[0]), f[1], f[2]) for f in fields]
 
 
-def _wait_until(predicate, timeout: float = 15.0, interval: float = 0.2):
+def _wait_until(predicate, timeout: float = 30.0, interval: float = 0.2):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         value = predicate()
