@@ -411,7 +411,7 @@ def test_save_grants_owner_only_acl_on_windows(tmp_path):
     ace_lines = [line for line in listing.splitlines() if ":(" in line]
     principals = [line.split(":(")[0].rsplit(" ", 1)[-1] for line in ace_lines]
     owner_aces = [
-        line for line, principal in zip(ace_lines, principals) if user.lower() in principal.lower()
+        line for line, principal in zip(ace_lines, principals, strict=False) if user.lower() in principal.lower()
     ]
     assert len(owner_aces) == 1
     assert "(F)" in owner_aces[0]
