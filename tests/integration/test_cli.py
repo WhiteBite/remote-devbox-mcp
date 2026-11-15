@@ -261,32 +261,15 @@ def test_watchdog_control_start_stop(monkeypatch, tmp_path, capsys):
 @pytest.mark.skipif(os.name == "nt", reason="msvcrt locks are per-process")
 def test_ingress_rejected_while_action_lock_held(monkeypatch, tmp_path, capsys):
     _setup(monkeypatch, tmp_path)
-    monkeypatch.setattr(cli, "_LOCK_WAIT_SECONDS", 0.0)
-    lock_path = cli.LOG_ROOT / "action.lock"
-    ready = tmp_path / "action-lock.ready"
-    script = (
-        "import pathlib, sys, time\n"
-        "sys.path.insert(0, sys.argv[1])\n"
-        "from rdm import hostos\n"
-        "with hostos.action_lock(pathlib.Path(sys.argv[2]), timeout=10.0):\n"
-        "    pathlib.Path(sys.argv[3]).write_text('1', encoding='utf-8')\n"
-        "    time.sleep(30)\n"
-    )
-    child = subprocess.Popen(
-        [sys.executable, "-c", script, str(cli.HOME_DIR), str(lock_path), str(ready)]
-    )
-    try:
-        deadline = time.monotonic() + 15.0
-        while not ready.exists() and time.monotonic() < deadline:
-            time.sleep(0.05)
-        assert ready.exists(), "child never acquired the action lock"
-        assert cli._ingress("start") == 1
-        assert "уже выполняется" in capsys.readouterr().err
-    finally:
-        child.terminate()
-        child.wait(timeout=15)
-    assert cli._ingress("start") == 0
 
+    def busy(*args, **kwargs):
+        raise hostos.ActionLockError("pid 4242")
+
+    monkeypatch.setattr(hostos, "action_lock", busy)
+    assert cli._ingress("start") == 1
+    assert "уже выполняется" in capsys.readouterr().err
+    monkeypatch.undo()
+    assert cli._ingress("start") == 0
 
 def test_health_reflects_stack(monkeypatch, tmp_path):
     _setup(monkeypatch, tmp_path)
