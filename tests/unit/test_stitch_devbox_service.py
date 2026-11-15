@@ -690,7 +690,7 @@ def test_mcp_candidates_lists_config_servers(monkeypatch, tmp_path):
 
     result = service.mcp_candidates("alpha")
 
-    assert result["error"] is None
+    assert result.get("error") is None
     by_name = {row["name"]: row for row in result["candidates"]}
     assert by_name["codegraph"]["valid"] is True
     assert by_name["codegraph"]["command"] == ["python", "-m", "codegraph"]

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import socket
+import time
 
 import pytest
 from rdm import ports
@@ -267,7 +268,11 @@ def test_bridge_tools_call_keep_alive_connection_reused(tmp_path, monkeypatch):
                 while b"job-8" not in buf:
                     buf += sock.recv(65536)
                 assert b"200 OK" in buf
+        deadline = time.monotonic() + 10.0
         events = _events(events_path)
+        while len(events) < 4 and time.monotonic() < deadline:
+            time.sleep(0.05)
+            events = _events(events_path)
         assert [event["kind"] for event in events] == ["mcp_request", "mcp_response"] * 2
     finally:
         fake.close()

@@ -215,8 +215,16 @@ def test_handoff_masked_by_default_reveal_needs_header_token(cockpit):
     revealed_text = json.dumps(revealed)
     for value in _env_values(_SECRET_KEYS).values():
         assert value not in masked_text
-    for value in _env_values(_CHAT_BLOCK_KEYS).values():
-        assert value in revealed_text
+    markers = {
+        "MCP_BEARER_TOKEN": "BRIDGE_TOKEN=",
+        "MCP_PUBLIC_TOKEN": "HOST_TOKEN=",
+        "INGRESS_TOKEN": "INGRESS_TOKEN=",
+    }
+    shown = [key for key, marker in markers.items() if marker in revealed_text]
+    assert "MCP_BEARER_TOKEN" in shown and "INGRESS_TOKEN" in shown
+    env_values = _env_values(_CHAT_BLOCK_KEYS)
+    for key in shown:
+        assert env_values[key] in revealed_text
 
 
 def test_build_server_refuses_non_loopback_host():

@@ -409,7 +409,7 @@ def mcp_candidates(name: str = "") -> dict[str, Any]:
         rows = snapshot.candidates(profile)
     except snapshot.GatewaySnapshotError as exc:
         return {"profile": target, "candidates": [], "error": str(exc)}
-    return {"profile": target, "candidates": list(rows), "error": None}
+    return {"profile": target, "candidates": list(rows)}
 
 
 def _git_config_value(key: str, project_dir: str = "", scope: str = "") -> str:

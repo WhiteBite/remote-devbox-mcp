@@ -149,7 +149,7 @@ def test_issue_tokens_rotates_three(monkeypatch, tmp_path):
 
 def test_start_prints_handoff_block(monkeypatch, tmp_path, capsys):
     projects, calls = _setup(monkeypatch, tmp_path)
-    monkeypatch.setattr(cli.netprobe, "ingress_url", lambda *args, **kwargs: "https://devbox.example.test")
+    monkeypatch.setattr(cli, "_ingress_url", lambda env_map: "https://devbox.example.test")
     (projects / "p1.json").write_text(_profile_json(tmp_path), encoding="utf-8")
     assert cli.main(["start", "p1"]) == 0
     out = capsys.readouterr().out
@@ -262,9 +262,29 @@ def test_watchdog_control_start_stop(monkeypatch, tmp_path, capsys):
 def test_ingress_rejected_while_action_lock_held(monkeypatch, tmp_path, capsys):
     _setup(monkeypatch, tmp_path)
     monkeypatch.setattr(cli, "_LOCK_WAIT_SECONDS", 0.0)
-    with hostos.action_lock(cli.LOG_ROOT / "action.lock", timeout=0.0):
+    lock_path = cli.LOG_ROOT / "action.lock"
+    ready = tmp_path / "action-lock.ready"
+    script = (
+        "import pathlib, sys, time\n"
+        "sys.path.insert(0, sys.argv[1])\n"
+        "from rdm import hostos\n"
+        "with hostos.action_lock(pathlib.Path(sys.argv[2]), timeout=10.0):\n"
+        "    pathlib.Path(sys.argv[3]).write_text('1', encoding='utf-8')\n"
+        "    time.sleep(30)\n"
+    )
+    child = subprocess.Popen(
+        [sys.executable, "-c", script, str(cli.HOME_DIR), str(lock_path), str(ready)]
+    )
+    try:
+        deadline = time.monotonic() + 15.0
+        while not ready.exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert ready.exists(), "child never acquired the action lock"
         assert cli._ingress("start") == 1
-    assert "другое действие" in capsys.readouterr().err
+        assert "уже выполняется" in capsys.readouterr().err
+    finally:
+        child.terminate()
+        child.wait(timeout=15)
     assert cli._ingress("start") == 0
 
 

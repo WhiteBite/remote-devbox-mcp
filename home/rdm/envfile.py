@@ -17,6 +17,13 @@ _CANONICAL_ORDER = (
     "JOB_TIMEOUT_SECONDS", "TUNNEL_TOKEN", "TUNNEL_TAIL",
 )
 _CANONICAL_KEYS = frozenset(_CANONICAL_ORDER)
+_WELL_KNOWN_GROUPS = (
+    "*S-1-5-18",
+    "*S-1-5-32-544",
+    "*S-1-5-32-545",
+    "*S-1-5-11",
+    "*S-1-1-0",
+)
 
 
 def _index_key_lines(lines: list[str]) -> dict[str, int]:
@@ -34,24 +41,17 @@ def restrict_permissions(path: Path) -> None:
             user = subprocess.run(
                 ["whoami"], capture_output=True, text=True, check=True
             ).stdout.strip()
-            subprocess.run(
-                [
-                    "icacls",
-                    str(path),
-                    "/inheritance:r",
-                    "/remove:g",
-                    "*S-1-5-18",
-                    "*S-1-5-32-544",
-                    "*S-1-5-32-545",
-                    "*S-1-5-11",
-                    "*S-1-1-0",
-                    "/grant:r",
-                    f"{user}:F",
-                ],
-                capture_output=True, check=True,
-            )
         except (OSError, subprocess.SubprocessError):
-            pass
+            return
+        # icacls aborts the whole call when one SID is absent (CI runners differ).
+        for args in (
+            ("/inheritance:r",),
+            *[("/remove:g", sid) for sid in _WELL_KNOWN_GROUPS],
+            ("/grant:r", f"{user}:F"),
+        ):
+            subprocess.run(
+                ["icacls", str(path), *args], capture_output=True, check=False
+            )
     else:
         try:
             path.chmod(0o600)

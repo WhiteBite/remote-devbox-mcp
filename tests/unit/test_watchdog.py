@@ -29,6 +29,10 @@ def _wire(monkeypatch, tmp_path, dead=False, ingress_up=True, ps="rdm-toolbox he
     monkeypatch.setattr(watchdog.docker, "compose", lambda *a, **k: calls["compose"].append(a) or subprocess.CompletedProcess(["docker"], 0, stdout="", stderr=""))
     monkeypatch.setattr(watchdog.docker, "compose_ps", lambda *a, **k: ps)
     monkeypatch.setattr(watchdog.procman, "restart_host_services", lambda *a, **k: calls["restart"].append(a) or [])
+    calls["owned"] = {}
+    monkeypatch.setattr(
+        watchdog.hostos, "owned", lambda pid, *a, **k: calls["owned"].get(pid, False)
+    )
     return calls
 
 
@@ -131,6 +135,7 @@ def test_watchdog_single_instance_guard_exits_when_foreign_alive(monkeypatch, tm
     calls = _wire(monkeypatch, tmp_path)
     pid = hostos.spawn([sys.executable, "-c", _SLEEP_60, " watch"])
     try:
+        calls["owned"][pid] = True
         path = procman.watchdog_pids_path()
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(f"{pid}|{hostos.create_time(pid)}| watch\n", encoding="utf-8")
@@ -172,3 +177,13 @@ def test_watchdog_guard_passes_on_own_pid(monkeypatch, tmp_path):
     watchdog.run(_env(), iterations=3, prober=lambda url, token, timeout=10.0: 200)
     assert calls["compose"] != []
     assert not path.exists()
+
+
+def test_watchdog_guard_blocks_on_live_foreign_pid(monkeypatch, tmp_path):
+    calls = _wire(monkeypatch, tmp_path, ps="rdm-toolbox Up (unhealthy)")
+    calls["owned"][424242] = True
+    path = procman.watchdog_pids_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("424242|| watch\n", encoding="utf-8")
+    watchdog.run(_env(), iterations=1, prober=lambda url, token, timeout=10.0: 200)
+    assert calls["compose"] == []
