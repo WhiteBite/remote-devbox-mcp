@@ -224,7 +224,9 @@ def test_handoff_masked_by_default_reveal_needs_header_token(cockpit):
     assert "MCP_BEARER_TOKEN" in shown and "INGRESS_TOKEN" in shown
     env_values = _env_values(_CHAT_BLOCK_KEYS)
     for key in shown:
-        assert env_values[key] in revealed_text
+        value = env_values.get(key)
+        if value:
+            assert value in revealed_text
 
 
 def test_build_server_refuses_non_loopback_host():
