@@ -75,6 +75,8 @@ def compute_port_policy(profile: Profile) -> PortPolicy:
     }
     if runner_port is not None:
         self_authed.add(runner_port)
+    if profile.exposed_mcps:
+        self_authed.add(profile.gateway_port or DEFAULT_GATEWAY_PORT)
     allowed = set(profile.allowed_ports)
     allowed |= {service.port for service in profile.host_services if service.auth != "bearer"}
     allowed |= {command.port for command in profile.runner_commands if command.port}

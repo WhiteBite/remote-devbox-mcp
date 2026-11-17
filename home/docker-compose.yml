@@ -102,6 +102,8 @@ services:
       - /dev/net/tun
     volumes:
       - rdm-egress-state:/var/lib/cloudflare-warp
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS -m 6 https://www.cloudflare.com/cdn-cgi/trace | grep -q 'warp=on'"]
       interval: 30s
@@ -141,7 +143,7 @@ services:
       toolbox:
         condition: service_started
       egress:
-        condition: service_started
+        condition: service_healthy
     command: tunnel --no-autoupdate --protocol http2 --url ${PREVIEW_ORIGIN:-http://toolbox:8788}
 
 # Будущая опция: семантический граф кода (codegraph) агент индексирует у себя
@@ -159,7 +161,7 @@ services:
     network_mode: container:${EGRESS_CONTAINER:-rdm-egress}
     depends_on:
       egress:
-        condition: service_started
+        condition: service_healthy
     # TUNNEL_TAIL рендерит devbox.ps1 из TUNNEL_TOKEN:
     #   именованный: "run --token <TOKEN>"   (URL стабилен, от IP не зависит)
     #   быстрый:     "--protocol http2 --url http://host.docker.internal:8799"

@@ -168,11 +168,20 @@ def _ensure_relay_subdomain(env: envfile.EnvFile) -> None:
     env.set("RELAY_SUBDOMAIN", f"devbox-{secrets.token_hex(4)}")
 
 
-def _start_relay(env_map: dict[str, str]) -> None:
+def _start_relay(env_map: dict[str, str]) -> int:
     if env_map.get("INGRESS_MODE", "").strip().lower() == "relay":
-        docker.compose("--profile", "relay", "up", "-d", "relay", compose_file=COMPOSE_FILE)
+        result = docker.compose("--profile", "relay", "up", "-d", "relay", compose_file=COMPOSE_FILE)
     else:
-        docker.compose("--profile", "cloudflare", "up", "-d", "cloudflared-ingress", compose_file=COMPOSE_FILE)
+        result = docker.compose("--profile", "cloudflare", "up", "-d", "cloudflared-ingress", compose_file=COMPOSE_FILE)
+    return result.returncode
+
+
+def _await_ingress_url(env_map: dict[str, str], timeout: float = 25.0) -> None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if netprobe.ingress_url(env_map, COMPOSE_FILE):
+            return
+        time.sleep(1.0)
 
 
 def _write_manifest(profile: profiles.Profile, name: str, env_map: dict[str, str]) -> None:
@@ -303,7 +312,6 @@ def apply_use(name: str) -> int:
     )
     OVERRIDE_FILE.write_text(render.render_override(profile, dir_mounts), encoding="utf-8")
     env_map = env.as_map()
-    _write_manifest(base_profile, name, env_map)
     procman.restart_host_services(profile, name, HOME_DIR, env_map.get("MCP_PUBLIC_TOKEN", ""))
     if profile.exposed_mcps and env_map.get("GATEWAY_TOKEN"):
         procman.start_gateway(profile, env_map["GATEWAY_TOKEN"], HOME_DIR)
@@ -311,7 +319,11 @@ def apply_use(name: str) -> int:
         procman.stop_gateway()
     procman.stop_ingress()
     procman.start_ingress(_ingress_env(env_map), HOME_DIR)
-    _start_relay(env_map)
+    if _start_relay(env_map) != 0:
+        print("docker compose up (ingress) не удался", file=sys.stderr)
+        return 1
+    _await_ingress_url(env_map)
+    _write_manifest(base_profile, name, env.as_map())
     up = docker.compose("up", "-d", "--force-recreate", "toolbox", compose_file=COMPOSE_FILE)
     if up.returncode != 0:
         print(f"docker compose up не удался (rc={up.returncode}): {up.stderr.strip()}", file=sys.stderr)
@@ -404,7 +416,10 @@ def _start(name: str | None, with_preview: bool, with_watchdog: bool = True) -> 
             procman.stop_ingress()
             procman.start_ingress(_ingress_env(env_map), HOME_DIR)
     env_map = envfile.EnvFile.load(ENV_FILE).as_map()
-    _start_relay(env_map)
+    if _start_relay(env_map) != 0:
+        print("docker compose up (ingress) не удался", file=sys.stderr)
+        return 1
+    _await_ingress_url(env_map)
     if not env_map.get("PUBLIC_PREVIEW_URL") and with_preview:
         docker.compose("--profile", "preview", "up", "-d", compose_file=COMPOSE_FILE)
     _refresh_manifest_from_env()
@@ -546,7 +561,7 @@ def _stop_host_side() -> None:
     procman.stop_gateway()
     procman.stop_ingress()
     procman.stop_watchdog()
-    docker.compose("stop", "cloudflared-ingress", "cloudflared-preview", compose_file=COMPOSE_FILE)
+    docker.compose("stop", "cloudflared-ingress", "cloudflared-preview", "relay", compose_file=COMPOSE_FILE)
 
 
 def _cleanup_logs() -> None:

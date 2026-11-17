@@ -10,7 +10,7 @@ from rdm.gateway.data import (
     NETWORK_EGRESS_SERVERS,
     SECRET_TOUCHING_SERVERS,
 )
-from rdm.profiles import ExposedMcp, Profile, load
+from rdm.profiles import ExposedMcp, HostService, Profile, load
 
 REPO = Path(__file__).resolve().parents[2]
 PROJECTS = REPO / "projects"
@@ -406,3 +406,27 @@ def test_load_host_service_isolated_deps(tmp_path):
     assert service.deps == ("mcp<2", "websockets")
     assert service.python == "3.12"
     assert service.requirements == ""
+
+def test_validate_rejects_deny_mount_escape(tmp_path):
+    for mount in ("../secrets", "apps/../../etc", "/etc/passwd"):
+        problems = profiles.validate(_valid(tmp_path, deny_mounts=(mount,)))
+        assert any(problem.startswith("R43") for problem in problems), mount
+
+
+def test_validate_rejects_bearer_service_http_port_collision(tmp_path):
+    services = (
+        HostService(port=8792, auth="bearer", cmd="run"),
+        HostService(port=8793, auth="bearer", cmd="run"),
+    )
+
+    problems = profiles.validate(_valid(tmp_path, host_services=services))
+
+    assert any(problem.startswith("R44") for problem in problems)
+
+
+def test_validate_rejects_bearer_service_http_port_on_cockpit(tmp_path):
+    problems = profiles.validate(
+        _valid(tmp_path, host_services=(HostService(port=8792, auth="bearer", cmd="run"),))
+    )
+
+    assert any("совпадает с cockpit" in problem for problem in problems)

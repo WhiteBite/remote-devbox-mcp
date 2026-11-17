@@ -487,6 +487,30 @@ def validate(profile: Profile) -> list[str]:
         if deny_port < 1 or deny_port > 65535:
             problems.append(f"R32: порт {deny_port} в PortDeny вне 1-65535")
 
+    for service in profile.host_services:
+        if service.auth != "bearer":
+            continue
+        http_port = service.port + 1
+        if http_port > 65535:
+            problems.append(f"R44: HostService {service.port}: HTTP-порт {http_port} вне 1-65535")
+            continue
+        if http_port in ports:
+            problems.append(f"R44: HostService {service.port}: HTTP-порт {http_port} занят другим HostService")
+        if http_port in (BRIDGE_PORT, BRIDGE_PORT + 1):
+            problems.append(f"R44: HostService {service.port}: HTTP-порт {http_port} конфликтует с мостом")
+        if http_port == COCKPIT_PORT:
+            problems.append(f"R35: HostService {service.port}: HTTP-порт {http_port} совпадает с cockpit")
+        if runner_port and http_port in (runner_port, runner_port + 1):
+            problems.append(
+                f"R36: HostService {service.port}: HTTP-порт {http_port} конфликтует с runner-портом {runner_port}"
+            )
+        if profile.exposed_mcps:
+            gateway_port = profile.gateway_port or DEFAULT_GATEWAY_PORT
+            if http_port in (gateway_port, gateway_port + 1):
+                problems.append(
+                    f"R36: HostService {service.port}: HTTP-порт {http_port} конфликтует с GatewayPort {gateway_port}"
+                )
+
     if COCKPIT_PORT in profile.allowed_ports:
         problems.append(f"R35: AllowedPorts содержит cockpit-порт {COCKPIT_PORT}")
     for lo, hi in ordered:
@@ -545,11 +569,19 @@ def validate(profile: Profile) -> list[str]:
             if command.port == naked:
                 problems.append(f"R20: RunnerCommand[{i}]: port {naked} — HTTP раннера без авторизации")
 
+    project_root = Path(profile.project_dir).resolve()
     for mount in profile.deny_mounts:
         if not _MOUNT_RE.fullmatch(mount):
             problems.append(f"R21: DenyMounts {mount!r}: допустимы только символы [A-Za-z0-9._-/]")
             continue
-        if not os.path.exists(os.path.join(profile.project_dir, mount)):
+        if mount.startswith("/") or ".." in Path(mount).parts:
+            problems.append(f"R43: DenyMounts {mount!r}: путь должен быть относительным и без '..'")
+            continue
+        target = (project_root / mount).resolve()
+        if not target.is_relative_to(project_root):
+            problems.append(f"R43: DenyMounts {mount!r}: путь выходит за пределы проекта")
+            continue
+        if not target.exists():
             problems.append(
                 f"WARN R16: DenyMounts {profile.project_dir}/{mount} не существует (ничего не денится)"
             )

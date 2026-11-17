@@ -144,6 +144,14 @@ def test_policy_gateway_port_self_authed_backend_closed():
     assert not is_port_allowed(policy, DEFAULT_GATEWAY_PORT + 1)
 
 
+def test_policy_gateway_port_self_authed_without_explicit_service():
+    profile = _profile(exposed_mcps=(ExposedMcp(name="websearch"),))
+
+    policy = compute_port_policy(profile)
+
+    assert DEFAULT_GATEWAY_PORT in policy.self_authed
+
+
 def test_policy_gateway_service_composes_with_runner_service():
     profile = _profile(exposed_mcps=(ExposedMcp(name="websearch"),))
 

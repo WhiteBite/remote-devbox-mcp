@@ -7,7 +7,6 @@ import subprocess
 import sys
 import time
 
-import pytest
 from rdm import cli, hostos, ports, procman
 
 
@@ -203,6 +202,7 @@ def test_down_stops_host_ingress_and_tunnels(monkeypatch, tmp_path):
     assert calls["stop"] == [("p1",)]
     assert "stop" in calls["ingress"]
     assert any("cloudflared-ingress" in args for args in calls["compose"])
+    assert any("relay" in args for args in calls["compose"])
     assert calls["watchdog_stop"] == [True]
     assert calls["gateway_stop"] == [True]
 
@@ -259,17 +259,33 @@ def test_watchdog_control_start_stop(monkeypatch, tmp_path, capsys):
     assert calls["watchdog_stop"] == [True]
 
 
-@pytest.mark.skipif(os.name == "nt", reason="msvcrt locks are per-process")
 def test_ingress_rejected_while_action_lock_held(monkeypatch, tmp_path, capsys):
     _setup(monkeypatch, tmp_path)
-
-    def busy(*args, **kwargs):
-        raise hostos.ActionLockError("pid 4242")
-
-    monkeypatch.setattr(hostos, "action_lock", busy)
-    assert cli._ingress("start") == 1
-    assert "уже выполняется" in capsys.readouterr().err
-    monkeypatch.undo()
+    lock_path = tmp_path / "action.lock"
+    ready = tmp_path / "action-lock.ready"
+    monkeypatch.setattr(cli, "_action_lock_path", lambda: lock_path)
+    monkeypatch.setattr(cli, "_LOCK_WAIT_SECONDS", 0.0)
+    script = (
+        "import pathlib, sys, time\n"
+        "sys.path.insert(0, sys.argv[1])\n"
+        "from rdm import hostos\n"
+        "with hostos.action_lock(pathlib.Path(sys.argv[2]), timeout=10.0):\n"
+        "    pathlib.Path(sys.argv[3]).write_text('1', encoding='utf-8')\n"
+        "    time.sleep(60)\n"
+    )
+    child = subprocess.Popen(
+        [sys.executable, "-c", script, str(cli.HOME_DIR), str(lock_path), str(ready)]
+    )
+    try:
+        deadline = time.monotonic() + 30.0
+        while not ready.exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert ready.exists(), "child never acquired the action lock"
+        assert cli._ingress("start") == 1
+        assert "уже выполняется" in capsys.readouterr().err
+    finally:
+        child.kill()
+        child.wait(timeout=15)
     assert cli._ingress("start") == 0
 
 def test_use_generates_per_install_relay_subdomain(monkeypatch, tmp_path):
