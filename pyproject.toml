@@ -1,6 +1,6 @@
 [project]
 name = "remote-devbox-mcp"
-version = "0.0.0"
+version = "0.4.0"
 description = "Turn your own machine into a remote devbox for an agent via Docker and Cloudflare tunnels."
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
@@ -10,7 +10,6 @@ pythonpath = ["home"]
 testpaths = ["tests"]
 addopts = "-q"
 timeout = 60
-timeout_method = "thread"
 
 [tool.ruff]
 line-length = 110

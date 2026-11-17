@@ -18,8 +18,9 @@ permissions:
 jobs:
   audit:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: WhiteBite/rdk-discoverability@v1 # v1.0.0
+      - uses: WhiteBite/rdk-discoverability@09ba0b7e6689e94aa08922248592cf8593cb3d03 # v1.1.2
         with:
           min_score: ${{ github.event.inputs.min_score || vars.RDK_MIN_SCORE || 0 }}
