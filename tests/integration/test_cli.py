@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -270,6 +271,21 @@ def test_ingress_rejected_while_action_lock_held(monkeypatch, tmp_path, capsys):
     assert "уже выполняется" in capsys.readouterr().err
     monkeypatch.undo()
     assert cli._ingress("start") == 0
+
+def test_use_generates_per_install_relay_subdomain(monkeypatch, tmp_path):
+    projects, _ = _setup(monkeypatch, tmp_path)
+    cli.ENV_FILE.write_text("INGRESS_MODE=relay\n", encoding="utf-8")
+    (projects / "p1.json").write_text(_profile_json(tmp_path), encoding="utf-8")
+
+    assert cli.main(["use", "p1"]) == 0
+    text = cli.ENV_FILE.read_text(encoding="utf-8")
+    match = re.search(r"^RELAY_SUBDOMAIN=(devbox-[0-9a-f]{8})$", text, re.MULTILINE)
+    assert match, text
+
+    first = match.group(1)
+    assert cli.main(["use", "p1"]) == 0
+    assert f"RELAY_SUBDOMAIN={first}" in cli.ENV_FILE.read_text(encoding="utf-8")
+
 
 def test_health_reflects_stack(monkeypatch, tmp_path):
     _setup(monkeypatch, tmp_path)

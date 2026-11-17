@@ -9,6 +9,7 @@ import json
 import os
 import pathlib
 import re
+import secrets
 import sys
 import threading
 import time
@@ -159,6 +160,14 @@ def _ingress_env(env_map: dict[str, str]) -> dict[str, str]:
     }
 
 
+def _ensure_relay_subdomain(env: envfile.EnvFile) -> None:
+    if (env.get("INGRESS_MODE") or "").strip().lower() != "relay":
+        return
+    if (env.get("RELAY_SUBDOMAIN") or "").strip():
+        return
+    env.set("RELAY_SUBDOMAIN", f"devbox-{secrets.token_hex(4)}")
+
+
 def _start_relay(env_map: dict[str, str]) -> None:
     if env_map.get("INGRESS_MODE", "").strip().lower() == "relay":
         docker.compose("--profile", "relay", "up", "-d", "relay", compose_file=COMPOSE_FILE)
@@ -285,6 +294,7 @@ def apply_use(name: str) -> int:
             env.set(key, value)
     policy = ports.compute_port_policy(profile)
     allowed_text = ",".join(str(port) for port in policy.allowed)
+    _ensure_relay_subdomain(env)
     env.write(ENV_FILE)
     dir_mounts = frozenset(
         mount
