@@ -53,8 +53,14 @@ def _relay_url(kwargs: dict[str, str], env_map: dict[str, str]) -> str:
 
 def ingress_url(env_map: dict[str, str], compose_file: str | None = None) -> str:
     kwargs = {"compose_file": compose_file} if compose_file else {}
-    if env_map.get("INGRESS_MODE", "").strip().lower() == "relay":
+    mode = (env_map.get("INGRESS_MODE") or "").strip().lower()
+    if mode == "relay":
         return _relay_url(kwargs, env_map)
+    if mode == "manual":
+        return (env_map.get("PUBLIC_URL") or "").strip()
+    public = env_map.get("PUBLIC_URL")
+    if public:
+        return public
     public = env_map.get("PUBLIC_URL")
     if public:
         return public

@@ -169,7 +169,10 @@ def _ensure_relay_subdomain(env: envfile.EnvFile) -> None:
 
 
 def _start_relay(env_map: dict[str, str]) -> int:
-    if env_map.get("INGRESS_MODE", "").strip().lower() == "relay":
+    mode = env_map.get("INGRESS_MODE", "").strip().lower()
+    if mode == "manual":
+        return 0
+    if mode == "relay":
         result = docker.compose("--profile", "relay", "up", "-d", "relay", compose_file=COMPOSE_FILE)
     else:
         result = docker.compose("--profile", "cloudflare", "up", "-d", "cloudflared-ingress", compose_file=COMPOSE_FILE)
@@ -177,6 +180,10 @@ def _start_relay(env_map: dict[str, str]) -> int:
 
 
 def _await_ingress_url(env_map: dict[str, str], timeout: float = 25.0) -> None:
+    """Wait for the tunnel to produce a URL; in manual mode there is no tunnel to wait for."""
+    mode = (env_map.get("INGRESS_MODE") or "").strip().lower()
+    if mode == "manual":
+        return
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         url = netprobe.ingress_url(env_map, COMPOSE_FILE)
