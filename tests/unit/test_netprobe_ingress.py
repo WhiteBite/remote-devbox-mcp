@@ -44,3 +44,12 @@ def test_cloudflare_mode_uses_public_url(monkeypatch):
     url = netprobe.ingress_url({"INGRESS_MODE": "cloudflare", "PUBLIC_URL": "https://devbox.example.test"})
 
     assert url == "https://devbox.example.test"
+
+
+def test_relay_mode_falls_back_to_env_relay_url(monkeypatch):
+    monkeypatch.setattr(netprobe.docker, "compose", lambda *a, **k: _completed(""))
+    monkeypatch.setattr(netprobe.docker, "run", lambda *a, **k: _completed(""))
+
+    url = netprobe.ingress_url({"INGRESS_MODE": "relay", "RELAY_URL": "https://devbox-abcd1234.loca.lt"})
+
+    assert url == "https://devbox-abcd1234.loca.lt"

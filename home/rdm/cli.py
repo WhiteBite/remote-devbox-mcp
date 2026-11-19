@@ -179,7 +179,11 @@ def _start_relay(env_map: dict[str, str]) -> int:
 def _await_ingress_url(env_map: dict[str, str], timeout: float = 25.0) -> None:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        if netprobe.ingress_url(env_map, COMPOSE_FILE):
+        url = netprobe.ingress_url(env_map, COMPOSE_FILE)
+        if url:
+            env = envfile.EnvFile.load(ENV_FILE)
+            env.set("RELAY_URL", url)
+            env.write(ENV_FILE)
             return
         time.sleep(1.0)
 
