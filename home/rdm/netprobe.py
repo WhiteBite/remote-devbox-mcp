@@ -33,16 +33,25 @@ def can_connect(port: int, timeout: float = 1.0) -> bool:
         return False
 
 
+def _relay_url(kwargs: dict[str, str]) -> str:
+    try:
+        logs = docker.compose("logs", "--tail", "200", "relay", **kwargs).stdout
+    except OSError:
+        logs = ""
+    published = tunnels.from_relay_logs(logs)
+    if published:
+        return published
+    try:
+        direct = docker.run("logs", "--tail", "200", "rdm-relay").stdout
+    except OSError:
+        return ""
+    return tunnels.from_relay_logs(direct)
+
+
 def ingress_url(env_map: dict[str, str], compose_file: str | None = None) -> str:
     kwargs = {"compose_file": compose_file} if compose_file else {}
     if env_map.get("INGRESS_MODE", "").strip().lower() == "relay":
-        try:
-            relay_logs = docker.compose("logs", "--tail", "200", "relay", **kwargs).stdout
-        except OSError:
-            relay_logs = ""
-        published = tunnels.from_relay_logs(relay_logs)
-        if published:
-            return published
+        return _relay_url(kwargs)
     public = env_map.get("PUBLIC_URL")
     if public:
         return public
