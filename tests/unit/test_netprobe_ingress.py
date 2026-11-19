@@ -38,6 +38,32 @@ def test_relay_mode_falls_back_to_container_logs(monkeypatch):
     assert url == "https://devbox-abcd1234.loca.lt"
 
 
+def test_auto_mode_prefers_relay(monkeypatch):
+    monkeypatch.setattr(netprobe.docker, "compose", lambda *a, **k: _completed(RELAY_LOG))
+
+    url = netprobe.ingress_url({"INGRESS_MODE": "auto", "RELAY_URL": "https://devbox-abcd1234.loca.lt", "PUBLIC_URL": "https://fallback.example.test"})
+
+    assert url == "https://devbox-abcd1234.loca.lt"
+
+
+def test_auto_mode_falls_back_to_public_url(monkeypatch):
+    monkeypatch.setattr(netprobe.docker, "compose", lambda *a, **k: _completed(""))
+    monkeypatch.setattr(netprobe.docker, "run", lambda *a, **k: _completed(""))
+
+    url = netprobe.ingress_url({"INGRESS_MODE": "auto", "PUBLIC_URL": "https://fallback.example.test"})
+
+    assert url == "https://fallback.example.test"
+
+
+def test_auto_mode_returns_empty_when_nothing_configured(monkeypatch):
+    monkeypatch.setattr(netprobe.docker, "compose", lambda *a, **k: _completed(""))
+    monkeypatch.setattr(netprobe.docker, "run", lambda *a, **k: _completed(""))
+
+    url = netprobe.ingress_url({"INGRESS_MODE": "auto"})
+
+    assert url == ""
+
+
 def test_manual_mode_uses_public_url():
     url = netprobe.ingress_url({"INGRESS_MODE": "manual", "PUBLIC_URL": "https://my-vps.example.test"})
 

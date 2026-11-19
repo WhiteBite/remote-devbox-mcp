@@ -172,6 +172,11 @@ def _start_relay(env_map: dict[str, str]) -> int:
     mode = env_map.get("INGRESS_MODE", "").strip().lower()
     if mode == "manual":
         return 0
+    if mode == "auto":
+        result = docker.compose("--profile", "relay", "up", "-d", "relay", compose_file=COMPOSE_FILE)
+        if result.returncode != 0:
+            print("auto: relay не поднялся, ingress останется на PUBLIC_URL", file=sys.stderr)
+        return 0
     if mode == "relay":
         result = docker.compose("--profile", "relay", "up", "-d", "relay", compose_file=COMPOSE_FILE)
     else:

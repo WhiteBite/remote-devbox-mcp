@@ -973,15 +973,19 @@ def connection_check() -> dict[str, Any]:
     """Probe the public bridge endpoint end-to-end: initialize + tools/list."""
     rdm = _rdm()
     env_map = rdm.envfile.EnvFile.load(rdm.cli.ENV_FILE).as_map()
-    mode = (env_map.get("INGRESS_MODE") or "cloudflare").strip().lower()
+    mode = (env_map.get("INGRESS_MODE") or "auto").strip().lower()
     ingress_url = rdm.netprobe.ingress_url(env_map, rdm.cli.COMPOSE_FILE)
     if not ingress_url:
         return {"ok": False, "mode": mode, "error": f"{mode}: ingress URL unknown"}
+    detected = mode
+    if mode == "auto":
+        relay = (env_map.get("RELAY_URL") or "").strip()
+        detected = "relay" if relay and relay == ingress_url else "manual" if ingress_url else "auto"
     url = f"{ingress_url}/p/{rdm.profiles.BRIDGE_PORT}/mcp"
     token = env_map.get("MCP_BEARER_TOKEN", "")
     if not token:
-        return {"ok": False, "mode": mode, "url": url, "error": "MCP_BEARER_TOKEN empty"}
-    return {**_probe_bridge(url, token), "mode": mode}
+        return {"ok": False, "mode": detected, "url": url, "error": "MCP_BEARER_TOKEN empty"}
+    return {**_probe_bridge(url, token), "mode": detected}
 
 
 def _probe_bridge(url: str, token: str) -> dict[str, Any]:

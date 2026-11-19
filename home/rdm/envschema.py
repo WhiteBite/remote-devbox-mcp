@@ -16,7 +16,7 @@ from . import tokens
 _RELAY_SUBDOMAIN_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
 _URL_RE = re.compile(r"^https?://\S+$")
 
-_INGRESS_MODES = ("", "cloudflare", "relay", "manual")
+_INGRESS_MODES = ("", "auto", "cloudflare", "relay", "manual")
 _EGRESS_CONTAINERS = ("rdm-egress", "rdm-vpn")
 _JOB_TIMEOUT_MIN = 60
 _JOB_TIMEOUT_MAX = 3600

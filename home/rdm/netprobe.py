@@ -58,6 +58,11 @@ def ingress_url(env_map: dict[str, str], compose_file: str | None = None) -> str
         return _relay_url(kwargs, env_map)
     if mode == "manual":
         return (env_map.get("PUBLIC_URL") or "").strip()
+    if mode == "auto":
+        relay = _relay_url(kwargs, env_map)
+        if relay:
+            return relay
+        return (env_map.get("PUBLIC_URL") or "").strip()
     public = env_map.get("PUBLIC_URL")
     if public:
         return public
