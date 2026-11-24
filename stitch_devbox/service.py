@@ -421,7 +421,7 @@ def mcp_candidates(name: str = "") -> dict[str, Any]:
         if isinstance(row.get("url"), str):
             row["url"] = redact_text(row["url"])
         safe_rows.append(row)
-    return {"profile": target, "candidates": safe_rows, "error": None}
+    return {"profile": target, "candidates": safe_rows}
 
 
 def _git_config_value(key: str, project_dir: str = "", scope: str = "") -> str:
