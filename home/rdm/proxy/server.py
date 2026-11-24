@@ -5,8 +5,11 @@ from __future__ import annotations
 import http.client
 import pathlib
 import re
+import select
+import socket
 import socketserver
 import threading
+import time
 from dataclasses import dataclass
 from http import HTTPStatus
 
@@ -16,6 +19,9 @@ from rdm.proxy import access_log, auth, event_tap, framing, router, upstream
 MAX_CONNECTIONS = 256
 CONNECT_TIMEOUT = 15.0
 IDLE_TIMEOUT = 120.0
+HEADER_TIMEOUT = 30.0
+# self-authed порты прокси не аутентифицирует: тело читается до проверки токена upstream'ом
+MAX_UNAUTHED_BODY = 8 * 1024 * 1024
 MAX_HTML_REWRITE = 8 * 1024 * 1024
 _TOO_BIG = b"\x00too-big"
 
@@ -138,7 +144,10 @@ class _Handler(socketserver.BaseRequestHandler):
             pass
 
     def _read_head(self, sock, carry: bytes) -> tuple[bytes | None, bytes]:
+        deadline = time.monotonic() + HEADER_TIMEOUT
         while b"\r\n\r\n" not in carry:
+            if carry and time.monotonic() > deadline:
+                return None, b""
             try:
                 chunk = sock.recv(65536)
             except OSError:
@@ -227,6 +236,14 @@ class _Handler(socketserver.BaseRequestHandler):
                 if not ports.is_port_allowed(server.config.policy, route.port):
                     self._simple(403, body=_BODY_FORBIDDEN)
                     return False
+                # INGRESS_TOKEN предназначен ingress'у: в произвольный loopback-сервис его не несём
+                pairs = [(name, value) for name, value in pairs if name != b"authorization"]
+            elif (
+                decision.framing is framing.BodyFraming.LENGTH
+                and decision.content_length > MAX_UNAUTHED_BODY
+            ):
+                self._simple(413)
+                return False
             host, port, path = "127.0.0.1", route.port, route.rest
         else:
             if not auth.check_token(pairs, server.config.token):
@@ -392,14 +409,23 @@ class _Handler(socketserver.BaseRequestHandler):
         def pump(src, dst) -> None:
             try:
                 while not stop.is_set():
+                    # на Windows shutdown() не будит recv в соседнем потоке: опрашиваем stop через select
+                    readable, _, _ = select.select([src], [], [], 0.5)
+                    if not readable:
+                        continue
                     data = src.recv(65536)
                     if not data:
                         break
                     dst.sendall(data)
-            except OSError:
+            except (OSError, ValueError):
                 pass
             finally:
                 stop.set()
+                for s in (client, upstream_sock):
+                    try:
+                        s.shutdown(socket.SHUT_RDWR)
+                    except OSError:
+                        pass
 
         first = threading.Thread(target=pump, args=(client, upstream_sock), daemon=True)
         second = threading.Thread(target=pump, args=(upstream_sock, client), daemon=True)

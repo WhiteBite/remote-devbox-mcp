@@ -135,6 +135,7 @@ def test_connection_check_reports_tools(monkeypatch, tmp_path):
 
     assert result == {
         "ok": True,
+        "mode": "relay",
         "url": "https://tunnel.example.com/p/8787/mcp",
         "tools": 16,
         "server": "opencode-mcp-bridge",
@@ -147,7 +148,7 @@ def test_connection_check_without_ingress(monkeypatch, tmp_path):
 
     result = service.connection_check()
 
-    assert result == {"ok": False, "error": "ingress URL unknown"}
+    assert result == {"ok": False, "mode": "auto", "error": "auto: ingress URL unknown"}
 
 
 def test_agent_prompt_section_order_with_profile(monkeypatch, tmp_path):

@@ -16,6 +16,42 @@ START_DELAY = 15.0
 RECREATE_DELAY = 30.0
 UNHEALTHY_RUNS_BEFORE_RECREATE = 3
 TOOLBOX_RECREATE_COOLDOWN_SECONDS = 120.0
+TUNNEL_RECREATE_COOLDOWN_SECONDS = 300.0
+
+
+def _probe_url(env_map: dict[str, str], compose_file: str) -> str:
+    """URL, чьё здоровье гарантирует watchdog.
+
+    В relay/auto агенту выдали адрес на старте (RELAY_URL): если relay сел на
+    случайный поддомен, фактический URL из логов жив, а выданный — 503. Пробовать
+    надо выданный, иначе потерю субдомена не видно. В manual туннель поднят
+    пользователем — пробуем PUBLIC_URL.
+    """
+    mode = (env_map.get("INGRESS_MODE") or "").strip().lower()
+    if mode == "manual":
+        return (env_map.get("PUBLIC_URL") or "").strip()
+    if mode in ("relay", "auto"):
+        published = (env_map.get("RELAY_URL") or "").strip()
+        if published:
+            return published
+        sub = (env_map.get("RELAY_SUBDOMAIN") or "").strip()
+        if sub:
+            return f"https://{sub}.loca.lt"
+    return netprobe.ingress_url(env_map, compose_file)
+
+
+def _tunnel_service(env_map: dict[str, str], url: str) -> str:
+    """Контейнер туннеля, который имеет смысл пересоздать; "" — туннель не наш."""
+    mode = (env_map.get("INGRESS_MODE") or "").strip().lower()
+    if mode == "manual":
+        return ""
+    if mode in ("relay", "auto"):
+        return "relay" if url.endswith(".loca.lt") else ""
+    if mode == "cloudflare":
+        return "cloudflared-ingress"
+    if url.endswith(".loca.lt"):
+        return "relay"
+    return "cloudflared-ingress"
 
 
 def _host_services_stale(name: str) -> bool:
@@ -86,6 +122,7 @@ def run(
         toolbox_state = ""
         unhealthy_runs = 0
         last_toolbox_recreate = 0.0
+        last_tunnel_recreate = -TUNNEL_RECREATE_COOLDOWN_SECONDS
         if iterations is None:
             time.sleep(START_DELAY)
         while iterations is None or count < iterations:
@@ -104,18 +141,32 @@ def run(
                         procman.start_ingress(_cli._ingress_env(fresh), _HOME)
                         _cli._refresh_manifest_from_env()
                         fails = 0
-                url = netprobe.ingress_url(env_map, compose_file)
+                url = _probe_url(env_map, compose_file)
                 code = probe(f"{url}/p/{profiles.BRIDGE_PORT}/healthz", env_map.get("MCP_BEARER_TOKEN")) if url else 0
                 fails = fails + 1 if code != 200 else 0
-                if fails >= 3:
-                    _log(log_path, "tunnel flap: recreate ingress")
-                    docker.compose("up", "-d", "--force-recreate", "cloudflared-ingress", compose_file=compose_file)
-                    from rdm import cli as _cli
-
-                    _cli._refresh_manifest_from_env()
+                if fails >= 3 and time.monotonic() - last_tunnel_recreate > TUNNEL_RECREATE_COOLDOWN_SECONDS:
+                    service = _tunnel_service(env_map, url)
+                    last_tunnel_recreate = time.monotonic()
                     fails = 0
-                    if iterations is None:
-                        time.sleep(RECREATE_DELAY)
+                    if service:
+                        _log(log_path, f"tunnel flap: recreate {service}")
+                        profile_flag = "relay" if service == "relay" else "cloudflare"
+                        docker.compose(
+                            "--profile", profile_flag, "up", "-d", "--force-recreate", service,
+                            compose_file=compose_file,
+                        )
+                        from rdm import cli as _cli
+
+                        # _await ждёт свежий URL в логах и перезаписывает RELAY_URL
+                        _cli._await_ingress_url(env_map)
+                        _cli._refresh_manifest_from_env()
+                        # env_map — снимок на старт: перечитываем, чтобы следующая
+                        # проба шла по уже опубликованному (возможно новому) адресу
+                        env_map.update(_cli.envfile.EnvFile.load(_cli.ENV_FILE).as_map())
+                        if iterations is None:
+                            time.sleep(RECREATE_DELAY)
+                    else:
+                        _log(log_path, f"tunnel probe fails: {url or 'no url'} — туннель внешний, пересоздавать нечего")
                 if active and _host_services_stale(active):
                     if _cli_action_in_flight():
                         _log(log_path, "host services dead: cli action in flight, skip restart")

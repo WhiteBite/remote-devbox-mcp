@@ -62,7 +62,13 @@ def jobs_live() -> dict[str, Any]:
         with client.budget():
             views = client.job_list()
     except BridgeDenied:
-        raise
+        stale_token = _client_token
+        _reset_bridge()
+        client = _bridge()
+        if _client_token == stale_token:
+            raise  # токен не сменился — denied настоящий
+        with client.budget():
+            views = client.job_list()
     except BridgeUnreachable:
         _remember_bridge_down()
         return {"rows": _events_job_rows(), "source": "events", "bridge": "down"}
@@ -99,7 +105,13 @@ def permissions_pending() -> dict[str, Any]:
             rows = _bridge_permission_rows()
             _remember_bridge_up()
         except BridgeDenied:
-            raise
+            stale_token = _client_token
+            _reset_bridge()
+            _bridge()
+            if _client_token == stale_token:
+                raise  # токен не сменился — denied настоящий
+            rows = _bridge_permission_rows()
+            _remember_bridge_up()
         except BridgeUnreachable:
             _remember_bridge_down()
             bridge = "down"
@@ -129,14 +141,28 @@ def permission_reply(permission_id: str, decision: str) -> dict[str, Any]:
     return {"accepted": True, "status": view.get("status", "")}
 
 
+_client_token: str = ""
+
+
+def _reset_bridge() -> None:
+    # BridgeDenied чаще всего значит «токен ротировали» — забываем клиента,
+    # следующий вызов перечитает MCP_BEARER_TOKEN из .env
+    global _client, _client_token
+    _client = None
+    _client_token = ""
+
+
 def _bridge() -> Any:
-    global _client
-    if _client is None:
+    global _client, _client_token
+    rdm = service._rdm()
+    token = rdm.envfile.EnvFile.load(rdm.cli.ENV_FILE).get("MCP_BEARER_TOKEN") or ""
+    if _client is not None and not _client_token:
+        _client_token = token
+    elif _client is None or token != _client_token:
         from rdm.bridge_client import BridgeClient
 
-        rdm = service._rdm()
-        token = rdm.envfile.EnvFile.load(rdm.cli.ENV_FILE).get("MCP_BEARER_TOKEN") or ""
         _client = BridgeClient(f"http://127.0.0.1:{rdm.profiles.BRIDGE_PORT}/mcp", token)
+        _client_token = token
     return _client
 
 
@@ -145,7 +171,7 @@ def _job_row(view: dict[str, Any]) -> dict[str, Any]:
         "id": str(view.get("job_id") or ""),
         "tool": str(view.get("tool") or ""),
         "status": str(view.get("status") or ""),
-        "startedAt": str(view.get("created_at") or ""),
+        "startedAt": _iso(view.get("created_at")),
     }
 
 
@@ -183,7 +209,7 @@ def _bridge_permission_rows() -> list[dict[str, Any]]:
                 "id": str(request.get("id") or ""),
                 "tool": str(view.get("tool") or ""),
                 "summary": _summary(request),
-                "startedAt": str(view.get("created_at") or ""),
+                "startedAt": _iso(view.get("created_at")),
             }
         )
     return rows

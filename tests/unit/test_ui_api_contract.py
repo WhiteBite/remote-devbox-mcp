@@ -263,7 +263,7 @@ def test_action_status_maps_recent_from_action_events(monkeypatch, tmp_path):
     assert [row["id"] for row in payload["recent"]] == ["a1", "a2"]
     finished = payload["recent"][0]
     assert set(finished) == {"id", "cmd", "status", "startedAt", "finishedAt", "exit", "payload"}
-    assert finished["cmd"] == "start"
+    assert finished["cmd"] == "stack_start"
     assert finished["status"] == "finished"
     assert finished["exit"] == 0
     assert finished["payload"] == {"chatBlock": "b"}

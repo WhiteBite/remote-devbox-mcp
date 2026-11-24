@@ -1120,7 +1120,8 @@ def test_poll_batch_matches_individual_commands(monkeypatch, tmp_path):
 
     batch = service.poll()
 
-    assert set(batch) == {"overview", "action_status", "jobs", "permissions", "events"}
+    assert set(batch) == {"overview", "action_status", "jobs", "permissions", "events", "env_version"}
+    assert batch["env_version"] >= 0
 
     def _vitals(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         return [{key: value for key, value in row.items() if key != "updatedAt"} for row in rows]

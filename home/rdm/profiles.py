@@ -83,6 +83,7 @@ class HostService:
 class ArgSpec:
     type: str = "str"
     position: str = "append"
+    allow_dash: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -179,7 +180,7 @@ _RUNNER_KEYS = {
 }
 _SETUP_KEYS = {"cmd": "cmd", "marker": "marker", "required": "required"}
 _SCRIPT_KEYS = {"name": "name", "cmd": "cmd", "description": "description"}
-_ARGSPEC_KEYS = {"type": "type", "position": "position"}
+_ARGSPEC_KEYS = {"type": "type", "position": "position", "allowdash": "allow_dash"}
 _EXPOSED_KEYS = {"name": "name", "mode": "mode", "toolallow": "tool_allow"}
 
 _MOUNT_RE = re.compile(r"[A-Za-z0-9._\-/]+")
@@ -256,7 +257,14 @@ def _host_service(raw: object) -> HostService:
 
 def _argspec(raw: object) -> ArgSpec:
     values = _fields(raw, _ARGSPEC_KEYS, "argspec")
-    return ArgSpec(type=_str(values, "type", "str"), position=_str(values, "position", "append"))
+    allow_dash = values.get("allow_dash", False)
+    if not isinstance(allow_dash, bool):
+        raise ValueError("argspec: allow_dash должен быть bool")
+    return ArgSpec(
+        type=_str(values, "type", "str"),
+        position=_str(values, "position", "append"),
+        allow_dash=allow_dash,
+    )
 
 
 def _args(raw: object) -> tuple[tuple[str, ArgSpec], ...]:

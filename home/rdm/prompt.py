@@ -13,10 +13,11 @@ def connection_payload(
     gateway_port: int | None = None,
 ) -> dict[str, object]:
     bridge_token = env_map.get("MCP_BEARER_TOKEN", "")
+    base = ingress_url.rstrip("/")
     endpoints: list[dict[str, object]] = [
         {
             "id": "bridge",
-            "url": f"{ingress_url}/p/8787/mcp",
+            "url": f"{base}/p/8787/mcp" if base else "",
             "token": bridge_token if full else mask(bridge_token),
             "note": "project tools: read/edit/write/bash",
         }
@@ -26,7 +27,7 @@ def connection_payload(
         endpoints.append(
             {
                 "id": "runner",
-                "url": f"{ingress_url}/p/{runner_port}/mcp",
+                "url": f"{base}/p/{runner_port}/mcp" if base else "",
                 "token": host_token if full else mask(host_token),
                 "note": "host commands: build/test/dev",
             }
@@ -36,7 +37,7 @@ def connection_payload(
         endpoints.append(
             {
                 "id": "gateway",
-                "url": f"{ingress_url}/p/{gateway_port}/mcp",
+                "url": f"{base}/p/{gateway_port}/mcp" if base else "",
                 "token": gateway_token if full else mask(gateway_token),
                 "note": "owner MCP servers via gateway",
             }

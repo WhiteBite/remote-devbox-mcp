@@ -68,7 +68,8 @@ def _tail(stream, limit: int) -> str:
 
 def _safe_path(value: str) -> str:
     p = Path(value)
-    if p.is_absolute() or ".." in p.parts:
+    # Windows: "\\x" не absolute, но от корня диска; "C:x" — от cwd диска C
+    if p.is_absolute() or p.drive or p.root or ".." in p.parts:
         raise ValueError(f"path-аргумент должен быть относительным без '..': {value!r}")
     return str(p)
 
@@ -79,6 +80,9 @@ def _build_argv(spec: dict, kwargs: dict) -> list[str]:
         if name not in kwargs:
             continue
         val = kwargs[name]
+        # иначе "--upload-pack=..." / "-o" от агента станут опциями программы
+        if str(val).startswith("-") and not arg.get("allow_dash"):
+            raise ValueError(f"аргумент {name!r} не может начинаться с '-': {val!r}")
         if arg.get("type") == "path":
             val = _safe_path(str(val))
         pos = arg.get("position", "append")
@@ -114,14 +118,21 @@ def _make_tool(name: str, spec: dict, ctx: _Ctx):
         if spec.get("background"):
             pidfile = ctx.run_dir / f"{ctx.profile}-{name}.pid"
             log = ctx.run_dir / f"{ctx.profile}-{name}.log"
+            running = _running_pid(pidfile)
+            if running is not None:
+                return json.dumps({
+                    "started": False, "pid": running,
+                    "reason": "уже запущен; сначала вызови kill-тул",
+                })
             with open(log, "ab") as lf:
                 proc = subprocess.Popen(
                     argv, cwd=ctx.cwd, env=env, stdout=lf, stderr=lf,
                     creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
                     start_new_session=os.name != "nt",
                 )
+            marker = argv if isinstance(argv, str) else " ".join(argv)
             pidfile.write_text(
-                f"{proc.pid}|{hostos.create_time(proc.pid) or ''}|{' '.join(argv)}",
+                f"{proc.pid}|{hostos.create_time(proc.pid) or ''}|{marker}",
                 encoding="utf-8",
             )
             _prune_bg(ctx)
@@ -172,6 +183,39 @@ def _make_tool(name: str, spec: dict, ctx: _Ctx):
     return run
 
 
+def _running_pid(pidfile: Path) -> int | None:
+    """pid из pid-файла, если процесс жив и наш; иначе None (битый файл удаляется)."""
+    try:
+        fields = pidfile.read_text(encoding="utf-8").strip().split("|", 2)
+    except FileNotFoundError:
+        return None
+    if len(fields) != 3 or not fields[0].isdigit():
+        pidfile.unlink(missing_ok=True)
+        return None
+    pid = int(fields[0])
+    try:
+        recorded = float(fields[1]) if fields[1] else None
+    except ValueError:
+        recorded = None
+    if hostos.owned(pid, recorded, fields[2]):
+        return pid
+    pidfile.unlink(missing_ok=True)
+    return None
+
+
+_PUBLIC_KEYS = ("name", "description", "args", "background", "port", "timeout")
+
+
+def _public_commands(cfg: dict) -> list[dict]:
+    """Описание команд для агента без env/cmd-деталей, где могут быть секреты."""
+    out = []
+    for kind in ("commands", "scripts"):
+        for item in cfg.get(kind, []):
+            item = _norm(item)
+            out.append({"kind": kind[:-1]} | {k: item[k] for k in _PUBLIC_KEYS if k in item})
+    return out
+
+
 def _make_kill_tool(name: str, ctx: _Ctx):
     def kill():
         pidfile = ctx.run_dir / f"{ctx.profile}-{name}.pid"
@@ -210,6 +254,17 @@ def _make_kill_tool(name: str, ctx: _Ctx):
     return kill
 
 
+def _transport_security(port: int):
+    from mcp.server.transport_security import TransportSecuritySettings
+
+    # без этого страница из браузера через DNS rebinding дозовётся до loopback-раннера
+    return TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=[f"127.0.0.1:{port}", f"localhost:{port}"],
+        allowed_origins=[f"http://127.0.0.1:{port}", f"http://localhost:{port}"],
+    )
+
+
 def main() -> None:
     cfg_path = os.environ.get("RUNNER_CONFIG")
     if not cfg_path:
@@ -222,12 +277,13 @@ def main() -> None:
         default_timeout=int(cfg.get("timeout", 900)),
     )
     ctx.run_dir.mkdir(parents=True, exist_ok=True)
-    mcp = MCPServer(f"devbox-runner-{ctx.profile}")
+    port = int(os.environ.get("MCP_HTTP_PORT", "8797"))
+    mcp = MCPServer(f"devbox-runner-{ctx.profile}", transport_security=_transport_security(port))
 
     @mcp.tool()
     def runner_list() -> str:
         """Список объявленных команд раннера (имя, argv, args, background, port)."""
-        return json.dumps(cfg.get("commands", []), ensure_ascii=False, indent=2)
+        return json.dumps(_public_commands(cfg), ensure_ascii=False, indent=2)
 
     for _cmd in cfg.get("commands", []):
         _cmd = _norm(_cmd)
@@ -249,7 +305,7 @@ def main() -> None:
     mcp.run(
         transport="streamable-http",
         host="127.0.0.1",
-        port=int(os.environ.get("MCP_HTTP_PORT", "8797")),
+        port=port,
     )
 
 

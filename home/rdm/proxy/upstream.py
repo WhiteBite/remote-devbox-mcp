@@ -7,7 +7,8 @@ import socket
 
 from rdm.proxy import framing
 
-_DROP = frozenset((b"host", b"x-forwarded-host", b"expect"))
+# x-forwarded-for клиента выкидываем: иначе upstream, читающий первое значение, видит подделку
+_DROP = frozenset((b"host", b"x-forwarded-host", b"x-forwarded-for", b"expect"))
 
 
 def filter_forward_headers(
@@ -48,7 +49,7 @@ def filter_upgrade_headers(
     client_ip: str | None,
     proto: bytes,
 ) -> list[tuple[bytes, bytes]]:
-    drop = {b"host", b"x-forwarded-host"}
+    drop = {b"host", b"x-forwarded-host", b"x-forwarded-for"}
     out = [(name, value) for name, value in pairs if name not in drop]
     out.append((b"host", host_header))
     if client_ip:

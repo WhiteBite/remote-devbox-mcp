@@ -1,6 +1,7 @@
 # _vendored_from: autoreg/plugin/rpc.py — do not edit; regenerate via stitch_plugin_tools dev-install
 
 from __future__ import annotations
+
 _VENDOR_SOURCE_SHA256 = "1a0bd06eaf3e9e5c1aedd29ca59e9237d921e34fc3c2f887157c505db7262b69"
 
 import json
@@ -9,8 +10,6 @@ import threading
 import time
 import traceback
 from typing import Any
-
-
 
 _JSONRPC = "2.0"
 

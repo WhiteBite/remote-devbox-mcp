@@ -27,7 +27,7 @@ def probe_http(url: str, token: str | None, timeout: float = 10.0) -> int:
 
 def can_connect(port: int, timeout: float = 1.0) -> bool:
     try:
-        with socket.create_connection(("127.0.0.1", port), timeout=1.0):
+        with socket.create_connection(("127.0.0.1", port), timeout=timeout):
             return True
     except OSError:
         return False

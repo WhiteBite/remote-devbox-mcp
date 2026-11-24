@@ -45,6 +45,70 @@ def test_watchdog_recreates_ingress_after_three_failures(monkeypatch, tmp_path):
     watchdog.run(_env(), iterations=4, prober=lambda url, token, timeout=10.0: 0)
     recreates = [c for c in calls["compose"] if "--force-recreate" in c]
     assert len(recreates) == 1
+    assert "cloudflared-ingress" in recreates[0]
+
+
+def test_watchdog_relay_mode_probes_published_url_and_recreates_relay(monkeypatch, tmp_path):
+    calls = _wire(monkeypatch, tmp_path)
+    probed: list[str] = []
+    # _await после recreate перечитывает ingress_url и пишет RELAY_URL —
+    # мок держит тот же адрес, чтобы публикуемый URL не уехал в "https://x"
+    monkeypatch.setattr(
+        watchdog.netprobe, "ingress_url", lambda env_map, compose_file=None: "https://devbox-abc123.loca.lt"
+    )
+    env = {
+        **_env(),
+        "INGRESS_MODE": "relay",
+        "RELAY_SUBDOMAIN": "devbox-abc123",
+        "RELAY_URL": "https://devbox-abc123.loca.lt",
+    }
+    watchdog.run(
+        env,
+        iterations=4,
+        prober=lambda url, token, timeout=10.0: probed.append(url) or 0,
+    )
+    assert probed and all("devbox-abc123.loca.lt" in url for url in probed)
+    recreates = [c for c in calls["compose"] if "--force-recreate" in c]
+    assert len(recreates) == 1
+    assert "relay" in recreates[0]
+    assert "cloudflared-ingress" not in recreates[0]
+
+
+def test_watchdog_relay_mode_uses_subdomain_when_nothing_published(monkeypatch, tmp_path):
+    _wire(monkeypatch, tmp_path)
+    probed: list[str] = []
+    env = {**_env(), "INGRESS_MODE": "relay", "RELAY_SUBDOMAIN": "devbox-xyz"}
+    watchdog.run(env, iterations=1, prober=lambda url, token, timeout=10.0: probed.append(url) or 200)
+    assert probed == ["https://devbox-xyz.loca.lt/p/8787/healthz"]
+
+
+def test_watchdog_manual_mode_never_recreates_our_containers(monkeypatch, tmp_path):
+    calls = _wire(monkeypatch, tmp_path)
+    logs: list[str] = []
+    monkeypatch.setattr(watchdog, "_log", lambda path, message: logs.append(message))
+    env = {**_env(), "INGRESS_MODE": "manual", "PUBLIC_URL": "https://devbox.example.test"}
+    watchdog.run(env, iterations=4, prober=lambda url, token, timeout=10.0: 503)
+    assert [c for c in calls["compose"] if "--force-recreate" in c] == []
+    assert any("внешний" in message for message in logs)
+
+
+def test_watchdog_tunnel_recreate_cooldown(monkeypatch, tmp_path):
+    calls = _wire(monkeypatch, tmp_path)
+    env = {
+        **_env(),
+        "INGRESS_MODE": "relay",
+        "RELAY_SUBDOMAIN": "devbox-abc123",
+        "RELAY_URL": "https://devbox-abc123.loca.lt",
+    }
+    monkeypatch.setattr(watchdog.time, "sleep", lambda seconds: None)
+    # _await после recreate перезапишет RELAY_URL адресом из ingress_url —
+    # канонический URL стабилен, пробы продолжают падать по нему же
+    monkeypatch.setattr(
+        watchdog.netprobe, "ingress_url", lambda env_map, compose_file=None: "https://devbox-abc123.loca.lt"
+    )
+    watchdog.run(env, iterations=8, prober=lambda url, token, timeout=10.0: 0)
+    recreates = [c for c in calls["compose"] if "--force-recreate" in c]
+    assert len(recreates) == 1
 
 
 def test_watchdog_restarts_dead_host_service(monkeypatch, tmp_path):

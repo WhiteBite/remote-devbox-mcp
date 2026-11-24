@@ -2,6 +2,7 @@
 """Shared helpers for service plugins (SQLite connect, caller id, row visibility)."""
 
 from __future__ import annotations
+
 _VENDOR_SOURCE_SHA256 = "3e799d20656edf69ad407de6d9ed74c05a2fac2cc437780cb1ee8d3ab71cf2f3"
 
 import sqlite3

@@ -409,7 +409,19 @@ def mcp_candidates(name: str = "") -> dict[str, Any]:
         rows = snapshot.candidates(profile)
     except snapshot.GatewaySnapshotError as exc:
         return {"profile": target, "candidates": [], "error": str(exc)}
-    return {"profile": target, "candidates": list(rows)}
+    from rdm.redact import redact_argv, redact_text  # noqa: PLC0415
+
+    # snapshot.candidates нужен рендеру в сыром виде — маскируем только на RPC-границе:
+    # в command args могут лежать ключи (--token X), в url — креды
+    safe_rows = []
+    for row in rows:
+        row = dict(row)
+        if isinstance(row.get("command"), list):
+            row["command"] = redact_argv([str(part) for part in row["command"]])
+        if isinstance(row.get("url"), str):
+            row["url"] = redact_text(row["url"])
+        safe_rows.append(row)
+    return {"profile": target, "candidates": safe_rows, "error": None}
 
 
 def _git_config_value(key: str, project_dir: str = "", scope: str = "") -> str:
@@ -711,6 +723,37 @@ def profile_delete(name: str) -> dict[str, Any]:
     return {"deleted": True}
 
 
+# RPC-имена в action_status/recent: фронт сравнивает cmd со своими константами
+# (MUTATION_CMDS, BUSY_CHIP), а не с именами cli-функций; cockpit пишет в тот же
+# журнал третьим набором имён — нормализуем всё к RPC-виду
+_CMD_LABELS = {
+    "_start": "stack_start",
+    "start": "stack_start",
+    "_down": "stack_down",
+    "down": "stack_down",
+    "_full_down": "stack_full_down",
+    "full_down": "stack_full_down",
+    "_ingress": "ingress_control",
+    "ingress": "ingress_control",
+    "_watchdog_control": "watchdog_control",
+    "watchdog_control": "watchdog_control",
+    "_issue_tokens": "issue_tokens",
+    "issue_tokens": "issue_tokens",
+    "_doctor": "run_doctor",
+    "doctor": "run_doctor",
+    "run_doctor": "run_doctor",
+    "apply_use": "profile_use",
+    "use": "profile_use",
+    "_stop_host": "stop_host",
+    "stop_host": "stop_host",
+    "allow_port": "allow_port",
+}
+
+
+def _cmd_label(name: str) -> str:
+    return _CMD_LABELS.get(name, name)
+
+
 def _queue_submit(fn_name: str, *args: Any, payload_key: str = "") -> dict[str, Any]:
     """Enqueue a cockpit CLI callable on the single-flight action queue.
 
@@ -746,7 +789,7 @@ def _queue_submit(fn_name: str, *args: Any, payload_key: str = "") -> dict[str, 
             return rc
         return {"exit": rc, payload_key: buffer.getvalue()}
 
-    _runner.__name__ = fn_name
+    _runner.__name__ = _cmd_label(fn_name)
 
     action_id = _queue.submit(_runner)
     if action_id is None:
@@ -765,7 +808,7 @@ def _recent_actions() -> list[dict[str, Any]]:
             continue
         row = rows.get(action_id)
         if row is None:
-            row = {"id": action_id, "cmd": str(event.get("tool") or ""), "status": "started", "startedAt": ""}
+            row = {"id": action_id, "cmd": _cmd_label(str(event.get("tool") or "")), "status": "started", "startedAt": ""}
             rows[action_id] = row
             order.append(action_id)
         status = str(event.get("status") or "")
@@ -979,8 +1022,13 @@ def connection_check() -> dict[str, Any]:
         return {"ok": False, "mode": mode, "error": f"{mode}: ingress URL unknown"}
     detected = mode
     if mode == "auto":
-        relay = (env_map.get("RELAY_URL") or "").strip()
-        detected = "relay" if relay and relay == ingress_url else "manual" if ingress_url else "auto"
+        public = (env_map.get("PUBLIC_URL") or "").strip()
+        if public and ingress_url == public:
+            detected = "manual"
+        elif ingress_url:
+            detected = "relay"
+        else:
+            detected = "auto"
     url = f"{ingress_url}/p/{rdm.profiles.BRIDGE_PORT}/mcp"
     token = env_map.get("MCP_BEARER_TOKEN", "")
     if not token:
@@ -994,24 +1042,53 @@ def _probe_bridge(url: str, token: str) -> dict[str, Any]:
 
     started = time.monotonic()
 
-    def post(payload: dict[str, Any], session: str | None) -> dict[str, Any]:
+    def parse_body(content_type: str, body: str) -> dict[str, Any]:
+        # streamable-http мост отвечает text/event-stream — берём последний data-кадр
+        if "text/event-stream" in content_type.lower():
+            last: dict[str, Any] = {}
+            for line in body.splitlines():
+                if not line.startswith("data:"):
+                    continue
+                chunk = line[5:].strip()
+                if not chunk or chunk == "[DONE]":
+                    continue
+                try:
+                    parsed = json.loads(chunk)
+                except ValueError:
+                    continue
+                if isinstance(parsed, dict):
+                    last = parsed
+            return last
+        parsed = json.loads(body) if body.strip() else {}
+        return parsed if isinstance(parsed, dict) else {}
+
+    def post(payload: dict[str, Any], session: str | None, *, notify: bool = False) -> dict[str, Any]:
         data = json.dumps(payload).encode()
         headers = {
             "Content-Type": "application/json",
             "Accept": "application/json, text/event-stream",
             "Authorization": f"Bearer {token}",
+            "MCP-Protocol-Version": "2025-06-18",
         }
         if session:
             headers["Mcp-Session-Id"] = session
         request = urllib.request.Request(url, data=data, headers=headers, method="POST")
-        with urllib.request.urlopen(request, timeout=20) as response:
+        # бюджет намеренно мал: два POST + запас должны уложиться в 30s кап хоста,
+        # иначе на таймауте хост убивает весь плагин-процесс
+        with urllib.request.urlopen(request, timeout=10) as response:
             new_session = response.headers.get("Mcp-Session-Id")
-            if new_session:
-                headers["Mcp-Session-Id"] = new_session
+            content_type = response.headers.get("Content-Type", "")
             body = response.read().decode("utf-8", "replace")
-        message = json.loads(body) if body.strip() else {}
-        if not isinstance(message, dict) or "error" in message:
-            return {"ok": False, "url": url, "error": f"bad response: {str(message)[:120]}"}
+        message = parse_body(content_type, body)
+        if notify:
+            return {"ok": True, "session": new_session}
+        rpc_error = message.get("error")
+        if not message or rpc_error is not None:
+            if isinstance(rpc_error, dict):
+                detail = str(rpc_error.get("message") or rpc_error)
+            else:
+                detail = str(rpc_error or message)
+            return {"ok": False, "url": url, "error": f"bad response: {detail[:120]}"}
         return {"ok": True, "session": new_session, "result": message.get("result", {})}
 
     try:
@@ -1031,6 +1108,7 @@ def _probe_bridge(url: str, token: str) -> dict[str, Any]:
         if not init.get("ok"):
             return init
         session = init.get("session")
+        post({"jsonrpc": "2.0", "method": "notifications/initialized"}, session, notify=True)
         tools = post(
             {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
             session,
@@ -1061,10 +1139,16 @@ def poll() -> dict[str, Any]:
     """
     from . import jobcontrol  # noqa: PLC0415 - jobcontrol imports service
 
+    rdm = _rdm()
+    try:
+        env_version = int(rdm.cli.ENV_FILE.stat().st_mtime_ns)
+    except OSError:
+        env_version = 0
     return {
         "overview": overview(),
         "action_status": action_status(),
         "jobs": jobcontrol.jobs_live(),
         "permissions": jobcontrol.permissions_pending(),
         "events": events_tail(100),
+        "env_version": env_version,
     }

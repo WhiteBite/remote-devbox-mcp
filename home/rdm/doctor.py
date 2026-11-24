@@ -6,7 +6,7 @@ import json
 import pathlib
 import secrets
 
-from rdm import docker, hostos, netprobe, ports, profiles
+from rdm import docker, hostos, netprobe, ports, procman, profiles
 from rdm.events import sink
 from rdm.freeze import app_dir
 
@@ -262,6 +262,12 @@ def run(env_map: dict[str, str], compose_file: str | None = None, prober=None) -
         "devbox.py ingress start",
     )
     report.check("ingress listen 8799", netprobe.can_connect(_INGRESS_PORT), "перезапусти devbox.py ingress start")
+    watchdog_entry = _first_entry(procman.watchdog_pids_path())
+    report.check(
+        "watchdog",
+        watchdog_entry is not None and hostos.owned(*watchdog_entry),
+        "devbox.py watchdog start — без него мёртвые ingress/relay не реанимируются",
+    )
     url = netprobe.ingress_url(env_map)
     report.check("ingress url", bool(url), "docker compose logs cloudflared-ingress")
     if url:

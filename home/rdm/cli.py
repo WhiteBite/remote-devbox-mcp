@@ -115,7 +115,10 @@ def _runner_json(command: profiles.RunnerCommand) -> dict[str, object]:
         "name": command.name,
         "cmd": list(command.cmd),
         "description": command.description,
-        "args": {name: {"type": spec.type, "position": spec.position} for name, spec in command.args},
+        "args": {
+            name: {"type": spec.type, "position": spec.position, "allow_dash": spec.allow_dash}
+            for name, spec in command.args
+        },
         "background": command.background,
         "port": command.port,
         "timeout": command.timeout,
@@ -284,7 +287,7 @@ def _start_gitleaks(profile: profiles.Profile, name: str) -> None:
 
 
 @_single_flight
-def apply_use(name: str) -> int:
+def apply_use(name: str, with_watchdog: bool = True) -> int:
     path = profiles.find(name)
     if path is None:
         print(f"нет профиля {name}", file=sys.stderr)
@@ -348,6 +351,10 @@ def apply_use(name: str) -> int:
         return 1
     _start_gitleaks(profile, name)
     _cleanup_logs()
+    # любой путь, поднимающий стек, обязан вернуть и надзирателя: без watchdog
+    # мёртвые ingress/relay висят незамеченными до следующего ручного doctor
+    if with_watchdog and not os.environ.get("RDM_NO_WATCHDOG"):
+        procman.start_watchdog(env_map, HOME_DIR)
     print(f"профиль {name} ← {path.parent}")
     print(f"профиль {name} применён; тулчейны ставятся при старте toolbox")
     return 0
@@ -413,16 +420,19 @@ def _chat(full: bool) -> int:
 
 @_single_flight
 def _start(name: str | None, with_preview: bool, with_watchdog: bool = True) -> int:
+    applied = False
     if name:
-        rc = apply_use(name)
+        rc = apply_use(name, with_watchdog)
         if rc:
             return rc
+        applied = True
     else:
         active = envfile.EnvFile.load(ENV_FILE).get("ACTIVE_PROFILE")
         if active:
-            rc = apply_use(active)
+            rc = apply_use(active, with_watchdog)
             if rc:
                 return rc
+            applied = True
         else:
             up = docker.compose("up", "-d", compose_file=COMPOSE_FILE)
             if up.returncode != 0:
@@ -449,7 +459,7 @@ def _start(name: str | None, with_preview: bool, with_watchdog: bool = True) -> 
     )
     print("=== Затем напиши задачу. ===")
     print(f"(хост) профили: {', '.join(profiles.available())}")
-    if with_watchdog and not os.environ.get("RDM_NO_WATCHDOG"):
+    if with_watchdog and not os.environ.get("RDM_NO_WATCHDOG") and not applied:
         print(f"watchdog запущен (pid {procman.start_watchdog(env_map, HOME_DIR)})")
     return 0
 
@@ -519,11 +529,23 @@ def _profile(target: str) -> int:
 
 @_single_flight
 def _ingress(action: str) -> int:
-    env_map = envfile.EnvFile.load(ENV_FILE).as_map()
-    if action == "start":
-        procman.start_ingress(_ingress_env(env_map), HOME_DIR)
-    else:
+    env = envfile.EnvFile.load(ENV_FILE)
+    env_map = env.as_map()
+    if action != "start":
         procman.stop_ingress()
+        return 0
+    procman.stop_ingress()
+    procman.start_ingress(_ingress_env(env_map), HOME_DIR)
+    tail = render.tunnel_tail(env_map.get("TUNNEL_TOKEN") or "")
+    if tail != env_map.get("TUNNEL_TAIL"):
+        env.set("TUNNEL_TAIL", tail)
+        env.write(ENV_FILE)
+        env_map = env.as_map()
+    if _start_relay(env_map) != 0:
+        print("docker compose up (ingress) не удался", file=sys.stderr)
+        return 1
+    _await_ingress_url(env_map)
+    _refresh_manifest_from_env()
     return 0
 
 

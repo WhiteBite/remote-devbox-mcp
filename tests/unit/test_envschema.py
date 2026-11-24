@@ -38,6 +38,7 @@ def test_entries_cover_every_registered_key() -> None:
     assert {row["key"] for row in rows} == {
         "INGRESS_MODE",
         "RELAY_SUBDOMAIN",
+        "RELAY_URL",
         "TUNNEL_TOKEN",
         "PUBLIC_URL",
         "EGRESS_CONTAINER",
@@ -68,7 +69,7 @@ def test_apply_patch_unchanged_value_requires_no_restart() -> None:
 
 def test_apply_patch_rejects_bad_enum() -> None:
     new_map, errors, restart = envschema.apply_patch(ENV, {"INGRESS_MODE": "tunnel"})
-    assert errors == ["INGRESS_MODE: expected one of: '', 'cloudflare', 'relay'"]
+    assert errors == ["INGRESS_MODE: expected one of: '', 'auto', 'cloudflare', 'relay', 'manual'"]
     assert restart == []
     assert new_map == ENV
 
