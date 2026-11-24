@@ -1,4 +1,5 @@
 import json
+import os
 import sys
 import threading
 
@@ -169,6 +170,20 @@ def test_close_all_kills_every_child_via_kill_tree(tmp_path, monkeypatch):
         assert proc.poll() is not None
     assert kills
     assert set(kills) <= {proc.pid for proc in alive}
+
+
+@pytest.mark.skipif(os.name == "nt", reason="os.getpgid is POSIX-only")
+def test_upstream_children_lead_their_own_process_group():
+    manager = make_manager([fake_server("alpha"), fake_server("beta")])
+    session = manager.create_session()
+    try:
+        for child in session._children.values():
+            assert child._proc is not None
+            assert os.getpgid(child._proc.pid) != os.getpgid(0)
+    finally:
+        for child in session._children.values():
+            child._proc.kill()
+        manager.close_all()
 
 
 def test_snapshot_drift_refuses_session_creation(tmp_path, monkeypatch):

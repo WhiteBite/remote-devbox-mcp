@@ -225,7 +225,12 @@ def kill_tree(pid: int) -> None:
         subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)], capture_output=True)
         return
     try:
-        os.killpg(os.getpgid(pid), signal.SIGKILL)
+        pgid = os.getpgid(pid)
+        # killpg по собственной группе убил бы сам хост
+        if pgid == os.getpgid(0):
+            os.kill(pid, signal.SIGKILL)
+        else:
+            os.killpg(pgid, signal.SIGKILL)
     except OSError:
         try:
             os.kill(pid, signal.SIGKILL)

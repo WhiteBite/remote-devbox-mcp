@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 import json
-import os
 import socket
 import time
 
-import pytest
 from rdm import ports
 from rdm.proxy import event_tap, mcp_tap
 
@@ -246,7 +244,27 @@ def test_sabotaged_capture_never_breaks_forward(tmp_path, monkeypatch):
         server.shutdown()
 
 
-@pytest.mark.skipif(os.name == "nt", reason="Windows loopback keep-alive framing differs")
+def _read_response(sock: socket.socket) -> bytes:
+    buf = b""
+    while b"\r\n\r\n" not in buf:
+        chunk = sock.recv(65536)
+        if not chunk:
+            raise AssertionError("connection closed before response headers")
+        buf += chunk
+    head, body = buf.split(b"\r\n\r\n", 1)
+    length = 0
+    for line in head.split(b"\r\n")[1:]:
+        name, _, value = line.partition(b":")
+        if name.strip().lower() == b"content-length":
+            length = int(value.strip())
+    while len(body) < length:
+        chunk = sock.recv(65536)
+        if not chunk:
+            raise AssertionError("connection closed before response body")
+        body += chunk
+    return head + b"\r\n\r\n" + body[:length]
+
+
 def test_bridge_tools_call_keep_alive_connection_reused(tmp_path, monkeypatch):
     job = {"job_id": "job-8", "status": "completed", "result": {"metadata": {"exit": 0}}}
     fake, server, port, events_path = _start_bridge(tmp_path, monkeypatch, job)
@@ -264,10 +282,9 @@ def test_bridge_tools_call_keep_alive_connection_reused(tmp_path, monkeypatch):
                         connection="keep-alive",
                     )
                 )
-                buf = b""
-                while b"job-8" not in buf:
-                    buf += sock.recv(65536)
+                buf = _read_response(sock)
                 assert b"200 OK" in buf
+                assert b"job-8" in buf
         deadline = time.monotonic() + 10.0
         events = _events(events_path)
         while len(events) < 4 and time.monotonic() < deadline:

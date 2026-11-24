@@ -219,7 +219,10 @@ def test_keep_alive_reuse_after_post_body(tmp_path):
             )
             first = b""
             while b"hello" not in first:
-                first += sock.recv(65536)
+                chunk = sock.recv(65536)
+                if not chunk:
+                    raise AssertionError("connection closed before echo response")
+                first += chunk
             assert b"connection: keep-alive" in first.lower()
             sock.sendall(request("GET", _url(fake.port), headers=_auth()))
             second = b""

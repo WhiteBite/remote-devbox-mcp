@@ -215,6 +215,8 @@ class UpstreamChild:
             stderr=subprocess.PIPE,
             env=env,
             creationflags=flags,
+            # kill_tree бьёт всю группу процесса: ребёнок должен быть её лидером
+            start_new_session=os.name != "nt",
         )
         self._reader = threading.Thread(target=self._read_stdout, daemon=True)
         self._reader.start()
