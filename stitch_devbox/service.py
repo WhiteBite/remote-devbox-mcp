@@ -409,6 +409,8 @@ def mcp_candidates(name: str = "") -> dict[str, Any]:
         rows = snapshot.candidates(profile)
     except snapshot.GatewaySnapshotError as exc:
         return {"profile": target, "candidates": [], "error": str(exc)}
+    from urllib.parse import urlsplit, urlunsplit  # noqa: PLC0415
+
     from rdm.redact import redact_argv, redact_text  # noqa: PLC0415
 
     # snapshot.candidates нужен рендеру в сыром виде — маскируем только на RPC-границе:
@@ -419,7 +421,14 @@ def mcp_candidates(name: str = "") -> dict[str, Any]:
         if isinstance(row.get("command"), list):
             row["command"] = redact_argv([str(part) for part in row["command"]])
         if isinstance(row.get("url"), str):
-            row["url"] = redact_text(row["url"])
+            # userinfo-креды (user:pass@) не ловит keyword-регекс — срезаем явно
+            parts = urlsplit(row["url"])
+            host = parts.hostname or ""
+            if parts.port:
+                host = f"{host}:{parts.port}"
+            row["url"] = redact_text(urlunsplit((parts.scheme, host, parts.path, parts.query, parts.fragment)))
+        if isinstance(row.get("error"), str):
+            row["error"] = redact_text(row["error"])
         safe_rows.append(row)
     return {"profile": target, "candidates": safe_rows}
 
@@ -877,7 +886,25 @@ def cockpit_open() -> dict[str, Any]:
             )
         time.sleep(0.2)
     token = auth.write_bootstrap()
-    return {"url": f"http://127.0.0.1:{rdm.ports.COCKPIT_PORT}/?t={token}"}
+    url = f"http://127.0.0.1:{rdm.ports.COCKPIT_PORT}/?t={token}"
+    # cockpit_open синхронный и не проходит через очередь — эмитим событие
+    # вручную, иначе ui-наблюдатели recent[].cmd === 'cockpit_open' мёртвы
+    try:
+        from rdm.events import sink  # noqa: PLC0415
+
+        sink.emit(
+            {
+                "kind": "action",
+                "job_id": f"cockpit-{int(time.time())}",
+                "tool": "cockpit_open",
+                "status": "finished",
+                "exit": 0,
+                "payload": {"url": url},
+            }
+        )
+    except Exception:
+        pass
+    return {"url": url}
 
 
 def ingress_control(action: str = "up") -> dict[str, Any]:
@@ -1056,7 +1083,7 @@ def _probe_bridge(url: str, token: str) -> dict[str, Any]:
                     parsed = json.loads(chunk)
                 except ValueError:
                     continue
-                if isinstance(parsed, dict):
+                if isinstance(parsed, dict) and ("result" in parsed or "error" in parsed):
                     last = parsed
             return last
         parsed = json.loads(body) if body.strip() else {}
@@ -1141,14 +1168,27 @@ def poll() -> dict[str, Any]:
 
     rdm = _rdm()
     try:
-        env_version = int(rdm.cli.ENV_FILE.stat().st_mtime_ns)
+        stat = rdm.cli.ENV_FILE.stat()
+        # mtime в микросекундах — точность fs и помещается в float53;
+        # size добивает узкое окно «две записи в один тик»
+        env_version = stat.st_mtime_ns // 1000 * 4096 + stat.st_size
     except OSError:
         env_version = 0
+    # BridgeDenied (токен ротирован, бридж ещё не поднялся) не должна хоронить
+    # весь poll — фронт умеет деградировать по bridge:"down"/"denied"
+    try:
+        jobs = jobcontrol.jobs_live()
+    except Exception:
+        jobs = {"rows": [], "source": "error", "bridge": "down"}
+    try:
+        permissions = jobcontrol.permissions_pending()
+    except Exception:
+        permissions = {"rows": [], "source": "error", "bridge": "down"}
     return {
         "overview": overview(),
         "action_status": action_status(),
-        "jobs": jobcontrol.jobs_live(),
-        "permissions": jobcontrol.permissions_pending(),
+        "jobs": jobs,
+        "permissions": permissions,
         "events": events_tail(100),
         "env_version": env_version,
     }

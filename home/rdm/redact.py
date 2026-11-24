@@ -14,8 +14,21 @@ SECRETISH = re.compile(
 _BEARER = re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._\-]{16,}")
 
 
+_SECRET_FLAG = re.compile(r"^--?.*(token|key|secret|password|passwd|bearer|credential|auth)", re.I)
+
+
 def redact_argv(argv: list[str]) -> list[str]:
-    return ["[REDACTED]" if SECRETISH.search(a) else a for a in argv]
+    # секрет идёт либо внутри элемента (--token=x / Bearer x / 32+hex), либо
+    # значением следующего за секрет-флагом элемента (--token x)
+    out: list[str] = []
+    mask_next = False
+    for a in argv:
+        if mask_next or SECRETISH.search(a) or _BEARER.search(a):
+            out.append("[REDACTED]")
+        else:
+            out.append(a)
+        mask_next = bool(_SECRET_FLAG.match(a)) and not SECRETISH.search(a)
+    return out
 
 
 def redact_text(text: str) -> str:

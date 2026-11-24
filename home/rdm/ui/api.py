@@ -276,10 +276,15 @@ def env_apply_patch(patch: dict[str, object]) -> dict[str, object]:
     new_map, errors, restart = envschema.apply_patch(env_map, patch)
     if errors:
         return {"valid": False, "errors": errors, "restart": []}
+    dirty = False
     for key, value in new_map.items():
         if env_map.get(key, "") != value:
             env.set(key, value)
-    env.write(cli.ENV_FILE)
+            dirty = True
+    # no-op патч не должен бампать mtime .env — иначе env_version растёт
+    # на каждом save и фронт перечитывает конфиг зря
+    if dirty:
+        env.write(cli.ENV_FILE)
     return {"valid": True, "errors": [], "restart": restart}
 
 

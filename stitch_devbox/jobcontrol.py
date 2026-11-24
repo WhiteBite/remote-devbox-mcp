@@ -61,14 +61,19 @@ def jobs_live() -> dict[str, Any]:
     try:
         with client.budget():
             views = client.job_list()
-    except BridgeDenied:
-        stale_token = _client_token
+    except BridgeDenied as denied:
+        stale_token = getattr(client, "token", None) or _client_token
         _reset_bridge()
         client = _bridge()
         if _client_token == stale_token:
             raise  # токен не сменился — denied настоящий
-        with client.budget():
-            views = client.job_list()
+        try:
+            with client.budget():
+                views = client.job_list()
+        except BridgeError:
+            # токен «вроде сменился», но retry не дошёл/тоже denied —
+            # наружу отдаём исходный отказ, свежий клиент уже закэширован
+            raise denied from None
     except BridgeUnreachable:
         _remember_bridge_down()
         return {"rows": _events_job_rows(), "source": "events", "bridge": "down"}
