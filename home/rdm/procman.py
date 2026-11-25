@@ -231,6 +231,7 @@ def restart_host_services(
 
 def start_ingress(env_map: dict[str, str], host_dir: pathlib.Path) -> int:
     stop_ingress()
+    _free_port(INGRESS_PORT)
     target_dir = hostos.tempdir() / "rdm-ingress"
     target_dir.mkdir(parents=True, exist_ok=True)
     env = {**os.environ, **env_map}
