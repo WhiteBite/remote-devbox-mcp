@@ -182,6 +182,10 @@ def _start_relay(env_map: dict[str, str]) -> int:
         return 0
     if mode == "relay":
         result = docker.compose("--profile", "relay", "up", "-d", "relay", compose_file=COMPOSE_FILE)
+        # именованный туннель поднимаем параллельно: PUBLIC_URL — браузерный
+        # вход без localtunnel-заглушки, лок.lt остаётся MCP-входом
+        if (env_map.get("PUBLIC_URL") or "").strip() and (env_map.get("TUNNEL_TAIL") or "").strip():
+            docker.compose("--profile", "cloudflare", "up", "-d", "cloudflared-ingress", compose_file=COMPOSE_FILE)
     else:
         result = docker.compose("--profile", "cloudflare", "up", "-d", "cloudflared-ingress", compose_file=COMPOSE_FILE)
     return result.returncode
@@ -208,7 +212,13 @@ def _write_manifest(profile: profiles.Profile, name: str, env_map: dict[str, str
     LOG_ROOT.mkdir(parents=True, exist_ok=True)
     MANIFEST_PATH.write_text(
         json.dumps(
-            render.build_manifest(manifest_profile, name, _ingress_url(env_map), manifest_profile.mode),
+            render.build_manifest(
+                manifest_profile,
+                name,
+                _ingress_url(env_map),
+                manifest_profile.mode,
+                (env_map.get("PUBLIC_URL") or "").strip(),
+            ),
             ensure_ascii=False,
             indent=2,
         ),

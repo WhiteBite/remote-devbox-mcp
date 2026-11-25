@@ -92,6 +92,7 @@ def build_manifest(
     profile_name: str,
     ingress_url: str,
     mode: str,
+    public_url: str = "",
 ) -> dict[str, object]:
     policy = ports.compute_port_policy(profile)
     allowed = list(policy.allowed)
@@ -157,6 +158,7 @@ def build_manifest(
         "profile": profile_name,
         "project": profile.project_dir,
         "ingress_url": ingress_url,
+        "public_url": public_url or ingress_url,
         "endpoints": endpoints,
         "allowed_ports": allowed,
         "port_ranges": [[lo, hi] for lo, hi in profile.port_ranges],
