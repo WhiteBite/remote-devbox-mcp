@@ -123,6 +123,7 @@ def test_manifest_endpoints():
         "profile": "example",
         "project": "d:/work/example",
         "ingress_url": "https://x.trycloudflare.com",
+        "public_url": "https://x.trycloudflare.com",
         "endpoints": [
             {
                 "name": "manifest",
