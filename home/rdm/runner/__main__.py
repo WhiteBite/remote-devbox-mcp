@@ -278,7 +278,9 @@ def main() -> None:
     )
     ctx.run_dir.mkdir(parents=True, exist_ok=True)
     port = int(os.environ.get("MCP_HTTP_PORT", "8797"))
-    mcp = MCPServer(f"devbox-runner-{ctx.profile}", transport_security=_transport_security(port))
+    # mcp 2.x: transport_security живёт не в конструкторе, а в kwargs run()
+    # (run_streamable_http_async / streamable_http_app)
+    mcp = MCPServer(f"devbox-runner-{ctx.profile}")
 
     @mcp.tool()
     def runner_list() -> str:
@@ -306,6 +308,7 @@ def main() -> None:
         transport="streamable-http",
         host="127.0.0.1",
         port=port,
+        transport_security=_transport_security(port),
     )
 
 
