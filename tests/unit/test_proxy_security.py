@@ -5,6 +5,7 @@ import threading
 
 from rdm.proxy import server as proxy_server
 from rdm.proxy import upstream
+
 from tests.proxy_fakes import FakeUpstream, raw_request, request, responder, start_ingress
 
 

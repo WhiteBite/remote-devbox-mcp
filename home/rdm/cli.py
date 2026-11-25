@@ -322,6 +322,9 @@ def apply_use(name: str, with_watchdog: bool = True) -> int:
             env.set(key, value)
     policy = ports.compute_port_policy(profile)
     allowed_text = ",".join(str(port) for port in policy.allowed)
+    if policy.ranges:
+        range_text = ",".join(f"{lo}-{hi}" for lo, hi in policy.ranges)
+        allowed_text = f"{allowed_text}; ranges {range_text}" if allowed_text else f"ranges {range_text}"
     _ensure_relay_subdomain(env)
     env.write(ENV_FILE)
     dir_mounts = frozenset(

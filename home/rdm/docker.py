@@ -22,6 +22,8 @@ def compose(
             timeout=timeout,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             shell=False,
             creationflags=_CREATE_NO_WINDOW,
         )
@@ -45,6 +47,8 @@ def run(*args: str, input: str | None = None, timeout: int = 120) -> subprocess.
             timeout=timeout,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             shell=False,
             creationflags=_CREATE_NO_WINDOW,
         )

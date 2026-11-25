@@ -62,10 +62,8 @@ def jobs_live() -> dict[str, Any]:
         with client.budget():
             views = client.job_list()
     except BridgeDenied as denied:
-        stale_token = getattr(client, "token", None) or _client_token
-        _reset_bridge()
-        client = _bridge()
-        if _client_token == stale_token:
+        client = _token_retry_client(client)
+        if client is None:
             raise  # токен не сменился — denied настоящий
         try:
             with client.budget():
@@ -110,10 +108,7 @@ def permissions_pending() -> dict[str, Any]:
             rows = _bridge_permission_rows()
             _remember_bridge_up()
         except BridgeDenied:
-            stale_token = _client_token
-            _reset_bridge()
-            _bridge()
-            if _client_token == stale_token:
+            if _token_retry_client(_client) is None:
                 raise  # токен не сменился — denied настоящий
             rows = _bridge_permission_rows()
             _remember_bridge_up()
@@ -169,6 +164,26 @@ def _bridge() -> Any:
         _client = BridgeClient(f"http://127.0.0.1:{rdm.profiles.BRIDGE_PORT}/mcp", token)
         _client_token = token
     return _client
+
+
+def _token_retry_client(denied_client: Any) -> Any | None:
+    """Пересоздать клиент с токеном из .env; None — токен не сменился.
+
+    Retry бьёт в тот же URL, что отказал (у прод-клиента он и так совпадает,
+    у инжектнутого в тестах — нет, и ходить на живой бридж нельзя).
+    """
+    global _client
+    stale_token = getattr(denied_client, "token", None) or _client_token
+    stale_url = getattr(denied_client, "url", None)
+    _reset_bridge()
+    client = _bridge()
+    if _client_token == stale_token:
+        return None
+    if stale_url and getattr(client, "url", None) != stale_url:
+        from rdm.bridge_client import BridgeClient
+
+        client = _client = BridgeClient(stale_url, _client_token)
+    return client
 
 
 def _job_row(view: dict[str, Any]) -> dict[str, Any]:

@@ -210,6 +210,8 @@ def _git_porcelain(project_dir: str) -> list[str] | None:
             ["git", "-C", project_dir, "rev-parse", "--is-inside-work-tree"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=_DIFF_TIMEOUT_SECONDS,
         )
     except (OSError, subprocess.SubprocessError):
@@ -221,6 +223,8 @@ def _git_porcelain(project_dir: str) -> list[str] | None:
             ["git", "-C", project_dir, "status", "--porcelain"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=_DIFF_TIMEOUT_SECONDS,
         )
     except (OSError, subprocess.SubprocessError):
