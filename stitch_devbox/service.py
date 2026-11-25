@@ -1060,7 +1060,44 @@ def connection_check() -> dict[str, Any]:
     token = env_map.get("MCP_BEARER_TOKEN", "")
     if not token:
         return {"ok": False, "mode": detected, "url": url, "error": "MCP_BEARER_TOKEN empty"}
-    return {**_probe_bridge(url, token), "mode": detected}
+    result = {**_probe_bridge(url, token), "mode": detected}
+    # префлайт advertised-роутов: бридж жив ≠ манифест жив (зомби-прокси
+    # отдаёт 404 именно на /p/9000). PUBLIC_URL — браузерный вход; его
+    # 530/404 надо показать, а не молча отдать в хэндофф
+    ingress_token = env_map.get("INGRESS_TOKEN", "")
+    manifest_url = f"{ingress_url}/p/9000/manifest.json"
+    result["manifest_url"] = manifest_url
+    result["manifest_status"] = _probe_status(manifest_url, ingress_token)
+    public = (env_map.get("PUBLIC_URL") or "").strip()
+    if public and public.rstrip("/") != ingress_url.rstrip("/"):
+        result["public_url"] = public
+        result["public_status"] = _probe_status(
+            f"{public.rstrip('/')}/p/9000/manifest.json", ingress_token
+        )
+    return result
+
+
+def _probe_status(url: str, token: str) -> int:
+    """HTTP-статус GET через туннель: 200/401/403/404, 0 — сеть/таймаут."""
+    import urllib.error
+    import urllib.request
+
+    request = urllib.request.Request(
+        url,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "bypass-tunnel-reminder": "true",
+        },
+        method="GET",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=6) as response:
+            response.read(1)
+            return int(response.status)
+    except urllib.error.HTTPError as exc:
+        return int(exc.code)
+    except (urllib.error.URLError, OSError, ValueError):
+        return 0
 
 
 def _probe_bridge(url: str, token: str) -> dict[str, Any]:

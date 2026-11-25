@@ -129,7 +129,9 @@ def test_connection_check_reports_tools(monkeypatch, tmp_path):
     def fake_probe(url: str, token: str):
         return {"ok": True, "url": url, "tools": 16, "server": "opencode-mcp-bridge", "latency_ms": 42}
 
+    statuses = iter([200, 530])
     monkeypatch.setattr(service, "_probe_bridge", fake_probe)
+    monkeypatch.setattr(service, "_probe_status", lambda url, token: next(statuses))
 
     result = service.connection_check()
 
@@ -140,6 +142,10 @@ def test_connection_check_reports_tools(monkeypatch, tmp_path):
         "tools": 16,
         "server": "opencode-mcp-bridge",
         "latency_ms": 42,
+        "manifest_url": "https://tunnel.example.com/p/9000/manifest.json",
+        "manifest_status": 200,
+        "public_url": "https://prompt.example.com",
+        "public_status": 530,
     }
 
 
