@@ -39,7 +39,12 @@ def restrict_permissions(path: Path) -> None:
     if os.name == "nt":
         try:
             user = subprocess.run(
-                ["whoami"], capture_output=True, text=True, check=True
+                ["whoami"],
+                capture_output=True,
+                text=True,
+                encoding="mbcs",
+                errors="replace",
+                check=True,
             ).stdout.strip()
         except (OSError, subprocess.SubprocessError):
             return

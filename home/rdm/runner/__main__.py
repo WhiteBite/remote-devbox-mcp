@@ -24,10 +24,7 @@ import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
-try:  # mcp 1.x
-    from mcp.server.fastmcp import FastMCP as MCPServer
-except ImportError:  # mcp 2.x
-    from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver import MCPServer
 
 from rdm import childproc, hostos
 from rdm.profiles import runner_kill_tool_name, runner_tool_name

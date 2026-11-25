@@ -40,6 +40,9 @@ def _devbox(*args: str, timeout: int = 240) -> subprocess.CompletedProcess[str]:
         cwd=str(HOME),
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
+        env={**os.environ, "PYTHONIOENCODING": "utf-8"},
         timeout=timeout,
         creationflags=CREATE_NO_WINDOW,
     )

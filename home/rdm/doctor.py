@@ -262,6 +262,12 @@ def run(env_map: dict[str, str], compose_file: str | None = None, prober=None) -
         "devbox.py ingress start",
     )
     report.check("ingress listen 8799", netprobe.can_connect(_INGRESS_PORT), "перезапусти devbox.py ingress start")
+    listener_pid = hostos.find_pid_by_port(_INGRESS_PORT)
+    report.check(
+        "ingress port owner",
+        listener_pid is None or (ingress_entry is not None and listener_pid == ingress_entry[0]),
+        f"порт 8799 держит зомби-процесс pid={listener_pid} — devbox.py ingress stop && devbox.py ingress start",
+    )
     watchdog_entry = _first_entry(procman.watchdog_pids_path())
     report.check(
         "watchdog",

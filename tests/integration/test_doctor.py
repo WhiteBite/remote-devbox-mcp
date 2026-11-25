@@ -55,6 +55,7 @@ def _wire(monkeypatch, tmp_path, *, healthy=True, profile_json=None):
     monkeypatch.setattr(doctor.netprobe, "ingress_url", lambda env_map, compose_file=None: env_map.get("PUBLIC_URL", ""))
     monkeypatch.setattr(doctor.netprobe, "can_connect", lambda port: healthy)
     monkeypatch.setattr(doctor, "_first_entry", lambda path: (12345, None, "rdm.proxy"))
+    monkeypatch.setattr(hostos, "find_pid_by_port", lambda port: 12345)
     monkeypatch.setattr(hostos, "cmdline_matches", lambda pid, marker: True)
     monkeypatch.setattr(doctor.docker, "run", lambda *a, **k: subprocess.CompletedProcess(["docker"], 0, stdout="", stderr=""))
     monkeypatch.setattr(doctor.docker, "compose", lambda *a, **k: subprocess.CompletedProcess(["docker"], 0, stdout="healthy" if healthy else "starting", stderr=""))
@@ -78,6 +79,21 @@ def test_doctor_passes_with_all_checks(monkeypatch, tmp_path, capsys):
     out = capsys.readouterr().out
     assert "[FAIL]" not in out
     assert "[PASS] bridge via ingress 200" in out
+
+
+def test_doctor_fails_on_zombie_port_owner(monkeypatch, tmp_path, capsys):
+    """Инцидент: зомби-прокси держал 8799 поверх живого — manifest 404."""
+    _wire(monkeypatch, tmp_path)
+    monkeypatch.setattr(hostos, "find_pid_by_port", lambda port: 99999)
+    assert doctor.run(_env(tmp_path), prober=_prober) == 1
+    assert "[FAIL] ingress port owner" in capsys.readouterr().out
+
+
+def test_doctor_port_owner_ok_when_no_listener(monkeypatch, tmp_path, capsys):
+    _wire(monkeypatch, tmp_path, healthy=False)
+    monkeypatch.setattr(hostos, "find_pid_by_port", lambda port: None)
+    doctor.run(_env(tmp_path), prober=_prober)
+    assert "[FAIL] ingress port owner" not in capsys.readouterr().out
 
 
 def test_doctor_counts_host_service_alive_via_create_time(monkeypatch, tmp_path, capsys):

@@ -447,6 +447,8 @@ def _git_config_value(key: str, project_dir: str = "", scope: str = "") -> str:
             args,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=5,
             check=False,
         )
@@ -508,6 +510,8 @@ def _is_git_repo(target: Path) -> bool:
             ["git", "-C", str(target), "rev-parse", "--is-inside-work-tree"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=5,
             check=False,
         )

@@ -190,7 +190,8 @@ class StdioTransport:
     def __init__(self, command: list[str], cwd: str | None = None):
         self.proc = subprocess.Popen(
             command, cwd=cwd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL, text=True, bufsize=1,
+            stderr=subprocess.DEVNULL, text=True, encoding="utf-8",
+            errors="replace", bufsize=1,
         )
         self._id = 0
 

@@ -52,9 +52,14 @@ then `tray.cmd`.
 - **Do** run `python -m pytest` before committing.
 - **Do** keep `.discoverability/project.yml`, `README.md`, `llms.txt` and `llms-full.txt` in sync (the llms files are generated from the yml; see their headers).
 - **Do** keep the exit-code line in `ARENA.md` in sync with the constants in `arena/mcp_client.py` — `tests/unit/test_docs_sync.py` gates it.
+- **Do** pass explicit `encoding=` on every `text=True` subprocess call — `tests/unit/test_subprocess_encoding.py` gates it (cp1251 mojibake on ru-Windows).
+- **Do** call `_free_port(...)` before spawning any port-binding service in `procman.py` — pid-files only clean tracked pids; orphaned processes double-bind ports.
+- **Do** drive the LIVE stack from a single checkout (the hub submodule `plugins-src/stitch-devbox`) — spawning proxies from a second copy produces zombie listeners that pids.txt can't clean.
+- **Do** keep every route advertised in manifest/handoff actually routable — `tests/unit/test_manifest_routes.py` gates it.
 - **Don't** edit `.py`, `.ps1`, compose or Dockerfile files as part of doc-only work.
 - **Don't** bump versions, create tags, publish, force-push or delete files without explicit human confirmation.
 - **Don't** rewrite unrelated files while fixing a specific finding.
+- **Don't** wrap pinned-dependency imports in try/except fallbacks — they mask API drift until runtime (`mcp>=2.3` is pinned; import `MCPServer` directly).
 
 ## Порт-политика и онбординг проекта
 
