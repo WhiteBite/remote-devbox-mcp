@@ -80,6 +80,39 @@ def test_gate_catches_unrouted_port():
     assert _check(manifest, policy) == ["ghost /p/4999/"]
 
 
+def test_chat_block_mentions_only_existing_tokens():
+    """Инцидент: handoff рекламировал GATEWAY_TOKEN при отсутствии шлюза.
+
+    Правило: имя токена в тексте chat_block <=> соответствующая поверхность
+    передана (gateway_port / runner|self_authed).
+    """
+    from rdm.tokens import chat_block
+
+    env = {"MCP_BEARER_TOKEN": "b" * 64, "MCP_PUBLIC_TOKEN": "h" * 64,
+           "INGRESS_TOKEN": "i" * 64, "GATEWAY_TOKEN": "g" * 64}
+    bare = chat_block(env, "https://x", full=False)
+    assert "GATEWAY_TOKEN" not in bare
+    assert "HOST_TOKEN" not in bare
+
+    with_gw = chat_block(env, "https://x", full=False, gateway_port=8794)
+    assert "GATEWAY_TOKEN" in with_gw
+    assert "HOST_TOKEN" not in with_gw
+
+    with_runner = chat_block(env, "https://x", full=False, runner_port=8796)
+    assert "HOST_TOKEN" in with_runner
+    assert "GATEWAY_TOKEN" not in with_runner
+
+
+def test_manifest_contains_no_secret_values():
+    """Манифест носит имена токенов, не значения — утечка значений = гейт."""
+    import json
+
+    manifest = build_manifest(_profile(), "p", "https://x", "ingress")
+    blob = json.dumps(manifest)
+    for value in ("b" * 64, "i" * 64, "g" * 64):
+        assert value not in blob
+
+
 def test_gateway_not_advertised_when_not_routed():
     """Если gateway-advertised порт не попадает в self_authed — гейт красный.
 

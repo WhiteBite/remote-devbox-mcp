@@ -12,9 +12,7 @@ _TOKEN_KEYS = ("MCP_BEARER_TOKEN", "MCP_PUBLIC_TOKEN", "INGRESS_TOKEN", "GATEWAY
 _TOKEN_SURFACES = (
     "Токены и поверхности:",
     "BRIDGE_TOKEN  -> /p/8787/mcp (bridge: read/edit/write/bash)",
-    "HOST_TOKEN    -> runner + host-сервисы со своей авторизацией (/p/<порт>/mcp)",
     "INGRESS_TOKEN -> все HTTP-эндпоинты /p/<порт>, включая /p/9000/manifest.json",
-    "GATEWAY_TOKEN -> /p/<gw>/mcp (шлюз MCP хозяина)",
 )
 _REPO_URL = "https://github.com/WhiteBite/remote-devbox-mcp"
 _INSTRUCTION_URL = f"{_REPO_URL}/blob/main/ARENA.md"
@@ -75,6 +73,10 @@ def chat_block(
         f"INGRESS_TOKEN={ingress_token}  # UI и прочие порты (Authorization: Bearer)",
         *_TOKEN_SURFACES,
     ]
+    if runner_port or self_authed_ports:
+        lines.append("HOST_TOKEN    -> runner + host-сервисы со своей авторизацией (/p/<порт>/mcp)")
+    if gateway_port:
+        lines.append(f"GATEWAY_TOKEN -> /p/{gateway_port}/mcp (шлюз MCP хозяина)")
     if preview_url:
         lines.append(f"PREVIEW={preview_url}  # UI для playwright (root URL, без токена)")
     ui_port = env_map.get("UI_PORT")
