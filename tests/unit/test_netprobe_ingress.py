@@ -83,3 +83,46 @@ def test_relay_mode_falls_back_to_env_relay_url(monkeypatch):
     url = netprobe.ingress_url({"INGRESS_MODE": "relay", "RELAY_URL": "https://devbox-abcd1234.loca.lt"})
 
     assert url == "https://devbox-abcd1234.loca.lt"
+
+
+def test_issued_url_prefers_stored_relay_url(monkeypatch):
+    monkeypatch.setattr(netprobe.docker, "compose", lambda *a, **k: _completed(RELAY_LOG))
+
+    url = netprobe.issued_url(
+        {"INGRESS_MODE": "auto", "RELAY_URL": "https://devbox-deadbeef.loca.lt"}
+    )
+
+    assert url == "https://devbox-deadbeef.loca.lt"
+
+
+def test_issued_url_falls_back_to_resolution(monkeypatch):
+    monkeypatch.setattr(netprobe.docker, "compose", lambda *a, **k: _completed(RELAY_LOG))
+    monkeypatch.setattr(netprobe.docker, "run", lambda *a, **k: _completed(""))
+
+    url = netprobe.issued_url({"INGRESS_MODE": "auto"})
+
+    assert url == "https://devbox-abcd1234.loca.lt"
+
+
+def test_issued_url_manual_ignores_relay_url():
+    url = netprobe.issued_url(
+        {
+            "INGRESS_MODE": "manual",
+            "PUBLIC_URL": "https://my-vps.example.test",
+            "RELAY_URL": "https://devbox-abcd1234.loca.lt",
+        }
+    )
+
+    assert url == "https://my-vps.example.test"
+
+
+def test_tunnel_alive_rejects_dead_codes(monkeypatch):
+    monkeypatch.setattr(netprobe, "probe_http", lambda url, token, timeout=10.0: 503)
+
+    assert netprobe.tunnel_alive("https://dead.loca.lt", "t") is False
+
+
+def test_tunnel_alive_accepts_any_http_response(monkeypatch):
+    monkeypatch.setattr(netprobe, "probe_http", lambda url, token, timeout=10.0: 404)
+
+    assert netprobe.tunnel_alive("https://live.loca.lt", "t") is True

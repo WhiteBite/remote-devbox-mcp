@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from rdm.envfile import restrict_permissions
+from rdm.gateway.data import DEFAULT_DENY_SERVERS
 
 if TYPE_CHECKING:
     from rdm.profiles import Profile
@@ -182,6 +183,7 @@ def candidates(profile: Profile, global_config: Path | None = None) -> tuple[dic
             "type": str(entry.get("type", "")) if isinstance(entry, dict) else "",
             "enabled": not (isinstance(entry, dict) and entry.get("enabled") is False),
             "source": str(layer),
+            "denied": name in DEFAULT_DENY_SERVERS,
             "valid": False,
             "error": None,
         }

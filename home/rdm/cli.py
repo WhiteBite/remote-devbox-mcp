@@ -55,8 +55,8 @@ def _single_flight(fn: Callable[..., int]) -> Callable[..., int]:
     return wrapper
 
 
-def _ingress_url(env_map: dict[str, str]) -> str:
-    return netprobe.ingress_url(env_map, COMPOSE_FILE)
+def _issued_url(env_map: dict[str, str]) -> str:
+    return netprobe.issued_url(env_map, COMPOSE_FILE)
 
 
 def _preview_url(env_map: dict[str, str]) -> str:
@@ -191,19 +191,41 @@ def _start_relay(env_map: dict[str, str]) -> int:
     return result.returncode
 
 
-def _await_ingress_url(env_map: dict[str, str], timeout: float = 25.0) -> None:
+def _ingress_candidates(env_map: dict[str, str]) -> list[str]:
+    """URL-кандидаты на роль выдаваемого ingress-адреса, в порядке приоритета."""
+    candidates: list[str] = []
+    resolved = netprobe.ingress_url(env_map, COMPOSE_FILE)
+    if resolved:
+        candidates.append(resolved)
+    subdomain = (env_map.get("RELAY_SUBDOMAIN") or "").strip()
+    if subdomain:
+        candidates.append(f"https://{subdomain}.loca.lt")
+    issued = (env_map.get("RELAY_URL") or "").strip()
+    if issued:
+        candidates.append(issued)
+    public = (env_map.get("PUBLIC_URL") or "").strip()
+    if public:
+        candidates.append(public)
+    return list(dict.fromkeys(candidates))
+
+
+def _await_ingress_url(env_map: dict[str, str], timeout: float = 60.0) -> None:
     """Wait for the tunnel to produce a URL; in manual mode there is no tunnel to wait for."""
     mode = (env_map.get("INGRESS_MODE") or "").strip().lower()
     if mode == "manual":
         return
+    token = env_map.get("INGRESS_TOKEN") or None
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        url = netprobe.ingress_url(env_map, COMPOSE_FILE)
-        if url:
-            env = envfile.EnvFile.load(ENV_FILE)
-            env.set("RELAY_URL", url)
-            env.write(ENV_FILE)
-            return
+        # Логи туннеля могут содержать мёртвый субдомен (localtunnel
+        # переподключается на случайный адрес, а старый анонс остаётся в
+        # хвосте): перед записью в RELAY_URL проверяем, что адрес отвечает.
+        for url in _ingress_candidates(env_map):
+            if netprobe.tunnel_alive(url, token):
+                env = envfile.EnvFile.load(ENV_FILE)
+                env.set("RELAY_URL", url)
+                env.write(ENV_FILE)
+                return
         time.sleep(1.0)
 
 
@@ -215,7 +237,7 @@ def _write_manifest(profile: profiles.Profile, name: str, env_map: dict[str, str
             render.build_manifest(
                 manifest_profile,
                 name,
-                _ingress_url(env_map),
+                _issued_url(env_map),
                 manifest_profile.mode,
                 (env_map.get("PUBLIC_URL") or "").strip(),
             ),
@@ -319,6 +341,13 @@ def apply_use(name: str, with_watchdog: bool = True) -> int:
         for error in errors:
             print(f"profile error: {error}", file=sys.stderr)
         return 1
+    if profile.preview_origin:
+        origin_probe = profile.preview_origin.replace("host.docker.internal", "127.0.0.1")
+        if netprobe.probe_http(origin_probe, None, timeout=2.0) == 0:
+            print(
+                f"profile warn: preview_origin {profile.preview_origin} не отвечает — "
+                "preview-туннель будет мёртв до запуска dev-сервера"
+            )
     base_profile = profile
     profile = _with_runner(profile, name)
     env = envfile.EnvFile.load(ENV_FILE)
@@ -415,7 +444,7 @@ def _chat(full: bool) -> int:
     print(f"Проект:     {env_map.get('PROJECT_DIR', '')}")
     print(f"Тулчейны:   {env_map.get('TOOLCHAIN', '')}")
     print(f"Git:        {env_map.get('GIT_NAME', '')} <{env_map.get('GIT_EMAIL', '')}>")
-    print(f"INGRESS:    {_ingress_url(env_map)}")
+    print(f"INGRESS:    {_issued_url(env_map)}")
     print(f"Порты:      self-authed {env_map.get('SELF_AUTHED_PORTS', '')}; allowed {env_map.get('ALLOWED_PORTS', '')}")
     print(f"Preview:    {env_map.get('PREVIEW_ORIGIN', '')}")
     print(f"Профили:    {', '.join(profiles.available())}")
@@ -424,7 +453,7 @@ def _chat(full: bool) -> int:
     _refresh_manifest_from_env()
     print(
         tokens.chat_block(
-            env_map, _ingress_url(env_map), full, _preview_url(env_map),
+            env_map, _issued_url(env_map), full, _preview_url(env_map),
             _runner_port(env_map), _self_authed_ports(env_map), _gateway_port(env_map),
         )
     )
@@ -466,7 +495,7 @@ def _start(name: str | None, with_preview: bool, with_watchdog: bool = True) -> 
     print("=== Скопируй агенту (arena.ai и любой агентский сайт) ===")
     print(
         tokens.chat_block(
-            env_map, _ingress_url(env_map), True, _preview_url(env_map),
+            env_map, _issued_url(env_map), True, _preview_url(env_map),
             _runner_port(env_map), _self_authed_ports(env_map), _gateway_port(env_map),
         )
     )
@@ -588,7 +617,7 @@ def _issue_tokens() -> int:
         return 1
     print(
         tokens.chat_block(
-            env_map, _ingress_url(env_map), True, _preview_url(env_map),
+            env_map, _issued_url(env_map), True, _preview_url(env_map),
             _runner_port(env_map), _self_authed_ports(env_map), _gateway_port(env_map),
         )
     )
@@ -656,7 +685,7 @@ def _block(masked: bool) -> int:
     env_map = envfile.EnvFile.load(ENV_FILE).as_map()
     print(
         tokens.chat_block(
-            env_map, _ingress_url(env_map), not masked, _preview_url(env_map),
+            env_map, _issued_url(env_map), not masked, _preview_url(env_map),
             _runner_port(env_map), _self_authed_ports(env_map), _gateway_port(env_map),
         )
     )
@@ -665,7 +694,7 @@ def _block(masked: bool) -> int:
 
 def _url(preview: bool) -> int:
     env_map = envfile.EnvFile.load(ENV_FILE).as_map()
-    print(_preview_url(env_map) if preview else _ingress_url(env_map))
+    print(_preview_url(env_map) if preview else _issued_url(env_map))
     return 0
 
 
@@ -713,7 +742,7 @@ def _health() -> int:
     env_map = envfile.EnvFile.load(ENV_FILE).as_map()
     if "healthy" not in docker.compose_ps(COMPOSE_FILE):
         return 1
-    url = _ingress_url(env_map)
+    url = _issued_url(env_map)
     if not url:
         return 1
     ok = netprobe.probe_http(f"{url}/p/{BRIDGE_PORT}/healthz", env_map.get("MCP_BEARER_TOKEN", ""), timeout=8.0) == 200

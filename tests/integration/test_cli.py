@@ -48,9 +48,11 @@ def _setup(monkeypatch, tmp_path):
 
     def fake_compose(*args, **kwargs):
         calls["compose"].append(args)
-        return subprocess.CompletedProcess(["docker"], 0, stdout="", stderr="")
+        logs = "Visit it at https://abc123.trycloudflare.com\n" if "logs" in args else ""
+        return subprocess.CompletedProcess(["docker"], 0, stdout=logs, stderr="")
 
     monkeypatch.setattr(cli.docker, "compose", fake_compose)
+    monkeypatch.setattr(cli.netprobe, "probe_http", lambda url, token, timeout=10.0: 200)
     monkeypatch.setattr(cli.docker, "compose_ps", lambda *a, **k: "rdm-toolbox healthy")
     monkeypatch.setattr(cli.docker, "run", lambda *a, **k: calls["docker_run"].append(a) or subprocess.CompletedProcess(["docker"], 0, stdout="", stderr=""))
     monkeypatch.setattr(cli.procman, "restart_host_services", lambda *a, **k: calls["restart"].append(a) or [])
@@ -150,7 +152,7 @@ def test_issue_tokens_rotates_three(monkeypatch, tmp_path):
 
 def test_start_prints_handoff_block(monkeypatch, tmp_path, capsys):
     projects, calls = _setup(monkeypatch, tmp_path)
-    monkeypatch.setattr(cli, "_ingress_url", lambda env_map: "https://devbox.example.test")
+    monkeypatch.setattr(cli, "_issued_url", lambda env_map: "https://devbox.example.test")
     (projects / "p1.json").write_text(_profile_json(tmp_path), encoding="utf-8")
     assert cli.main(["start", "p1"]) == 0
     out = capsys.readouterr().out
@@ -736,3 +738,35 @@ def test_down_cleanup_failure_does_not_fail_action(monkeypatch, tmp_path):
     monkeypatch.setattr(access_log, "cleanup", boom)
 
     assert cli.main(["down"]) == 0
+
+def test_await_ingress_url_publishes_only_live_candidate(monkeypatch, tmp_path):
+    _setup(monkeypatch, tmp_path)
+    cli.ENV_FILE.write_text("INGRESS_TOKEN=t\n", encoding="utf-8")
+    monkeypatch.setattr(
+        cli.netprobe, "ingress_url", lambda env_map, compose_file=None: "https://dead.loca.lt"
+    )
+    monkeypatch.setattr(
+        cli.netprobe,
+        "probe_http",
+        lambda url, token, timeout=10.0: 200 if "devbox-live" in url else 503,
+    )
+    env_map = {
+        "INGRESS_MODE": "relay",
+        "RELAY_SUBDOMAIN": "devbox-live",
+        "INGRESS_TOKEN": "t",
+    }
+    cli._await_ingress_url(env_map, timeout=5.0)
+    assert "RELAY_URL=https://devbox-live.loca.lt" in cli.ENV_FILE.read_text(encoding="utf-8")
+
+
+def test_await_ingress_url_skips_dead_subdomain(monkeypatch, tmp_path):
+    _setup(monkeypatch, tmp_path)
+    cli.ENV_FILE.write_text("INGRESS_TOKEN=t\n", encoding="utf-8")
+    monkeypatch.setattr(
+        cli.netprobe, "ingress_url", lambda env_map, compose_file=None: "https://dead.loca.lt"
+    )
+    monkeypatch.setattr(cli.netprobe, "probe_http", lambda url, token, timeout=10.0: 503)
+    monkeypatch.setattr(cli.time, "sleep", lambda seconds: None)
+    env_map = {"INGRESS_MODE": "relay", "INGRESS_TOKEN": "t"}
+    cli._await_ingress_url(env_map, timeout=0.5)
+    assert "RELAY_URL" not in cli.ENV_FILE.read_text(encoding="utf-8")

@@ -274,7 +274,7 @@ def run(env_map: dict[str, str], compose_file: str | None = None, prober=None) -
         watchdog_entry is not None and hostos.owned(*watchdog_entry),
         "devbox.py watchdog start — без него мёртвые ingress/relay не реанимируются",
     )
-    url = netprobe.ingress_url(env_map)
+    url = netprobe.issued_url(env_map)
     report.check("ingress url", bool(url), "docker compose logs cloudflared-ingress")
     if url:
         report.check(
@@ -291,6 +291,14 @@ def run(env_map: dict[str, str], compose_file: str | None = None, prober=None) -
             "allowlist 403",
             probe(f"{url}/p/1/", env_map.get("INGRESS_TOKEN")) == 403,
             "проверь ALLOWED_PORTS",
+        )
+    preview_origin = (env_map.get("PREVIEW_ORIGIN") or "").strip()
+    if preview_origin:
+        origin_probe = preview_origin.replace("host.docker.internal", "127.0.0.1")
+        report.check(
+            "preview origin",
+            probe(origin_probe, None) != 0,
+            f"{preview_origin} не отвечает — preview-туннель мёртв до запуска dev-сервера",
         )
     pids_path = hostos.tempdir() / "rdm-host" / f"{active}-pids.txt"
     dead = 0

@@ -961,7 +961,7 @@ def handoff_block(reveal: bool = False) -> dict[str, Any]:
     env_map = rdm.envfile.EnvFile.load(rdm.cli.ENV_FILE).as_map()
     block = rdm.tokens.chat_block(
         env_map,
-        rdm.netprobe.ingress_url(env_map, rdm.cli.COMPOSE_FILE),
+        rdm.netprobe.issued_url(env_map, rdm.cli.COMPOSE_FILE),
         full,
         preview_url=env_map.get("PUBLIC_PREVIEW_URL", ""),
         runner_port=rdm.cli._runner_port(env_map),
@@ -1007,7 +1007,7 @@ def agent_prompt(
     rdm = _rdm()
     full = bool(reveal)
     env_map = rdm.envfile.EnvFile.load(rdm.cli.ENV_FILE).as_map()
-    ingress_url = rdm.netprobe.ingress_url(env_map, rdm.cli.COMPOSE_FILE)
+    ingress_url = rdm.netprobe.issued_url(env_map, rdm.cli.COMPOSE_FILE)
     gateway_port = rdm.cli._gateway_port(env_map)
     prompt_text = rdm.prompt.compose_prompt(
         env_map,
@@ -1048,7 +1048,7 @@ def connection_check() -> dict[str, Any]:
     rdm = _rdm()
     env_map = rdm.envfile.EnvFile.load(rdm.cli.ENV_FILE).as_map()
     mode = (env_map.get("INGRESS_MODE") or "auto").strip().lower()
-    ingress_url = rdm.netprobe.ingress_url(env_map, rdm.cli.COMPOSE_FILE)
+    ingress_url = rdm.netprobe.issued_url(env_map, rdm.cli.COMPOSE_FILE)
     if not ingress_url:
         return {"ok": False, "mode": mode, "error": f"{mode}: ingress URL unknown"}
     detected = mode

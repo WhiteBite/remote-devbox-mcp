@@ -51,6 +51,35 @@ def _relay_url(kwargs: dict[str, str], env_map: dict[str, str]) -> str:
     return (env_map.get("RELAY_URL") or "").strip()
 
 
+_TUNNEL_DEAD_CODES = frozenset({0, 502, 503, 504, 530})
+
+
+def tunnel_alive(url: str, token: str | None, timeout: float = 8.0) -> bool:
+    """Любой HTTP-ответ через туннель = жив; 0/5xx — мёртвый субдомен/edge.
+
+    Пробуем манифест-путь: ingress-proxy отвечает на него сам (даже 404),
+    так что ответ доказывает живость туннеля, а не бэкенда.
+    """
+    code = probe_http(f"{url}/p/9000/manifest.json", token, timeout)
+    return code not in _TUNNEL_DEAD_CODES
+
+
+def issued_url(env_map: dict[str, str], compose_file: str | None = None) -> str:
+    """URL, который реально выдан агенту; fallback — резолв по логам.
+
+    Манифест/handoff/UI обязаны показывать этот адрес, а не свежий резолв:
+    логи туннеля содержат старые анонсы и могут вернуть мёртвый субдомен,
+    уже отличный от того, что ушёл в RELAY_URL.
+    """
+    mode = (env_map.get("INGRESS_MODE") or "").strip().lower()
+    if mode == "manual":
+        return (env_map.get("PUBLIC_URL") or "").strip()
+    issued = (env_map.get("RELAY_URL") or "").strip()
+    if issued:
+        return issued
+    return ingress_url(env_map, compose_file)
+
+
 def ingress_url(env_map: dict[str, str], compose_file: str | None = None) -> str:
     kwargs = {"compose_file": compose_file} if compose_file else {}
     mode = (env_map.get("INGRESS_MODE") or "").strip().lower()

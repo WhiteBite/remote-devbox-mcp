@@ -681,6 +681,10 @@ def test_mcp_candidates_lists_config_servers(monkeypatch, tmp_path):
                         "type": "remote",
                         "url": "https://example.test/mcp",
                     },
+                    "ssh": {
+                        "type": "local",
+                        "command": ["ssh-mcp"],
+                    },
                 }
             }
         ),
@@ -696,6 +700,8 @@ def test_mcp_candidates_lists_config_servers(monkeypatch, tmp_path):
     assert by_name["codegraph"]["command"] == ["python", "-m", "codegraph"]
     assert by_name["remote-demo"]["valid"] is False
     assert "remote" in by_name["remote-demo"]["error"]
+    assert by_name["ssh"]["denied"] is True
+    assert by_name["codegraph"]["denied"] is False
 
 
 def test_jobs_payload_surfaces_stall_alarm(monkeypatch, tmp_path):

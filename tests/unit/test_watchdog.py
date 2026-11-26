@@ -22,6 +22,7 @@ def _wire(monkeypatch, tmp_path, dead=False, ingress_up=True, ps="rdm-toolbox he
     monkeypatch.setattr("rdm.cli.ENV_FILE", tmp_path / ".env")
     monkeypatch.setattr(watchdog, "_log", lambda path, message: None)
     monkeypatch.setattr(watchdog.netprobe, "ingress_url", lambda env_map, compose_file=None: "https://x")
+    monkeypatch.setattr(watchdog.netprobe, "probe_http", lambda url, token, timeout=10.0: 200)
     monkeypatch.setattr(watchdog.netprobe, "can_connect", lambda port: ingress_up)
     monkeypatch.setattr(watchdog.procman, "stop_ingress", lambda: None)
     monkeypatch.setattr(watchdog.procman, "start_ingress", lambda env_map, host_dir: calls["ingress_start"].append(env_map) or 4242)

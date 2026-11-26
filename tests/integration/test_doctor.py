@@ -274,3 +274,15 @@ def test_doctor_events_warn_on_high_drop_rate(monkeypatch, tmp_path, capsys):
     out = capsys.readouterr().out
     assert "[WARN] events parse-rate" in out
     assert "[FAIL]" not in out
+
+def test_doctor_fails_when_preview_origin_dead(monkeypatch, tmp_path, capsys):
+    _wire(monkeypatch, tmp_path)
+    env = {**_env(tmp_path), "PREVIEW_ORIGIN": "http://host.docker.internal:5174"}
+    assert doctor.run(env, prober=lambda url, token, timeout=10.0: 0) == 1
+    assert "[FAIL] preview origin" in capsys.readouterr().out
+
+
+def test_doctor_skips_preview_check_when_unset(monkeypatch, tmp_path, capsys):
+    _wire(monkeypatch, tmp_path)
+    assert doctor.run(_env(tmp_path), prober=_prober) == 0
+    assert "preview origin" not in capsys.readouterr().out

@@ -40,7 +40,7 @@ def _handoff_payload(reveal: bool) -> dict[str, str]:
     env_map = envfile.EnvFile.load(cli.ENV_FILE).as_map()
     block = tokens.chat_block(
         env_map,
-        netprobe.ingress_url(env_map, cli.COMPOSE_FILE),
+        netprobe.issued_url(env_map, cli.COMPOSE_FILE),
         reveal,
         preview_url=env_map.get("PUBLIC_PREVIEW_URL", ""),
         runner_port=cli._runner_port(env_map),

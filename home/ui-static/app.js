@@ -196,7 +196,7 @@ function renderHero(s) {
     el.toolchainChips.appendChild(h("span", "chip", "none"));
   }
 
-  const url = (man.ingress_url || env.PUBLIC_URL || "").toString();
+  const url = (man.public_url || man.ingress_url || env.PUBLIC_URL || "").toString();
   state.ingressUrl = url;
   el.ingressUrl.textContent = url || "no tunnel";
   el.ingressUrl.style.color = url ? "" : "var(--fg-mute)";
