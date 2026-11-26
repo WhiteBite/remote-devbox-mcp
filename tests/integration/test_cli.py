@@ -61,6 +61,7 @@ def _setup(monkeypatch, tmp_path):
     monkeypatch.setattr(cli.procman, "stop_watchdog", lambda: calls["watchdog_stop"].append(True))
     monkeypatch.setattr(cli.procman, "stop_gateway", lambda: calls["gateway_stop"].append(True))
     monkeypatch.setattr(cli, "_start_gitleaks", lambda *a, **k: calls["gitleaks"].append(a))
+    monkeypatch.setattr(cli, "_token_selfcheck", lambda env_map: None)
     return projects, calls
 
 
@@ -581,6 +582,17 @@ def test_issue_tokens_refreshes_stale_manifest(monkeypatch, tmp_path):
     assert cli.main(["issue-tokens"]) == 0
     manifest = json.loads(cli.MANIFEST_PATH.read_text(encoding="utf-8"))
     assert manifest["ingress_url"] == "https://devbox.example.test"
+
+
+def test_issue_tokens_fails_when_services_reject_new_tokens(monkeypatch, tmp_path, capsys):
+    _setup(monkeypatch, tmp_path)
+    cli.ENV_FILE.write_text(
+        "MCP_BEARER_TOKEN=" + "0" * 64 + "\nMCP_PUBLIC_TOKEN=" + "0" * 64 + "\nINGRESS_TOKEN=" + "0" * 64 + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cli, "_token_selfcheck", lambda env_map: "bridge HTTP 401")
+    assert cli.main(["issue-tokens"]) == 1
+    assert "не приняли новые токены" in capsys.readouterr().err
 
 
 def test_devbox_ui_subcommand_delegates(monkeypatch):

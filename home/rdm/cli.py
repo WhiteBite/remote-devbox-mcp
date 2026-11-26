@@ -495,6 +495,63 @@ def _preview(origin: str | None) -> int:
     return 0
 
 
+def _token_selfcheck(env_map: dict[str, str]) -> str | None:
+    """Verify the live surfaces actually accept the freshly rotated tokens."""
+    import urllib.error
+    import urllib.request
+
+    body = json.dumps(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-06-18",
+                "capabilities": {},
+                "clientInfo": {"name": "rdm-selfcheck", "version": "0"},
+            },
+        }
+    ).encode()
+    deadline = time.monotonic() + 20.0
+    last = "connect"
+    while time.monotonic() < deadline:
+        last = None
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{INGRESS_PORT}/p/{BRIDGE_PORT}/mcp",
+            data=body,
+            method="POST",
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "application/json, text/event-stream",
+                "Authorization": f"Bearer {env_map.get('MCP_BEARER_TOKEN', '')}",
+                "MCP-Protocol-Version": "2025-06-18",
+            },
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=5) as response:
+                response.read(1)
+        except urllib.error.HTTPError as exc:
+            last = f"bridge HTTP {exc.code}"
+        except (urllib.error.URLError, OSError):
+            last = "bridge connect"
+        if last is None:
+            manifest_req = urllib.request.Request(
+                f"http://127.0.0.1:{INGRESS_PORT}/p/9000/manifest.json",
+                headers={"Authorization": f"Bearer {env_map.get('INGRESS_TOKEN', '')}"},
+            )
+            try:
+                with urllib.request.urlopen(manifest_req, timeout=5) as response:
+                    response.read(1)
+            except urllib.error.HTTPError as exc:
+                last = f"manifest HTTP {exc.code}"
+            except (urllib.error.URLError, OSError):
+                last = "manifest connect"
+        if last is None:
+            return None
+        time.sleep(1)
+    return last
+
+
 @_single_flight
 def _issue_tokens() -> int:
     env = envfile.EnvFile.load(ENV_FILE)
@@ -522,6 +579,13 @@ def _issue_tokens() -> int:
     procman.stop_ingress()
     procman.start_ingress(_ingress_env(env_map), HOME_DIR)
     _refresh_manifest_from_env()
+    rejected = _token_selfcheck(env_map)
+    if rejected is not None:
+        print(
+            f"issue_tokens: сервисы не приняли новые токены ({rejected}) — повтори или перезапусти стек",
+            file=sys.stderr,
+        )
+        return 1
     print(
         tokens.chat_block(
             env_map, _ingress_url(env_map), True, _preview_url(env_map),
